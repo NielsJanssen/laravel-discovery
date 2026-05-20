@@ -1,0 +1,15 @@
+{
+  "name": "workbench/laravel-discovery",
+  "type": "library",
+  "license": "proprietary",
+  "autoload": {
+    "psr-4": {
+      "Workbench\\App\\": "app/",
+      "Workbench\\Database\\Factories\\": "database/factories/",
+      "Workbench\\Database\\Seeders\\": "database/seeders/"
+    }
+  },
+  "require": {
+    "php": "^8.5"
+  }
+}
