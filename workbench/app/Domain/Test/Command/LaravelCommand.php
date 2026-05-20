@@ -1,0 +1,21 @@
+<?php
+
+namespace Workbench\App\Domain\Test\Command;
+
+use Illuminate\Console\Command;
+use Symfony\Component\Console\Attribute\AsCommand;
+use Workbench\App\Domain\Test\RandomNumberGenerator;
+
+#[AsCommand(name: 'app:laravel', description: 'A standard Laravel command')]
+class LaravelCommand extends Command
+{
+    public function __invoke(RandomNumberGenerator $rng): int
+    {
+        $this->output->writeln(sprintf(
+            'Hello standard Laravel command %d!',
+            $rng->generate(),
+        ));
+
+        return 0;
+    }
+}

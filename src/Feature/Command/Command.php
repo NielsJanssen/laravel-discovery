@@ -1,0 +1,18 @@
+<?php
+
+namespace NielsJanssen\Laravel\Discovery\Feature\Command;
+
+use Attribute;
+
+#[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_METHOD)]
+class Command
+{
+    public function __construct(
+        public string $name,
+        public ?string $description = null,
+        public ?string $signature = null,
+
+        /** list<string> */
+        public ?array $aliases = [],
+    ) {}
+}
