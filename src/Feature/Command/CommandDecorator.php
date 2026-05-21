@@ -24,36 +24,51 @@ readonly class CommandDecorator
     public function decorateCommand(CommandDefinition $command): LaravelCommand
     {
         return new class ($this->container, $command) extends LaravelCommand {
+            private string $commandClass;
+
+            private CommandArgumentsDefinition $commandSignature;
+
+            private MethodReflector $commandMethodReflector;
+
             public function __construct(
                 private readonly Container $container,
                 private readonly CommandDefinition $definition,
             ) {
-                $this->aliases     = $definition->definition->aliases;
-                $this->description = $definition->definition->description;
-                $this->name        = $definition->definition->name;
+                $this->name = $definition->definition->name;
 
                 parent::__construct();
-            }
 
-            public function __invoke(): mixed
-            {
+                $this->setAliases($definition->definition->aliases);
+                $this->setDescription($definition->definition->description ?? '');
+
                 $reflector = $this->definition->reflector;
 
                 if ($reflector instanceof ClassReflector) {
-                    $command = $this->container->make($reflector->getName());
+                    $this->commandClass = $reflector->getName();
+                    $this->commandMethodReflector = $reflector->getMethod('__invoke');
                 } elseif ($reflector instanceof MethodReflector) {
-                    $commandInstance = $this->container->make($reflector->getDeclaringClass()->getName());
-
-                    $command = $reflector->getReflection()->getClosure($commandInstance);
+                    $this->commandClass = $reflector->getDeclaringClass()->getName();
+                    $this->commandMethodReflector = $reflector;
                 } else {
                     throw new \LogicException('Unsupported reflector type');
                 }
 
-                return $this->container->call($command, [
-                    'output' => $this->output,
+                $this->commandSignature = CommandArgumentsDefinition::from($this->commandMethodReflector);
+                $this->commandSignature->define(
+                    $this->getDefinition(),
+                );
+            }
+
+            public function __invoke(): mixed
+            {
+                $instance = $this->container->make($this->commandClass, [
                     'input' => $this->input,
-                    'command' => $this,
+                    'output' => $this->output,
                 ]);
+
+                return $this->commandMethodReflector->getReflection()
+                    ->getClosure($instance)
+                    ->call($instance, ...$this->commandSignature->resolveInput($this->input));
             }
         };
     }

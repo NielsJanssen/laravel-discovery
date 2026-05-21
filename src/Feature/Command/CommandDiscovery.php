@@ -40,7 +40,7 @@ final class CommandDiscovery implements Discovery, Feature
             return;
         }
 
-        if ($definition = $class->getAttribute(Command::class)) {
+        if ($definition = $class->getAttribute(ConsoleCommand::class)) {
             try {
                 $class->getMethod('__invoke');
             } catch (\ReflectionException) {
@@ -52,7 +52,7 @@ final class CommandDiscovery implements Discovery, Feature
         }
 
         foreach ($class->getPublicMethods() as $method) {
-            if ($definition = $method->getAttribute(Command::class)) {
+            if ($definition = $method->getAttribute(ConsoleCommand::class)) {
                 $this->discoveryItems->add($location, [$method, $definition]);
             }
         }

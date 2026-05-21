@@ -14,6 +14,6 @@ class CommandDefinition
     public function __construct(
         /** @var TReflector */
         public Reflector $reflector,
-        public ?Command $definition = null,
+        public ?ConsoleCommand $definition = null,
     ) {}
 }
