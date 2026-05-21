@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\Feature\Command;
 
 use Illuminate\Console\Command as LaravelCommand;
+use Illuminate\Container\Attributes\Singleton;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Contracts\Foundation\Application;
+use NielsJanssen\Laravel\Discovery\Feature\Command\Exception\InvalidCommandRegistrationException;
 use NielsJanssen\Laravel\Discovery\Feature\Feature;
 use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryConfig;
@@ -15,20 +17,37 @@ use Tempest\Discovery\IsDiscovery;
 use Tempest\Discovery\SkipDiscovery;
 use Tempest\Reflection\ClassReflector;
 
+#[Singleton]
 #[SkipDiscovery]
 final class CommandDiscovery implements Discovery, Feature
 {
     use IsDiscovery;
 
     /** @var list<\NielsJanssen\Laravel\Discovery\Feature\Command\CommandDefinition> */
-    private(set) array $commands = [];
+    public private(set) array $commands = [];
 
+    /**
+     * @throws \NielsJanssen\Laravel\Discovery\Feature\Command\Exception\InvalidCommandRegistrationException
+     */
     public function discover(DiscoveryLocation $location, ClassReflector $class): void
     {
-        if ($class->is(LaravelCommand::class)
-            || ($definition = $class->getAttribute(Command::class))) {
-            $this->discoveryItems->add($location, [$class, $definition ?? null]);
+        if (! $class->isInstantiable()) {
+            return;
+        }
 
+        if ($class->is(LaravelCommand::class)) {
+            $this->discoveryItems->add($location, [$class, null]);
+            return;
+        }
+
+        if ($definition = $class->getAttribute(Command::class)) {
+            try {
+                $class->getMethod('__invoke');
+            } catch (\ReflectionException) {
+                throw InvalidCommandRegistrationException::forCommand($class->getName(), 'Command classes must have an __invoke method');
+            }
+
+            $this->discoveryItems->add($location, [$class, $definition]);
             return;
         }
 
@@ -51,13 +70,10 @@ final class CommandDiscovery implements Discovery, Feature
 
     public static function register(Application $app, DiscoveryConfig $config): void
     {
-        $app->singleton(__CLASS__);
-        $app->singleton(CommandDecorator::class);
-
         $app->afterResolving(Kernel::class, static function (Kernel $kernel, Application $app) {
             $decorator = $app->make(CommandDecorator::class);
 
-            foreach ($app->make(__CLASS__)->commands as $command) {
+            foreach ($app->make(self::class)->commands as $command) {
                 $kernel->registerCommand(
                     $command->definition
                         ? $decorator->decorateCommand($command)

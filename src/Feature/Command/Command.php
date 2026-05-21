@@ -12,9 +12,8 @@ class Command
     public function __construct(
         public string $name,
         public ?string $description = null,
-        public ?string $signature = null,
 
         /** list<string> */
-        public ?array $aliases = [],
+        public array $aliases = [],
     ) {}
 }

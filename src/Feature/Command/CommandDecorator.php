@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\Feature\Command;
 
 use Illuminate\Console\Command as LaravelCommand;
+use Illuminate\Container\Attributes\Singleton;
 use Illuminate\Container\Container;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
 
+#[Singleton]
 readonly class CommandDecorator
 {
     public function __construct(
@@ -29,7 +31,6 @@ readonly class CommandDecorator
                 $this->aliases     = $definition->definition->aliases;
                 $this->description = $definition->definition->description;
                 $this->name        = $definition->definition->name;
-                $this->signature   = $definition->definition->signature;
 
                 parent::__construct();
             }
