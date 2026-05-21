@@ -4,38 +4,20 @@ namespace NielsJanssen\Laravel\Discovery\Feature\Command;
 
 use Illuminate\Console\Command as LaravelCommand;
 use Illuminate\Container\Container;
-use Illuminate\Contracts\Console\Kernel;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
 
-class CommandRegistry
+readonly class CommandDecorator
 {
     public function __construct(
-        private readonly Container $container,
-
-        /** @var list<\NielsJanssen\Laravel\Discovery\Feature\Command\CommandDefinition> */
-        public array $commands = [],
+        private Container $container,
     ) {}
-
-    /**
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function register(Kernel $kernel): void
-    {
-        foreach ($this->commands as $command) {
-            $kernel->registerCommand(
-                $command->definition
-                    ? $this->createCommand($command)
-                    : $this->container->make($command->reflector->getName()),
-            );
-        }
-    }
 
     /**
      * Create a simple wrapper command to register with the kernel, which will resolve the actual
      * command from the container and call it.
      */
-    private function createCommand(CommandDefinition $command): LaravelCommand
+    public function decorateCommand(CommandDefinition $command): LaravelCommand
     {
         return new class ($this->container, $command) extends LaravelCommand {
             public function __construct(
