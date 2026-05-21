@@ -24,10 +24,9 @@ class CommandRegistry
     {
         foreach ($this->commands as $command) {
             $kernel->registerCommand(
-                match (true) {
-                    $command->definition === null  => $this->container->make($command->reflector->getName()),
-                    default => $this->createCommand($command),
-                },
+                $command->definition
+                    ? $this->createCommand($command)
+                    : $this->container->make($command->reflector->getName()),
             );
         }
     }
