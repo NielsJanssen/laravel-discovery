@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace NielsJanssen\Laravel\Discovery\Commands;
 
 use Illuminate\Console\GeneratorCommand;

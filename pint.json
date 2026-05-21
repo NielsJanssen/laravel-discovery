@@ -1,3 +1,6 @@
 {
-  "preset": "per"
+  "preset": "per",
+  "rules": {
+    "declare_strict_types": true
+  }
 }
