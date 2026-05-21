@@ -7,6 +7,7 @@ namespace NielsJanssen\Laravel\Discovery;
 use Illuminate\Support\ServiceProvider;
 use NielsJanssen\Laravel\Discovery\Commands\MakeDiscoveryCommand;
 use NielsJanssen\Laravel\Discovery\Feature\Command\CommandDiscovery;
+use NielsJanssen\Laravel\Discovery\Feature\Event\EventDiscovery;
 use Tempest\Discovery\BootDiscovery;
 use Tempest\Discovery\DiscoveryConfig;
 
@@ -14,6 +15,7 @@ class DiscoveryServiceProvider extends ServiceProvider
 {
     private const array FEATURES = [
         CommandDiscovery::class,
+        EventDiscovery::class,
     ];
 
     public function register(): void
