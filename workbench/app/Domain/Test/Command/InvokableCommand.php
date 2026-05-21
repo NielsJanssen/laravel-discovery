@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Workbench\App\Domain\Test\Command;
 
 use Illuminate\Console\OutputStyle;
-use NielsJanssen\Laravel\Discovery\Feature\Command\Command;
+use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;
 use Workbench\App\Domain\Test\RandomNumberGenerator;
 
-#[Command(
+#[ConsoleCommand(
     name: 'app:invokable',
     description: 'Invokable command',
     aliases: ['app:invokable-alias'],

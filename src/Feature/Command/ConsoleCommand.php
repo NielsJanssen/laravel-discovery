@@ -7,7 +7,7 @@ namespace NielsJanssen\Laravel\Discovery\Feature\Command;
 use Attribute;
 
 #[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_METHOD)]
-class Command
+class ConsoleCommand
 {
     public function __construct(
         public string $name,
