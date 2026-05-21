@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Workbench\App\Domain\Test\Command;
 
 use Illuminate\Console\OutputStyle;
