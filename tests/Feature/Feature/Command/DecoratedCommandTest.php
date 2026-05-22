@@ -6,7 +6,7 @@ namespace Tests\Feature;
 
 use Illuminate\Console\Command as LaravelCommand;
 use NielsJanssen\Laravel\Discovery\Feature\Command\CommandDecorator;
-use NielsJanssen\Laravel\Discovery\Feature\Command\CommandDefinition;
+use NielsJanssen\Laravel\Discovery\Feature\Command\DiscoveredCommand;
 use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
@@ -26,7 +26,7 @@ function decorateClass(string $class): LaravelCommand
 {
     $reflector  = new ClassReflector($class);
     $definition = $reflector->getAttribute(ConsoleCommand::class);
-    $commandDef = new CommandDefinition($reflector, $definition);
+    $commandDef = new DiscoveredCommand($reflector, $definition);
 
     return app(CommandDecorator::class)->decorateCommand($commandDef);
 }
@@ -35,7 +35,7 @@ function decorateMethod(string $class, string $method): LaravelCommand
 {
     $reflector  = (new ClassReflector($class))->getMethod($method);
     $definition = $reflector->getAttribute(ConsoleCommand::class);
-    $commandDef = new CommandDefinition($reflector, $definition);
+    $commandDef = new DiscoveredCommand($reflector, $definition);
 
     return app(CommandDecorator::class)->decorateCommand($commandDef);
 }

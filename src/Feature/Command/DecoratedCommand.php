@@ -24,7 +24,7 @@ final class DecoratedCommand extends LaravelCommand
 
     public function __construct(
         private readonly Container         $container,
-        private readonly CommandDefinition $definition,
+        private readonly DiscoveredCommand $definition,
     ) {
         $this->name = $definition->definition->name;
 

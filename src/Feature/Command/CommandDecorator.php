@@ -19,7 +19,7 @@ readonly class CommandDecorator
      * Create a simple wrapper command to register with the kernel, which will resolve the actual
      * command from the container and call it.
      */
-    public function decorateCommand(CommandDefinition $command): LaravelCommand
+    public function decorateCommand(DiscoveredCommand $command): LaravelCommand
     {
         return new DecoratedCommand($this->container, $command);
     }
