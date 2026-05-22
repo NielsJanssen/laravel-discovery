@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use NielsJanssen\Laravel\Discovery\Feature\Command\CommandArgumentsDefinition;
+use NielsJanssen\Laravel\Discovery\Command\CommandArgumentsDefinition;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputDefinition;

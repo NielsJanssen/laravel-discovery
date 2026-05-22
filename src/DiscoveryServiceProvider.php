@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery;
 
 use Illuminate\Support\ServiceProvider;
-use NielsJanssen\Laravel\Discovery\Commands\MakeDiscoveryCommand;
-use NielsJanssen\Laravel\Discovery\Feature\Command\CommandDiscovery;
-use NielsJanssen\Laravel\Discovery\Feature\Event\EventDiscovery;
-use NielsJanssen\Laravel\Discovery\Feature\Router\RouteDiscovery;
+use NielsJanssen\Laravel\Discovery\Command\CommandDiscovery;
+use NielsJanssen\Laravel\Discovery\Event\EventDiscovery;
+use NielsJanssen\Laravel\Discovery\Laravel\MakeDiscoveryCommand;
+use NielsJanssen\Laravel\Discovery\Router\RouteDiscovery;
 use Tempest\Discovery\BootDiscovery;
 use Tempest\Discovery\DiscoveryConfig;
 

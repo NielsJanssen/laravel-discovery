@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Fixtures\Command;
 
 use Illuminate\Console\Command;
-use NielsJanssen\Laravel\Discovery\Feature\Command\CommandMiddleware;
+use NielsJanssen\Laravel\Discovery\Command\CommandMiddleware;
 
 class OuterMiddleware implements CommandMiddleware
 {

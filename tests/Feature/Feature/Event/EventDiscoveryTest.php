@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Events\Dispatcher;
-use NielsJanssen\Laravel\Discovery\Feature\Event\EventDiscovery;
+use NielsJanssen\Laravel\Discovery\Event\EventDiscovery;
 use Tempest\Discovery\DiscoveryItems;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;

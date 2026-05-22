@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Fixtures\Command;
 
-use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;
+use NielsJanssen\Laravel\Discovery\Command\ConsoleCommand;
 
 #[ConsoleCommand(name: 'fixture:invalid')]
 class InvalidCommand

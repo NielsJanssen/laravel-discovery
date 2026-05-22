@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use NielsJanssen\Laravel\Discovery\Feature\Command\CommandDiscovery;
+use NielsJanssen\Laravel\Discovery\Command\CommandDiscovery;
 use Tempest\Discovery\DiscoveryItems;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;

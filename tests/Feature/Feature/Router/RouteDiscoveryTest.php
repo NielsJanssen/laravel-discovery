@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Routing\Router;
-use NielsJanssen\Laravel\Discovery\Feature\Router\Method;
-use NielsJanssen\Laravel\Discovery\Feature\Router\RouteDiscovery;
+use NielsJanssen\Laravel\Discovery\Router\Method;
+use NielsJanssen\Laravel\Discovery\Router\RouteDiscovery;
 use Tempest\Discovery\DiscoveryItems;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;

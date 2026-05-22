@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Workbench\App\Command;
 
 use Illuminate\Console\OutputStyle;
-use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;
+use NielsJanssen\Laravel\Discovery\Command\ConsoleCommand;
 use Workbench\App\Test\RandomNumberGenerator;
 
 readonly class InvokableCommand
