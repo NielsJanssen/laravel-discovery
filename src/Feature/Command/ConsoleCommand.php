@@ -13,7 +13,10 @@ class ConsoleCommand
         public string $name,
         public ?string $description = null,
 
-        /** list<string> */
+        /** @var list<string> */
         public array $aliases = [],
+
+        /** @var list<callable|class-string<\NielsJanssen\Laravel\Discovery\Feature\Command\CommandMiddleware>> */
+        public array $middleware = [],
     ) {}
 }
