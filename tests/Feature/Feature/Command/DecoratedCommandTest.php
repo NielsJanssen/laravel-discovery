@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Console\Command as LaravelCommand;
-use NielsJanssen\Laravel\Discovery\Feature\Command\CommandDecorator;
+use NielsJanssen\Laravel\Discovery\Feature\Command\Command;
 use NielsJanssen\Laravel\Discovery\Feature\Command\DiscoveredCommand;
 use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -22,22 +22,13 @@ use Tests\Fixtures\Command\OptionMiddlewareCommand;
 use Tests\Fixtures\Command\RecordingMiddleware;
 use Tests\Fixtures\Command\ShortCircuitCommand;
 
-function decorateClass(string $class): LaravelCommand
-{
-    $reflector  = new ClassReflector($class);
-    $definition = $reflector->getAttribute(ConsoleCommand::class);
-    $commandDef = new DiscoveredCommand($reflector, $definition);
-
-    return app(CommandDecorator::class)->decorateCommand($commandDef);
-}
-
 function decorateMethod(string $class, string $method): LaravelCommand
 {
-    $reflector  = (new ClassReflector($class))->getMethod($method);
+    $reflector  = new ClassReflector($class)->getMethod($method);
     $definition = $reflector->getAttribute(ConsoleCommand::class);
     $commandDef = new DiscoveredCommand($reflector, $definition);
 
-    return app(CommandDecorator::class)->decorateCommand($commandDef);
+    return new Command(app(), $commandDef);
 }
 
 /**
@@ -52,19 +43,19 @@ function runDecoratedCommand(LaravelCommand $command, array $input = []): int
 }
 
 it('sets the command name from the ConsoleCommand attribute', function () {
-    $command = decorateClass(InvokableCommand::class);
+    $command = decorateMethod(InvokableCommand::class, '__invoke');
 
     expect($command->getName())->toBe('fixture:invokable');
 });
 
 it('sets the command description', function () {
-    $command = decorateClass(InvokableCommand::class);
+    $command = decorateMethod(InvokableCommand::class, '__invoke');
 
     expect($command->getDescription())->toBe('Desc');
 });
 
 it('sets command aliases', function () {
-    $command = decorateClass(InvokableCommand::class);
+    $command = decorateMethod(InvokableCommand::class, '__invoke');
 
     expect($command->getAliases())->toContain('fixture:inv');
 });

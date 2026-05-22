@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\Feature\Router;
 
 use Illuminate\Container\Attributes\Scoped;
-use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Foundation\Application;
 use Illuminate\Routing\Router;
-use NielsJanssen\Laravel\Discovery\Feature\Feature;
 use Tempest\Discovery\Discovery;
-use Tempest\Discovery\DiscoveryConfig;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
 use Tempest\Discovery\SkipDiscovery;
@@ -17,11 +15,12 @@ use Tempest\Reflection\ClassReflector;
 
 #[Scoped]
 #[SkipDiscovery]
-class RouteDiscovery implements Discovery, Feature
+class RouteDiscovery implements Discovery
 {
     use IsDiscovery;
 
     public function __construct(
+        private readonly Application $app,
         private readonly Router $route,
     ) {}
 
@@ -43,7 +42,7 @@ class RouteDiscovery implements Discovery, Feature
 
     public function apply(): void
     {
-        if (app()->routesAreCached()) {
+        if ($this->app->routesAreCached()) {
             return;
         }
 
@@ -58,6 +57,4 @@ class RouteDiscovery implements Discovery, Feature
                 ->domain($discoveredRoute->domain);
         }
     }
-
-    public static function register(Application $app, DiscoveryConfig $config): void {}
 }

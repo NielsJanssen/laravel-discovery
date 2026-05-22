@@ -8,10 +8,12 @@ use Illuminate\Console\Command as LaravelCommand;
 use Illuminate\Container\Container;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputOption;
+use Tempest\Discovery\SkipDiscovery;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
 
-final class DecoratedCommand extends LaravelCommand
+#[SkipDiscovery]
+final class Command extends LaravelCommand
 {
     private string $commandClass;
 
@@ -50,15 +52,16 @@ final class DecoratedCommand extends LaravelCommand
 
     public function __invoke(): mixed
     {
-        $instance = $this->container->make($this->commandClass, [
+        $instance = $this->container->make($this->commandClass, $io = [
             'input'  => $this->input,
             'output' => $this->output,
         ]);
 
-        $pipeline = function () use ($instance) {
-            return $this->commandMethodReflector->getReflection()
-                ->getClosure($instance)
-                ->call($instance, ...$this->commandArgumentsDefinition->resolveInput($this->input));
+        $pipeline = function () use ($instance, $io) {
+            return $this->container->call(
+                $this->commandMethodReflector->getReflection()->getClosure($instance),
+                array_merge($io, $this->commandArgumentsDefinition->resolveInput($this->input)),
+            );
         };
 
         foreach (array_reverse($this->resolvedMiddleware) as $middleware) {

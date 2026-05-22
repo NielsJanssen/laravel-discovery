@@ -100,7 +100,7 @@ it('uses the name from #[ConsoleOption] over the parameter name', function () {
     expect($definition->hasOption('original-name'))->toBeFalse();
 });
 
-it('resolves input values to an array matching the method signature order', function () {
+it('resolves input values to an array keyed by the argument name', function () {
     $method = new ClassReflector(ArgumentCommand::class)->getMethod('run');
     $argsDef = CommandArgumentsDefinition::from($method);
 
@@ -111,6 +111,8 @@ it('resolves input values to an array matching the method signature order', func
 
     $resolved = $argsDef->resolveInput($input);
 
-    expect($resolved[0])->toBe('Alice');
-    expect($resolved[1])->toBe(5);
+    expect($resolved)->toEqualCanonicalizing([
+        'count' => 5,
+        'name' => 'Alice',
+    ]);
 });

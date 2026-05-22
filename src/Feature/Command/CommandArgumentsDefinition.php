@@ -22,19 +22,24 @@ readonly class CommandArgumentsDefinition
     public static function from(MethodReflector $method): self
     {
         return new self(
-            arguments: array_map(
+            arguments: array_filter(array_map(
                 static::parseParameter(...),
                 iterator_to_array($method->getParameters()),
-            ),
+            )),
         );
     }
 
-    private static function parseParameter(ParameterReflector $parameter): InputArgument|InputOption
+    private static function parseParameter(ParameterReflector $parameter): InputArgument|InputOption|null
     {
         $attribute = $parameter->getAttribute(ConsoleArgument::class)
             ?? $parameter->getAttribute(ConsoleOption::class);
 
         $type = $parameter->getType();
+
+        if (!$type->isScalar() && $type->getName() !== 'array') {
+            return null;
+        }
+
         $default = $parameter->isDefaultValueAvailable() ? $parameter->getDefaultValue() : null;
 
         if ($attribute instanceof ConsoleOption) {
@@ -69,10 +74,15 @@ readonly class CommandArgumentsDefinition
 
         $inputValues = array_merge($inputArguments, $input->getOptions());
 
-        return array_map(
-            static fn(InputArgument|InputOption $argument) => $inputValues[$argument->getName()] ?? null,
-            $this->arguments,
-        );
+        $map = [];
+
+        foreach ($this->arguments as $argument) {
+            $name = $argument->getName();
+
+            $map[$name] = $inputValues[$name] ?? null;
+        }
+
+        return $map;
     }
 
     public function define(InputDefinition $definition): void

@@ -14,12 +14,6 @@ use Tempest\Discovery\DiscoveryConfig;
 
 class DiscoveryServiceProvider extends ServiceProvider
 {
-    private const array FEATURES = [
-        CommandDiscovery::class,
-        EventDiscovery::class,
-        RouteDiscovery::class,
-    ];
-
     public function register(): void
     {
         $this->commands([
@@ -40,14 +34,14 @@ class DiscoveryServiceProvider extends ServiceProvider
             ->skipClasses(...$config->get('discovery.skip_classes') ?? [])
             ->skipPaths(...$config->get('discovery.skip_paths') ?? []);
 
-        foreach (self::FEATURES as $feature) {
-            $feature::register($this->app, $discoveryConfig);
-        }
-
         new BootDiscovery(
             container: $this->app,
             config: $discoveryConfig,
             // cache: $cache, // TODO: add caching
-        )(static::FEATURES);
+        )([
+            CommandDiscovery::class,
+            EventDiscovery::class,
+            RouteDiscovery::class,
+        ]);
     }
 }

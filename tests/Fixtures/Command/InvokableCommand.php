@@ -6,12 +6,12 @@ namespace Tests\Fixtures\Command;
 
 use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;
 
-#[ConsoleCommand(
-    name: 'fixture:invokable',
-    description: 'Desc',
-    aliases: ['fixture:inv'],
-)]
 class InvokableCommand
 {
+    #[ConsoleCommand(
+        name: 'fixture:invokable',
+        description: 'Desc',
+        aliases: ['fixture:inv'],
+    )]
     public function __invoke(): void {}
 }

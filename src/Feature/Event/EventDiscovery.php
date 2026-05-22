@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\Feature\Event;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Events\Dispatcher;
-use NielsJanssen\Laravel\Discovery\Feature\Feature;
 use Tempest\Discovery\Discovery;
-use Tempest\Discovery\DiscoveryConfig;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
 use Tempest\Discovery\SkipDiscovery;
@@ -17,7 +14,7 @@ use Tempest\Reflection\MethodReflector;
 use Tempest\Reflection\TypeReflector;
 
 #[SkipDiscovery]
-final class EventDiscovery implements Discovery, Feature
+final class EventDiscovery implements Discovery
 {
     use IsDiscovery;
 
@@ -81,6 +78,4 @@ final class EventDiscovery implements Discovery, Feature
 
         return [$type->getName()];
     }
-
-    public static function register(Application $app, DiscoveryConfig $config): void {}
 }
