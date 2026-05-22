@@ -40,7 +40,7 @@ readonly class CommandArgumentsDefinition
         if ($attribute instanceof ConsoleOption) {
             return new InputOption(
                 name: Str::kebab($attribute->name ?? $parameter->getName()),
-                shortcut: $attribute->aliases ?? [],
+                shortcut: $attribute->shortcut ?? [],
                 mode: match (true) {
                     $type->getName() === 'bool' => InputOption::VALUE_NONE,
                     $parameter->isDefaultValueAvailable() || $default !== null => InputOption::VALUE_OPTIONAL,
