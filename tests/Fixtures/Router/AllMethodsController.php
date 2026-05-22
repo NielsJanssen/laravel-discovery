@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Fixtures\Router;
 
-use NielsJanssen\Laravel\Discovery\Feature\Router\Delete;
-use NielsJanssen\Laravel\Discovery\Feature\Router\Get;
-use NielsJanssen\Laravel\Discovery\Feature\Router\Head;
-use NielsJanssen\Laravel\Discovery\Feature\Router\Options;
-use NielsJanssen\Laravel\Discovery\Feature\Router\Patch;
-use NielsJanssen\Laravel\Discovery\Feature\Router\Post;
-use NielsJanssen\Laravel\Discovery\Feature\Router\Put;
+use NielsJanssen\Laravel\Discovery\Router\Delete;
+use NielsJanssen\Laravel\Discovery\Router\Get;
+use NielsJanssen\Laravel\Discovery\Router\Head;
+use NielsJanssen\Laravel\Discovery\Router\Options;
+use NielsJanssen\Laravel\Discovery\Router\Patch;
+use NielsJanssen\Laravel\Discovery\Router\Post;
+use NielsJanssen\Laravel\Discovery\Router\Put;
 
 class AllMethodsController
 {

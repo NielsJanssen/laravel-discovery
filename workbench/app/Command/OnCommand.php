@@ -6,7 +6,7 @@ namespace Workbench\App\Command;
 
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\Events\CommandStarting;
-use NielsJanssen\Laravel\Discovery\Feature\Event\EventHandler;
+use NielsJanssen\Laravel\Discovery\Event\EventHandler;
 
 class OnCommand
 {

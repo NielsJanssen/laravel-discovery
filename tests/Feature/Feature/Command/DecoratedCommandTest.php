@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Console\Command as LaravelCommand;
-use NielsJanssen\Laravel\Discovery\Feature\Command\Command;
-use NielsJanssen\Laravel\Discovery\Feature\Command\DiscoveredCommand;
-use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;
+use NielsJanssen\Laravel\Discovery\Command\Command;
+use NielsJanssen\Laravel\Discovery\Command\ConsoleCommand;
+use NielsJanssen\Laravel\Discovery\Command\DiscoveredCommand;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Tempest\Reflection\ClassReflector;

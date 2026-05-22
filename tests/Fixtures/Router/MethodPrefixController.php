@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Fixtures\Router;
 
-use NielsJanssen\Laravel\Discovery\Feature\Router\Get;
-use NielsJanssen\Laravel\Discovery\Feature\Router\Prefix;
+use NielsJanssen\Laravel\Discovery\Router\Get;
+use NielsJanssen\Laravel\Discovery\Router\Prefix;
 
 class MethodPrefixController
 {

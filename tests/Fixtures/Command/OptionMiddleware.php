@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Tests\Fixtures\Command;
 
 use Illuminate\Console\Command;
-use NielsJanssen\Laravel\Discovery\Feature\Command\CommandMiddleware;
-use NielsJanssen\Laravel\Discovery\Feature\Command\ProvidesInputOptions;
+use NielsJanssen\Laravel\Discovery\Command\CommandMiddleware;
+use NielsJanssen\Laravel\Discovery\Command\ProvidesInputOptions;
 use Symfony\Component\Console\Input\InputOption;
 
 class OptionMiddleware implements CommandMiddleware, ProvidesInputOptions

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Fixtures\Command;
 
-use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;
-use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleOption;
+use NielsJanssen\Laravel\Discovery\Command\ConsoleCommand;
+use NielsJanssen\Laravel\Discovery\Command\ConsoleOption;
 
 class OptionCommand
 {
