@@ -7,6 +7,7 @@ namespace Workbench\App\Domain\Test\Command;
 use Illuminate\Console\OutputStyle;
 use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;
 use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleOption;
+use NielsJanssen\Laravel\Discovery\Feature\Command\Middleware\Transaction;
 use Workbench\App\Domain\Test\RandomNumberGenerator;
 
 readonly class WorkCommand
@@ -38,7 +39,7 @@ readonly class WorkCommand
         return 0;
     }
 
-    #[ConsoleCommand(name: 'app:more-work')]
+    #[ConsoleCommand(name: 'app:more-work', middleware: [Transaction::class])]
     public function moreWork(string ...$args): int
     {
         $this->output->writeln(sprintf(

@@ -31,7 +31,7 @@ readonly class CommandDecorator
             private MethodReflector $commandMethodReflector;
 
             public function __construct(
-                private readonly Container $container,
+                private readonly Container         $container,
                 private readonly CommandDefinition $definition,
             ) {
                 $this->name = $definition->definition->name;
@@ -44,10 +44,10 @@ readonly class CommandDecorator
                 $reflector = $this->definition->reflector;
 
                 if ($reflector instanceof ClassReflector) {
-                    $this->commandClass = $reflector->getName();
+                    $this->commandClass           = $reflector->getName();
                     $this->commandMethodReflector = $reflector->getMethod('__invoke');
                 } elseif ($reflector instanceof MethodReflector) {
-                    $this->commandClass = $reflector->getDeclaringClass()->getName();
+                    $this->commandClass           = $reflector->getDeclaringClass()->getName();
                     $this->commandMethodReflector = $reflector;
                 } else {
                     throw new \LogicException('Unsupported reflector type');
@@ -62,13 +62,33 @@ readonly class CommandDecorator
             public function __invoke(): mixed
             {
                 $instance = $this->container->make($this->commandClass, [
-                    'input' => $this->input,
+                    'input'  => $this->input,
                     'output' => $this->output,
                 ]);
 
-                return $this->commandMethodReflector->getReflection()
-                    ->getClosure($instance)
-                    ->call($instance, ...$this->commandSignature->resolveInput($this->input));
+                $pipeline = function () use ($instance) {
+                    return $this->commandMethodReflector->getReflection()
+                        ->getClosure($instance)
+                        ->call($instance, ...$this->commandSignature->resolveInput($this->input));
+                };
+
+                foreach (array_reverse($this->definition->definition->middleware) as $middleware) {
+                    $next = $pipeline;
+
+                    if (is_string($middleware)) {
+                        $middleware = $this->container->make($middleware);
+                    }
+
+                    $pipeline = static function () use ($middleware, $instance, $next) {
+                        return $middleware($instance, $next);
+                    };
+                }
+
+                // TODO: #0 - Move to custom command class instead of an anonymous class
+                // TODO: #1 - Allow middleware to short-circuit the command execution by returning a non-null value.
+                // TODO: #2 - Add a way for middleware to add and consume input options/arguments, this may need a change in the CommandArgumentsDefinition run
+
+                return $pipeline();
             }
         };
     }
