@@ -1,6 +1,17 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [0.0.1-alpha.2] - 2026-05-22
+
+### Bug Fixes
+
+- Route registration didn’t happen in time
+
+### Refactoring
+
+- Fix and simplify command discovery and remove Feature interface
+- Flatten namespace by removing Feature layer from src structure
+
 ## [0.0.1-alpha.1] - 2026-05-22
 
 ### Bug Fixes
@@ -27,6 +38,7 @@ All notable changes to this project will be documented in this file.
 ### Other Changes
 
 - Initial commit
+- V0.0.1-alpha.1
 
 ### Refactoring
 
