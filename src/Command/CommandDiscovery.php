@@ -11,11 +11,9 @@ use Illuminate\Foundation\Application;
 use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
-use Tempest\Discovery\SkipDiscovery;
 use Tempest\Reflection\ClassReflector;
 
 #[Singleton]
-#[SkipDiscovery]
 final class CommandDiscovery implements Discovery
 {
     use IsDiscovery;

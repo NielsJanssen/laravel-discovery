@@ -10,11 +10,9 @@ use Illuminate\Routing\Router;
 use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
-use Tempest\Discovery\SkipDiscovery;
 use Tempest\Reflection\ClassReflector;
 
 #[Scoped]
-#[SkipDiscovery]
 class RouteDiscovery implements Discovery
 {
     use IsDiscovery;

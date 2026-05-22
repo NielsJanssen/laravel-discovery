@@ -9,12 +9,10 @@ use Illuminate\Foundation\Application;
 use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
-use Tempest\Discovery\SkipDiscovery;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
 use Tempest\Reflection\TypeReflector;
 
-#[SkipDiscovery]
 final class EventDiscovery implements Discovery
 {
     use IsDiscovery;
