@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Workbench\App\Domain\Test;
+namespace Workbench\App\Test;
 
 class RandomNumberGenerator
 {
