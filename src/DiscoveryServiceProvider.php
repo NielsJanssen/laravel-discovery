@@ -28,7 +28,10 @@ class DiscoveryServiceProvider extends ServiceProvider
             __DIR__ . '/../config/discovery.php',
             'discovery',
         );
+    }
 
+    public function boot(): void
+    {
         $config = $this->app->make('config');
 
         $discoveryConfig = DiscoveryConfig::autoload($config->get('discovery.autoload'))
