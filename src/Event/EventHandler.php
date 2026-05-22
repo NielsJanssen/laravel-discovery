@@ -11,5 +11,6 @@ class EventHandler
 {
     public function __construct(
         public ?string $event = null,
+        public ?bool $deferred = false,
     ) {}
 }
