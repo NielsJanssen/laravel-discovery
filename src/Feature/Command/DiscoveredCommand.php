@@ -9,7 +9,7 @@ use Tempest\Reflection\Reflector;
 /**
  * @template TReflector of Reflector
  */
-class CommandDefinition
+class DiscoveredCommand
 {
     public function __construct(
         /** @var TReflector */

@@ -23,9 +23,6 @@ final class CommandDiscovery implements Discovery, Feature
 {
     use IsDiscovery;
 
-    /** @var list<\NielsJanssen\Laravel\Discovery\Feature\Command\CommandDefinition> */
-    public private(set) array $commands = [];
-
     /**
      * @throws \NielsJanssen\Laravel\Discovery\Feature\Command\Exception\InvalidCommandRegistrationException
      */
@@ -36,7 +33,9 @@ final class CommandDiscovery implements Discovery, Feature
         }
 
         if ($class->is(LaravelCommand::class)) {
-            $this->discoveryItems->add($location, [$class, null]);
+            $this->discoveryItems->add($location, new DiscoveredCommand(
+                reflector: $class,
+            ));
             return;
         }
 
@@ -47,33 +46,32 @@ final class CommandDiscovery implements Discovery, Feature
                 throw InvalidCommandRegistrationException::forCommand($class->getName(), 'Command classes must have an __invoke method');
             }
 
-            $this->discoveryItems->add($location, [$class, $definition]);
+            $this->discoveryItems->add($location, new DiscoveredCommand(
+                reflector: $class,
+                definition: $definition,
+            ));
             return;
         }
 
         foreach ($class->getPublicMethods() as $method) {
             if ($definition = $method->getAttribute(ConsoleCommand::class)) {
-                $this->discoveryItems->add($location, [$method, $definition]);
+                $this->discoveryItems->add($location, new DiscoveredCommand(
+                    reflector: $method,
+                    definition: $definition,
+                ));
             }
         }
     }
 
-    public function apply(): void
-    {
-        foreach ($this->discoveryItems as [$reflector, $definition]) {
-            $this->commands[] = new CommandDefinition(
-                reflector: $reflector,
-                definition: $definition,
-            );
-        }
-    }
+    public function apply(): void {}
 
     public static function register(Application $app, DiscoveryConfig $config): void
     {
         $app->afterResolving(Kernel::class, static function (Kernel $kernel, Application $app) {
             $decorator = $app->make(CommandDecorator::class);
 
-            foreach ($app->make(self::class)->commands as $command) {
+            /** @var \NielsJanssen\Laravel\Discovery\Feature\Command\DiscoveredCommand $command */
+            foreach ($app->make(self::class)->discoveryItems as $command) {
                 $kernel->registerCommand(
                     $command->definition
                         ? $decorator->decorateCommand($command)

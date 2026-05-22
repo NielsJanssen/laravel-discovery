@@ -29,11 +29,6 @@ function discoverCommands(string ...$classes): CommandDiscovery
     $discovery = app(CommandDiscovery::class);
     $discovery->setItems(new DiscoveryItems());
 
-    // Reset $commands so workbench commands from the service-provider boot do not
-    // interfere with count-based assertions.
-    $prop = new \ReflectionProperty(CommandDiscovery::class, 'commands');
-    $prop->setValue($discovery, []);
-
     $location = new DiscoveryLocation(
         namespace: 'Tests\\Fixtures\\Command',
         path: dirname(__DIR__, 3) . '/Fixtures/Command',
@@ -50,10 +45,11 @@ function discoverCommands(string ...$classes): CommandDiscovery
 
 it('discovers an invokable class with #[ConsoleCommand]', function () {
     $discovery = discoverCommands(InvokableCommand::class);
+    $commands = iterator_to_array($discovery->getItems());
 
-    expect($discovery->commands)->toHaveCount(1);
+    expect($commands)->toHaveCount(1);
 
-    $command = $discovery->commands[0];
+    $command = $commands[0];
 
     expect($command->reflector)->toBeInstanceOf(ClassReflector::class);
     expect($command->definition->name)->toBe('fixture:invokable');
@@ -61,17 +57,19 @@ it('discovers an invokable class with #[ConsoleCommand]', function () {
 
 it('discovers a method annotated with #[ConsoleCommand]', function () {
     $discovery = discoverCommands(MethodCommand::class);
+    $commands = iterator_to_array($discovery->getItems());
 
-    expect($discovery->commands)->toHaveCount(1);
+    expect($commands)->toHaveCount(1);
 
-    expect($discovery->commands[0]->reflector)->toBeInstanceOf(MethodReflector::class);
+    expect($commands[0]->reflector)->toBeInstanceOf(MethodReflector::class);
 });
 
 it('discovers a class extending LaravelCommand', function () {
     $discovery = discoverCommands(LaravelStyleCommand::class);
+    $commands = iterator_to_array($discovery->getItems());
 
-    expect($discovery->commands)->toHaveCount(1);
-    expect($discovery->commands[0]->definition)->toBeNull();
+    expect($commands)->toHaveCount(1);
+    expect($commands[0]->definition)->toBeNull();
 });
 
 it('throws for a class with #[ConsoleCommand] but no __invoke', function () {
@@ -80,12 +78,13 @@ it('throws for a class with #[ConsoleCommand] but no __invoke', function () {
 
 it('skips abstract classes', function () {
     $discovery = discoverCommands(AbstractCommand::class);
+    $commands = iterator_to_array($discovery->getItems());
 
     $commandClasses = array_map(
         fn($cmd) => $cmd->reflector->getName(),
-        $discovery->commands,
+        $commands,
     );
 
     expect($commandClasses)->not->toContain(AbstractCommand::class);
-    expect($discovery->commands)->toBeEmpty();
+    expect($commands)->toBeEmpty();
 });
