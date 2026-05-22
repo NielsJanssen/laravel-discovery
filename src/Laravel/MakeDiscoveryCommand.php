@@ -9,7 +9,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputOption;
 
 #[AsCommand(name: 'make:discovery', description: 'Make a new discovery')]
-class MakeDiscoveryCommand extends GeneratorCommand
+final class MakeDiscoveryCommand extends GeneratorCommand
 {
     protected $type = 'Discovery';
 
