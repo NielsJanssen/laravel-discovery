@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\Feature\Command;
 
+use Illuminate\Console\Application as Artisan;
 use Illuminate\Console\Command as LaravelCommand;
 use Illuminate\Container\Attributes\Singleton;
-use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Contracts\Foundation\Application;
-use NielsJanssen\Laravel\Discovery\Feature\Command\Exception\InvalidCommandRegistrationException;
-use NielsJanssen\Laravel\Discovery\Feature\Feature;
+use Illuminate\Foundation\Application;
 use Tempest\Discovery\Discovery;
-use Tempest\Discovery\DiscoveryConfig;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
 use Tempest\Discovery\SkipDiscovery;
@@ -19,9 +16,13 @@ use Tempest\Reflection\ClassReflector;
 
 #[Singleton]
 #[SkipDiscovery]
-final class CommandDiscovery implements Discovery, Feature
+final class CommandDiscovery implements Discovery
 {
     use IsDiscovery;
+
+    public function __construct(
+        private readonly Application $app,
+    ) {}
 
     /**
      * @throws \NielsJanssen\Laravel\Discovery\Feature\Command\Exception\InvalidCommandRegistrationException
@@ -39,20 +40,6 @@ final class CommandDiscovery implements Discovery, Feature
             return;
         }
 
-        if ($definition = $class->getAttribute(ConsoleCommand::class)) {
-            try {
-                $class->getMethod('__invoke');
-            } catch (\ReflectionException) {
-                throw InvalidCommandRegistrationException::forCommand($class->getName(), 'Command classes must have an __invoke method');
-            }
-
-            $this->discoveryItems->add($location, new DiscoveredCommand(
-                reflector: $class,
-                definition: $definition,
-            ));
-            return;
-        }
-
         foreach ($class->getPublicMethods() as $method) {
             if ($definition = $method->getAttribute(ConsoleCommand::class)) {
                 $this->discoveryItems->add($location, new DiscoveredCommand(
@@ -63,19 +50,18 @@ final class CommandDiscovery implements Discovery, Feature
         }
     }
 
-    public function apply(): void {}
-
-    public static function register(Application $app, DiscoveryConfig $config): void
+    public function apply(): void
     {
-        $app->afterResolving(Kernel::class, static function (Kernel $kernel, Application $app) {
-            $decorator = $app->make(CommandDecorator::class);
+        if (!$this->app->runningInConsole()) {
+            return;
+        }
 
-            /** @var \NielsJanssen\Laravel\Discovery\Feature\Command\DiscoveredCommand $command */
-            foreach ($app->make(self::class)->discoveryItems as $command) {
-                $kernel->registerCommand(
+        Artisan::starting(function (Artisan $artisan) {
+            foreach ($this->discoveryItems as $command) {
+                $artisan->resolveCommands(
                     $command->definition
-                        ? $decorator->decorateCommand($command)
-                        : $app->make($command->reflector->getName()),
+                        ? new Command($this->app, $command)
+                        : $this->app->make($command->reflector->getName()),
                 );
             }
         });

@@ -8,11 +8,6 @@ use Illuminate\Console\OutputStyle;
 use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;
 use Workbench\App\Test\RandomNumberGenerator;
 
-#[ConsoleCommand(
-    name: 'app:invokable',
-    description: 'Invokable command',
-    aliases: ['app:invokable-alias'],
-)]
 readonly class InvokableCommand
 {
     public function __construct(
@@ -20,6 +15,11 @@ readonly class InvokableCommand
         private OutputStyle $output,
     ) {}
 
+    #[ConsoleCommand(
+        name: 'app:invokable',
+        description: 'Invokable command',
+        aliases: ['app:invokable-alias'],
+    )]
     public function __invoke(): int
     {
         $this->output->writeln(sprintf(
