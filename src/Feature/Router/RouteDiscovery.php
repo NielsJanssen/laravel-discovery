@@ -21,6 +21,10 @@ class RouteDiscovery implements Discovery, Feature
 {
     use IsDiscovery;
 
+    public function __construct(
+        private readonly Router $route,
+    ) {}
+
     public function discover(DiscoveryLocation $location, ClassReflector $class): void
     {
         $classDecorators = $class->getAttributes(RouteDecorator::class);
@@ -37,26 +41,23 @@ class RouteDiscovery implements Discovery, Feature
         }
     }
 
-    public function apply(): void {}
-
-    public static function register(Application $app, DiscoveryConfig $config): void
+    public function apply(): void
     {
-        $app->afterResolving(Router::class, function (Router $router) use ($app) {
-            if ($app->routesAreCached()) {
-                return;
-            }
+        if (app()->routesAreCached()) {
+            return;
+        }
 
-            /** @var \NielsJanssen\Laravel\Discovery\Feature\Router\DiscoveredRoute $discoveredRoute */
-            foreach ($app->make(self::class)->discoveryItems as $discoveredRoute) {
-                $router->addRoute(
-                    methods: [$discoveredRoute->method->value],
-                    uri: $discoveredRoute->uri,
-                    action: $discoveredRoute->action,
-                )
-                    ->middleware($discoveredRoute->middleware)
-                    ->withoutMiddleware($discoveredRoute->withoutMiddleware)
-                    ->domain($discoveredRoute->domain);
-            }
-        });
+        foreach ($this->discoveryItems as $discoveredRoute) {
+            $this->route->addRoute(
+                methods: [$discoveredRoute->method->value],
+                uri: $discoveredRoute->uri,
+                action: $discoveredRoute->action,
+            )
+                ->middleware($discoveredRoute->middleware)
+                ->withoutMiddleware($discoveredRoute->withoutMiddleware)
+                ->domain($discoveredRoute->domain);
+        }
     }
+
+    public static function register(Application $app, DiscoveryConfig $config): void {}
 }
