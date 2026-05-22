@@ -3,17 +3,15 @@ composer.lock
 vendor
 node_modules
 
-npm-debug.log
-yarn-error.log
-
 auth.json
 *.key
 *.pem
+*.log
 
 .phpunit.*
 
 workbench/bootstrap/cache/*
-workbench/storage/logs
+storage/logs
 
 .env
 .env.*

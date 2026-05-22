@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Workbench\App\Domain\Test\Command;
+namespace Workbench\App\Command;
 
 use Illuminate\Console\OutputStyle;
 use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;
-use Workbench\App\Domain\Test\RandomNumberGenerator;
+use Workbench\App\Test\RandomNumberGenerator;
 
 #[ConsoleCommand(
     name: 'app:invokable',
@@ -17,11 +17,12 @@ readonly class InvokableCommand
 {
     public function __construct(
         private RandomNumberGenerator $rng,
+        private OutputStyle $output,
     ) {}
 
-    public function __invoke(OutputStyle $output): int
+    public function __invoke(): int
     {
-        $output->writeln(sprintf(
+        $this->output->writeln(sprintf(
             'Hello from invokable %d!',
             $this->rng->generate(),
         ));

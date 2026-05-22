@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Workbench\App\Domain\Test\Command;
+namespace Workbench\App\Command;
 
 use Illuminate\Console\OutputStyle;
 use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;

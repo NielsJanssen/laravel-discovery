@@ -2,13 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Workbench\App\Domain\Test\Command;
+namespace Workbench\App\Command;
 
 use Illuminate\Console\OutputStyle;
 use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleCommand;
 use NielsJanssen\Laravel\Discovery\Feature\Command\ConsoleOption;
-use NielsJanssen\Laravel\Discovery\Feature\Command\Middleware\Transaction;
-use Workbench\App\Domain\Test\RandomNumberGenerator;
+use Workbench\App\Test\RandomNumberGenerator;
 
 readonly class WorkCommand
 {
@@ -39,15 +38,13 @@ readonly class WorkCommand
         return 0;
     }
 
-    #[ConsoleCommand(name: 'app:more-work', middleware: [Transaction::class])]
-    public function moreWork(string ...$args): int
+    #[ConsoleCommand(name: 'app:more-work')]
+    public function moreWork(): int
     {
         $this->output->writeln(sprintf(
             'Working harder %d!',
             $this->rng->generate(),
         ));
-
-        dump($args);
 
         return 0;
     }
