@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\Laravel;
 
+use Illuminate\Config\Repository;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Foundation\Application;
 use NielsJanssen\Laravel\Discovery\Command\ConsoleCommand;
@@ -12,7 +13,6 @@ use NielsJanssen\Laravel\Discovery\Event\EventHandler;
 use Tempest\Discovery\ClearDiscoveryCache;
 use Tempest\Discovery\DiscoveryCache;
 use Tempest\Discovery\DiscoveryCacheStrategy;
-use Tempest\Discovery\DiscoveryConfig;
 use Tempest\Discovery\GenerateDiscoveryCache;
 
 use function Laravel\Prompts\warning;
@@ -20,19 +20,24 @@ use function Laravel\Prompts\warning;
 final readonly class DiscoveryCacheCommand
 {
     public function __construct(
+        private Application $app,
         private DiscoveryCache $cache,
     ) {}
 
     #[ConsoleCommand('discovery:cache', middleware: [Benchmark::class])]
-    public function generate(Application $app, GenerateDiscoveryCache $generate, DiscoveryConfig $config): void
+    public function generate(Repository $config): void
     {
-        $generate($app, $config, $this->cache);
+        $this->app->call(GenerateDiscoveryCache::class, [
+            'discoveryClasses' => $config->get('discovery.discovery_classes', []),
+        ]);
     }
 
     #[ConsoleCommand('discovery:clear', middleware: [Benchmark::class])]
-    public function clear(ClearDiscoveryCache $clear): void
+    public function clear(): void
     {
-        $clear($this->cache);
+        $this->app->call(ClearDiscoveryCache::class, [
+            'cache' => $this->cache,
+        ]);
     }
 
     #[EventHandler(deferred: true)]
