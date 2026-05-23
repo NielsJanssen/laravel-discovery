@@ -9,7 +9,7 @@ use Tempest\Reflection\MethodReflector;
 class DiscoveredRoute
 {
     public function __construct(
-        public Method $method,
+        public array $methods,
         public string $uri,
         public string $action,
         public string|\BackedEnum|null $domain = null,
@@ -21,14 +21,14 @@ class DiscoveredRoute
     /**
      * @param list<\NielsJanssen\Laravel\Discovery\Router\RouteDecorator> $decorators
      */
-    public static function from(Route $route, array $decorators, MethodReflector $method): self
+    public static function from(Routable $route, array $decorators, MethodReflector $method): self
     {
         foreach ($decorators as $decorator) {
             $route = $decorator->decorate($route);
         }
 
         return new self(
-            $route->method,
+            $route->methods,
             $route->uri,
             $method->getDeclaringClass()->getName() . '@' . $method->getName(),
             $route->domain,

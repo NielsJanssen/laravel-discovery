@@ -12,7 +12,7 @@ class Middleware implements RouteDecorator
         public array $without = [],
     ) {}
 
-    public function decorate(Route $route): Route
+    public function decorate(Routable $route): Routable
     {
         $route->middleware        = array_merge($this->middleware, $route->middleware);
         $route->withoutMiddleware = array_merge($route->withoutMiddleware, $this->without);

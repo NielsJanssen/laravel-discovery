@@ -25,6 +25,7 @@ use Tests\Fixtures\Router\RespondingController;
 use Tests\Fixtures\Router\RouteDomain;
 use Tests\Fixtures\Router\RouteLog;
 use Tests\Fixtures\Router\RouteName;
+use Tests\Fixtures\Router\MultiMethodController;
 use Tests\Fixtures\Router\SimpleGetController;
 use Tests\Fixtures\Router\TrackingMiddleware;
 
@@ -54,7 +55,10 @@ function registerRoutes(string ...$classes): Router
 
     foreach ($discovery->getItems() as $discoveredRoute) {
         $router->addRoute(
-            methods: [$discoveredRoute->method->value],
+            methods: array_map(
+                static fn(Method $method) => $method->value,
+                $discoveredRoute->methods,
+            ),
             uri: $discoveredRoute->uri,
             action: $discoveredRoute->action,
         )
@@ -71,7 +75,7 @@ describe('discovery', function () {
         $routes = [...discoverRoutes(SimpleGetController::class)->getItems()];
 
         expect($routes)->toHaveCount(1);
-        expect($routes[0]->method)->toBe(Method::Get);
+        expect($routes[0]->methods)->toBe([Method::Get]);
         expect($routes[0]->uri)->toBe('/simple');
         expect($routes[0]->action)->toBe(SimpleGetController::class . '@index');
     });
@@ -79,16 +83,16 @@ describe('discovery', function () {
     it('discovers one route per HTTP verb', function () {
         $routes = [...discoverRoutes(AllMethodsController::class)->getItems()];
 
-        $methods = array_map(fn($r) => $r->method, $routes);
+        $methods = array_map(fn($r) => $r->methods, $routes);
 
         expect($routes)->toHaveCount(7);
-        expect($methods)->toContain(Method::Get);
-        expect($methods)->toContain(Method::Post);
-        expect($methods)->toContain(Method::Put);
-        expect($methods)->toContain(Method::Patch);
-        expect($methods)->toContain(Method::Delete);
-        expect($methods)->toContain(Method::Head);
-        expect($methods)->toContain(Method::Options);
+        expect($methods)->toContain([Method::Get]);
+        expect($methods)->toContain([Method::Post]);
+        expect($methods)->toContain([Method::Put]);
+        expect($methods)->toContain([Method::Patch]);
+        expect($methods)->toContain([Method::Delete]);
+        expect($methods)->toContain([Method::Head]);
+        expect($methods)->toContain([Method::Options]);
     });
 
     it('discovers multiple routes from a repeatable attribute on one method', function () {
@@ -99,6 +103,15 @@ describe('discovery', function () {
         expect($routes)->toHaveCount(2);
         expect($uris)->toContain('/v1/items');
         expect($uris)->toContain('/v2/items');
+    });
+
+    it('discovers a Route attribute with multiple methods as one route', function () {
+        $routes = [...discoverRoutes(MultiMethodController::class)->getItems()];
+
+        expect($routes)->toHaveCount(1);
+        expect($routes[0]->methods)->toBe([Method::Get, Method::Post]);
+        expect($routes[0]->uri)->toBe('/multi');
+        expect($routes[0]->action)->toBe(MultiMethodController::class . '@index');
     });
 
     it('skips classes with no route attributes', function () {
@@ -249,6 +262,19 @@ describe('registration', function () {
         $this->get('/tracked');
 
         expect(RouteLog::$calls)->toContain(TrackingMiddleware::class);
+    });
+
+    it('registers a Route attribute with multiple methods on all specified verbs', function () {
+        $router = registerRoutes(MultiMethodController::class);
+
+        $route = $router->getRoutes()->getByAction(MultiMethodController::class . '@index');
+
+        expect($route)->not->toBeNull();
+        expect($route->methods())->toContain('GET');
+        expect($route->methods())->toContain('POST');
+
+        $this->get('/multi')->assertOk();
+        $this->post('/multi')->assertOk();
     });
 
     it('registers withoutMiddleware on the route', function () {

@@ -7,9 +7,9 @@ namespace NielsJanssen\Laravel\Discovery\Router;
 use Attribute;
 
 #[Attribute(Attribute::IS_REPEATABLE | Attribute::TARGET_METHOD)]
-final class Head implements Route
+final class Head implements Routable
 {
-    public Method $method = Method::Head;
+    public array $methods = [Method::Head];
 
     /**
      * @param class-string<class-string|string>[] $middleware Middleware specific to this route.
