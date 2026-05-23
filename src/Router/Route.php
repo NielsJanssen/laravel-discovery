@@ -8,9 +8,11 @@ interface Route
 {
     public Method $method { get; set; }
 
-    public ?string $domain { get; set; }
+    public string|\BackedEnum|null $domain { get; set; }
 
     public string $uri { get; set; }
+
+    public string|\BackedEnum|null $name { get; set; }
 
     /** @var class-string<class-string|string>[]  */
     public array $middleware { get; set; }

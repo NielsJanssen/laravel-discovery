@@ -19,6 +19,7 @@ final class Head implements Route
         public string $uri,
         public array  $middleware = [],
         public array  $withoutMiddleware = [],
-        public ?string $domain = null,
+        public string|\BackedEnum|null $domain = null,
+        public string|\BackedEnum|null $name = null,
     ) {}
 }
