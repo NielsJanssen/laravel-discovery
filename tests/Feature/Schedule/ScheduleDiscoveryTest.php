@@ -24,7 +24,7 @@ function discoverSchedule(string ...$classes): Schedule
 
     $location = new DiscoveryLocation(
         namespace: 'Tests\\Fixtures\\Schedule',
-        path: dirname(__DIR__, 3) . '/Fixtures/Schedule',
+        path: dirname(__DIR__, 2) . '/Fixtures/Schedule',
     );
 
     foreach ($classes as $class) {

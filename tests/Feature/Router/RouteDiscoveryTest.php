@@ -30,7 +30,7 @@ function discoverRoutes(string ...$classes): RouteDiscovery
 
     $location = new DiscoveryLocation(
         namespace: 'Tests\\Fixtures\\Router',
-        path: dirname(__DIR__, 3) . '/Fixtures/Router',
+        path: dirname(__DIR__, 2) . '/Fixtures/Router',
     );
 
     foreach ($classes as $class) {

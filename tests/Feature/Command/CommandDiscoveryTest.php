@@ -28,7 +28,7 @@ function discoverCommands(string ...$classes): CommandDiscovery
 
     $location = new DiscoveryLocation(
         namespace: 'Tests\\Fixtures\\Command',
-        path: dirname(__DIR__, 3) . '/Fixtures/Command',
+        path: dirname(__DIR__, 2) . '/Fixtures/Command',
     );
 
     foreach ($classes as $class) {
