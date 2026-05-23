@@ -45,6 +45,10 @@ class DiscoveryServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->publishes([
+            __DIR__ . '/../config/discovery.php' => config_path('discovery.php'),
+        ], 'discovery-config');
+
         $discoveries = $this->app->call(BootDiscovery::class);
 
         $this->app->make('config')->set(

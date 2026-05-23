@@ -7,9 +7,9 @@ return [
 
     'skip_classes' => [],
 
-    'skip_paths' => [
-        app_path('Commands'),
-        app_path('Listeners'),
-        app_path('Subscribers'),
-    ],
+    'skip_paths' => [],
+
+    'cache_path' => 'framework/cache/discovery',
+
+    'cache_environments' => ['production'],
 ];
