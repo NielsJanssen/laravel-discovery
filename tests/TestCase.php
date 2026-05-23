@@ -6,6 +6,8 @@ namespace Tests;
 
 use NielsJanssen\Laravel\Discovery\DiscoveryServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
+use Tempest\Discovery\DiscoveryConfig;
+use Tempest\Discovery\DiscoveryLocation;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -18,7 +20,11 @@ abstract class TestCase extends BaseTestCase
 
     protected function defineEnvironment($app): void
     {
-        $app['config']->set('discovery.autoload', dirname(__DIR__) . '/workbench');
-        $app['config']->set('discovery.skip_paths', []);
+        $app['config']->set('discovery.autoload', dirname(__DIR__));
+
+        $app[DiscoveryConfig::class]->locations[] = new DiscoveryLocation(
+            namespace: 'Workbench\\App',
+            path: dirname(__DIR__) . '/workbench/app',
+        );
     }
 }

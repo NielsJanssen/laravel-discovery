@@ -36,7 +36,10 @@ function discoverSchedule(string ...$classes): Schedule
     return app(Schedule::class);
 }
 
-beforeEach(fn() => app()->forgetInstance(Schedule::class));
+beforeEach(function () {
+    app()->forgetInstance(Schedule::class);
+    app()->forgetInstance(ScheduleDiscovery::class);
+});
 
 it('registers a task with an every string', function () {
     $schedule = discoverSchedule(BasicScheduledTask::class);
