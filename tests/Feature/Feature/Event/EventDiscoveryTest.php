@@ -23,7 +23,7 @@ use Tests\Fixtures\Event\UnionEventListener;
 function discoverEvents(string ...$classes): Dispatcher
 {
     $dispatcher = app(Dispatcher::class);
-    $discovery  = new EventDiscovery($dispatcher);
+    $discovery  = new EventDiscovery(app(), $dispatcher);
     $discovery->setItems(new DiscoveryItems());
 
     $location = new DiscoveryLocation(
