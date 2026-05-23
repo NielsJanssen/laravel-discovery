@@ -81,15 +81,15 @@ jobs:
           makeLatest: ${{ !inputs.prerelease }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Notify Packagist
-        run: |
-          status=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -d '{"repository":{"url":"https://github.com/NielsJanssen/laravel-discovery"}}' \
-            "https://packagist.org/api/update-package?username=${{ secrets.PACKAGIST_USERNAME }}&apiToken=${{ secrets.PACKAGIST_TOKEN }}")
-          if [ "$status" != "202" ]; then
-            echo "::error::Packagist update-package returned HTTP $status"
-            exit 1
-          fi
-          echo "Packagist notified (HTTP 202)"
+#      - name: Notify Packagist
+#        run: |
+#          status=$(curl -s -o /dev/null -w "%{http_code}" \
+#            -X POST \
+#            -H "Content-Type: application/json" \
+#            -d '{"repository":{"url":"https://github.com/NielsJanssen/laravel-discovery"}}' \
+#            "https://packagist.org/api/update-package?username=${{ secrets.PACKAGIST_USERNAME }}&apiToken=${{ secrets.PACKAGIST_TOKEN }}")
+#          if [ "$status" != "202" ]; then
+#            echo "::error::Packagist update-package returned HTTP $status"
+#            exit 1
+#          fi
+#          echo "Packagist notified (HTTP 202)"
