@@ -7,7 +7,6 @@ namespace NielsJanssen\Laravel\Discovery\Schedule;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Container\Attributes\Singleton;
 use Illuminate\Foundation\Application;
-use InvalidArgumentException;
 use ReflectionMethod;
 use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
@@ -31,58 +30,49 @@ final class ScheduleDiscovery implements Discovery
         }
 
         foreach ($class->getPublicMethods() as $method) {
-            if (empty($method->getAttributes(Scheduled::class))) {
+            $attrs = $method->getAttributes(Scheduled::class);
+
+            if (empty($attrs)) {
                 continue;
             }
 
-            $this->discoveryItems->add($location, new DiscoveredSchedule(
-                className: $class->getName(),
-                methodName: $method->getName(),
-            ));
+            $multiple    = count($attrs) > 1;
+            $defaultName = $class->getName() . '@' . $method->getName();
+
+            foreach ($attrs as $index => $scheduled) {
+                $this->discoveryItems->add($location, new DiscoveredSchedule(
+                    className: $class->getName(),
+                    methodName: $method->getName(),
+                    name: $scheduled->name ?? ($multiple ? $defaultName . '#' . $index : $defaultName),
+                    schedule: $scheduled->schedule instanceof \Closure ? null : $scheduled->schedule,
+                    attributeIndex: $index,
+                ));
+            }
         }
     }
 
     public function apply(): void
     {
+        if (! $this->app->runningInConsole()) {
+            return;
+        }
+
         foreach ($this->discoveryItems as $item) {
-            $reflection = new ReflectionMethod($item->className, $item->methodName);
-            $attrs    = $reflection->getAttributes(Scheduled::class);
-            $multiple = count($attrs) > 1;
+            $event = $this->schedule->call(function () use ($item) {
+                $this->app->call([$this->app->make($item->className), $item->methodName]);
+            });
 
-            foreach ($attrs as $index => $attr) {
-                $scheduled = $attr->newInstance();
+            $event->name($item->name);
 
-                $event = $this->schedule->call(function () use ($item) {
-                    $this->app->call([$this->app->make($item->className), $item->methodName]);
-                });
+            if ($item->schedule === null) {
+                $scheduled = (new ReflectionMethod($item->className, $item->methodName))
+                    ->getAttributes(Scheduled::class)[$item->attributeIndex]
+                    ->newInstance();
 
-                $defaultName = $item->className . '@' . $item->methodName;
-                $event->name($scheduled->name ?? ($multiple ? $defaultName . '#' . $index : $defaultName));
-
-                if ($scheduled->schedule instanceof \Closure) {
-                    ($scheduled->schedule)($event);
-                } else {
-                    $event->cron($this->toCron($scheduled->schedule));
-                }
+                ($scheduled->schedule)($event);
+            } else {
+                $event->cron($item->toCron($item->schedule));
             }
         }
-    }
-
-    private function toCron(string|Frequency $every): string
-    {
-        $value = $every instanceof Frequency ? $every->value : $every;
-
-        return match (true) {
-            $value === 'minute' => '* * * * *',
-            (bool) preg_match('/^(\d+) minutes?$/', $value, $m) => "*/{$m[1]} * * * *",
-            $value === 'hour' || $value === 'hourly' => '0 * * * *',
-            (bool) preg_match('/^(\d+) hours?$/', $value, $m) => "0 */{$m[1]} * * *",
-            $value === 'day' || $value === 'daily' => '0 0 * * *',
-            $value === 'week' || $value === 'weekly' => '0 0 * * 0',
-            $value === 'month' || $value === 'monthly' => '0 0 1 * *',
-            $value === 'quarter' || $value === 'quarterly' => '0 0 1 */3 *',
-            $value === 'year' || $value === 'yearly' => '0 0 1 1 *',
-            default => throw new InvalidArgumentException("Unrecognised schedule frequency: \"{$value}\"."),
-        };
     }
 }
