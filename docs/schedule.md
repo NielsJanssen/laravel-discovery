@@ -210,15 +210,3 @@ class Cleanup
     }
 }
 ```
-
-A complete maintenance class with three scheduled tasks at mixed frequencies and constructor-injected dependencies, with
-no registration code anywhere.
-
-## Reference
-
-| File                                  | Purpose                                       |
-|---------------------------------------|-----------------------------------------------|
-| `src/Schedule/Scheduled.php`          | The `#[Scheduled]` attribute.                 |
-| `src/Schedule/Frequency.php`          | The `Frequency` enum.                         |
-| `src/Schedule/ScheduleDiscovery.php`  | The discovery class.                          |
-| `src/Schedule/DiscoveredSchedule.php` | The cacheable DTO storing class/method pairs. |

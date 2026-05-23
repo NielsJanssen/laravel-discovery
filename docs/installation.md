@@ -19,26 +19,10 @@ in the available commands.
 
 ## Publish the configuration (optional)
 
-Most projects don't need to touch the config. If you do, publish it:
+Most projects don't need to touch the config. If you do, you can publish it like so:
 
 ```bash
 php artisan vendor:publish --tag=discovery-config
-```
-
-The published config looks like this:
-
-```php
-return [
-    'autoload' => base_path(),
-
-    'skip_classes' => [],
-
-    'skip_paths' => [],
-
-    'cache_path' => 'framework/cache/discovery',
-
-    'cache_environments' => ['production'],
-];
 ```
 
 ### Configuration keys
@@ -54,28 +38,26 @@ return [
 ## How discovery finds your code
 
 When the service provider boots, it calls `DiscoveryConfig::autoload(base_path())`. That reads your project's
-`composer.json` and scans:
-
-1. The PSR-4 `autoload` namespaces declared in the root `composer.json` (your `App\` namespace, plus anything else
-   you've added).
-2. Every Composer package in `vendor/composer/installed.json` that requires a `tempest/*` package. This is how the
-   package finds its own discovery classes.
-
-A standard Laravel application with `App\` registered in `composer.json` works without further configuration. Additional
-namespaces (`Domain\`, `Modules\Acme\`, etc.) declared alongside it are picked up automatically.
+`composer.json` and scans all PSR-4 namespaces registered with composer, so your own code and any third-party packages
+you've installed. It then looks through all classes in those namespaces and runs discovery on them. Each discovery
+step will look for specific attributes or interfaces and register things accordingly (commands, event listeners, routes,
+etc.).
 
 ## Caching
 
-The package ships with a discovery cache backed by Symfony's `PhpFilesAdapter`, so the filesystem scan does not run on
-every request in production.
+Discovery can be a heavy process if you have a large codebase, so it is recommended to cache the results in production.
+With caching enabled Discovery doesn't perform any heavy operations at runtime, performing similar to a standard Service
+Provider.
 
 Generate the cache during deployment:
 
 ```bash
 php artisan discovery:cache
-```
 
-`php artisan optimize` runs this too; the package registers itself with Laravel's optimizer.
+# or
+
+php artisan optimize
+```
 
 Clear the cache (after deploying new attribute-tagged code locally, for example):
 
@@ -83,7 +65,7 @@ Clear the cache (after deploying new attribute-tagged code locally, for example)
 php artisan discovery:clear
 ```
 
-By default the cache is only active in `production`. In other environments the package re-scans your code on every
+By default, the cache is only active in `production`. In other environments the package re-scans your code on every
 request, so attribute changes are picked up immediately. To change that, set `discovery.cache_environments` to the list
 of environments where the cache should be active:
 
