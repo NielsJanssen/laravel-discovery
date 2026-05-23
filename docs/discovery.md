@@ -29,26 +29,6 @@ interface Discovery
 Discovered items are typically stashed in `$this->discoveryItems` (provided by the `IsDiscovery` trait) so they survive
 between `discover()` and `apply()`, and can be serialized to a cache.
 
-## How this package wires it into Laravel
-
-The flow lives in `DiscoveryServiceProvider`:
-
-1. **`register()`** binds two singletons:
-    - `DiscoveryConfig`: built from `config('discovery.autoload')` plus skip lists.
-    - `DiscoveryCache`: backed by Symfony's `PhpFilesAdapter`, writing to `storage/framework/cache/discovery`. The
-      strategy is `FULL` in cache-enabled environments and `NONE` everywhere else.
-    - Also registers `discovery:cache` / `discovery:clear` with `optimizes()` so they hook into `php artisan optimize`.
-2. **`boot()`** calls `BootDiscovery::class` through the container. Tempest does the actual scanning:
-    - Reads `composer.json` files (project + vendor packages requiring `tempest/*`).
-    - Walks every PSR-4 namespace, instantiating a `ClassReflector` for each class.
-    - Hands each class to every registered `Discovery` implementation's `discover()` method.
-    - Finally calls each discovery's `apply()`.
-3. The list of discovery class names is stored in `config('discovery.discovery_classes')` so the cache command can
-   rebuild them on demand.
-
-Conveniently, `BootDiscovery` first runs `DiscoveryDiscovery`, a discovery whose only job is to find all `Discovery`
-implementations. Drop a class implementing `Discovery` anywhere in your discoverable namespaces and it gets picked up.
-
 ## What gets scanned
 
 `DiscoveryConfig::autoload(base_path())` (the default) walks:
@@ -193,8 +173,7 @@ A few things worth knowing:
 - **Constructor injection works.** The discovery class is resolved through Laravel's container, so type-hinted
   dependencies (the `Bus` above) are wired automatically.
 - **`#[Singleton]`** keeps the discovery in the container as a single instance. Useful when you want to read or mutate
-  state outside discovery (the package's own `CommandDiscovery` and `ScheduleDiscovery` do this).
-- **`#[Scoped]`** is an alternative to `#[Singleton]` when you want per-request lifetimes. `RouteDiscovery` uses it.
+  state outside discovery.
 - **Be careful what you put in `discoveryItems`.** The contents need to be serializable for the cache to work. Stick to
   scalars, arrays, and your own simple DTOs. If you need reflection or closures, store the class/method name and rebuild
   them in `apply()`. See `DiscoveredSchedule` in this package for a working example.
@@ -237,13 +216,3 @@ Discovery is fantastic for class-level conventions. It's a worse fit when:
   boot.
 - You need a specific load order. Discovery doesn't guarantee one; write a service provider with explicit `register()`
   calls if order matters.
-
-## Reference
-
-| File                                    | Purpose                                                      |
-|-----------------------------------------|--------------------------------------------------------------|
-| `src/DiscoveryServiceProvider.php`      | Wires Tempest into Laravel and registers the optimize hooks. |
-| `src/Laravel/DiscoveryCacheCommand.php` | The `discovery:cache` and `discovery:clear` commands.        |
-| `src/Laravel/MakeDiscoveryCommand.php`  | The `make:discovery` generator.                              |
-| `stubs/Discovery.stub`                  | The stub used by `make:discovery`.                           |
-| `config/discovery.php`                  | Package configuration.                                       |

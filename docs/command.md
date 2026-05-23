@@ -2,10 +2,10 @@
 
 Discoverable Artisan commands come in two forms:
 
-1. **Attribute-driven**. Annotate a method with `#[ConsoleCommand]`. No base class required; method parameters become
-   Artisan arguments and options.
+1. **Attribute-driven**. Annotate any public method with `#[ConsoleCommand]`. No base class required, method parameters
+   become Artisan arguments and options.
 2. **Classic**. A class extending `Illuminate\Console\Command`. Drop the file into your `app/` namespace and discovery
-   registers it. No `Kernel::class` listing is needed.
+   registers it. No `console.php` listing needed.
 
 ## Attribute-driven commands
 
@@ -59,10 +59,10 @@ use NielsJanssen\Laravel\Discovery\Command\ConsoleOption;
 
 #[ConsoleCommand('users:import', 'Import users from a CSV')]
 public function import(
-    #[ConsoleArgument(description: 'Path to the source file')] string $path,
-    #[ConsoleArgument] int $batch = 100,
+    string $path,
+    #[ConsoleArgument(description: 'Batch number')] int $batch = 100,
     #[ConsoleOption(shortcut: 'd')] bool $dryRun = false,
-    #[ConsoleOption(name: 'tag', shortcut: 't')] ?string $tag = null,
+    #[ConsoleOption(name: 'tag', shortcut: 't')] array $tag = [],
 ): void {
     // ...
 }
@@ -98,11 +98,11 @@ Rules of thumb:
 #[ConsoleOption(name: 'force', shortcut: 'f', description: 'Skip safety checks')] bool $force = false
 ```
 
-| Parameter     | Default | Purpose                                     |
-|---------------|---------|---------------------------------------------|
-| `name`        | `null`  | Override the option name.                   |
-| `shortcut`    | `null`  | Short flag (no dashes). `'f'` becomes `-f`. |
-| `description` | `null`  | Help text.                                  |
+| Parameter     | Default | Purpose                                                                 |
+|---------------|---------|-------------------------------------------------------------------------|
+| `name`        | `null`  | Override the option name (defaults to the parameter name, kebab-cased). |
+| `shortcut`    | `null`  | Short flag (no dashes). `'f'` becomes `-f`.                             |
+| `description` | `null`  | Help text shown for `--help`.                                           |
 
 ## Injecting dependencies and IO
 
@@ -110,18 +110,25 @@ Method parameters that don't map to scalar input are still resolved by Laravel's
 freely:
 
 ```php
+use Illuminate\Console\OutputStyle;
+use Symfony\Component\Console\Input\Input;
+
+use function Laravel\Prompts\note;
+
 #[ConsoleCommand('reports:rebuild', 'Rebuild reports')]
 public function rebuild(
-    string $month,                          // CLI arg
-    ReportBuilder $builder,                 // resolved from the container
-    Symfony\Component\Console\Style\SymfonyStyle $io = null, // pass-through possible
+    string $month,          // CLI arg
+    OutputStyle $output,    // Optionally available for writing to the output
+    Input $input,           // Optionally available for reading input
+    ReportBuilder $builder, // resolved from the container
 ): void {
     // ...
+    note('Report generated!');
 }
 ```
 
-The wrapper also injects `input` and `output` as parameters if you ask for them by name, which is useful for
-fine-grained Symfony input handling.
+Both `input` and `output` can be added as parameters and will be populated with the standard command IO. Or you can use
+Laravel Prompts.
 
 ## Middleware
 
@@ -200,6 +207,8 @@ use Symfony\Component\Console\Input\InputOption;
 
 class Audit implements CommandMiddleware, ProvidesInputOptions
 {
+    public function __construct(private LoggerInterface $logger) {}
+
     public function getOptions(): array
     {
         return [
@@ -210,7 +219,7 @@ class Audit implements CommandMiddleware, ProvidesInputOptions
     public function __invoke($command, callable $next): mixed
     {
         $actor = $command->option('actor') ?? 'system';
-        logger()->info('command executed', ['by' => $actor]);
+        $this->logger->info('command executed', ['by' => $actor]);
 
         return $next();
     }
@@ -260,17 +269,3 @@ class GreetCommand extends Command
 
 This happens when stacked middleware add the same option (for example, two middlewares both adding `--force`). Rename
 one, or share a single middleware.
-
-## Reference
-
-| File                                     | Purpose                                             |
-|------------------------------------------|-----------------------------------------------------|
-| `src/Command/ConsoleCommand.php`         | The `#[ConsoleCommand]` attribute.                  |
-| `src/Command/ConsoleArgument.php`        | The `#[ConsoleArgument]` attribute.                 |
-| `src/Command/ConsoleOption.php`          | The `#[ConsoleOption]` attribute.                   |
-| `src/Command/CommandMiddleware.php`      | Middleware interface.                               |
-| `src/Command/ProvidesInputOptions.php`   | Optional middleware interface for adding CLI input. |
-| `src/Command/Middleware/Benchmark.php`   | Wall-time timing.                                   |
-| `src/Command/Middleware/Transaction.php` | DB transaction wrapper.                             |
-| `src/Command/Middleware/Caution.php`     | Production-confirm + `--force`.                     |
-| `src/Command/CommandDiscovery.php`       | The discovery class itself.                         |

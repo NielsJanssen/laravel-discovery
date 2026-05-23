@@ -16,8 +16,6 @@ class HealthController
 }
 ```
 
-After booting, a `GET /health` request returns the JSON response. No `routes/*.php` changes are needed.
-
 ## HTTP method attributes
 
 One attribute per HTTP verb, all in the `NielsJanssen\Laravel\Discovery\Router` namespace:
@@ -141,14 +139,11 @@ class UserController
 }
 ```
 
-Takes a second argument too:
+You can also exclude middleware from specific methods with the `without` parameter:
 
 ```php
 #[Middleware(middleware: ['auth'], without: ['throttle'])]
 ```
-
-`without` translates to Laravel's `withoutMiddleware()` builder, useful for stripping global middleware from a specific
-group.
 
 ### `#[Domain]`
 
@@ -217,8 +212,8 @@ Two routes are registered, both pointing at the same method. To register multipl
 
 ## Route caching
 
-Laravel's `php artisan route:cache` is supported. When routes are cached, `RouteDiscovery::apply()` checks
-`$app->routesAreCached()` and skips re-registration, so the deploy story matches any other Laravel application:
+Laravel's `php artisan route:cache` is supported. When routes are cached, route discovery skips re-registration, so any
+impact on performance is removed.
 
 ```bash
 php artisan route:cache
@@ -242,20 +237,3 @@ class Ping
 ```
 
 Pair `__invoke` with the method attribute, and you get an invokable controller without any boilerplate.
-
-## What `route:list` shows
-
-Discovered routes show up in `php artisan route:list` like any other route. Each is registered with action
-`Class@method`, so the standard Laravel tooling (`route:list`, route binding, named middleware groups, and the rest)
-works as expected.
-
-## Reference
-
-| File                                                    | Purpose                                              |
-|---------------------------------------------------------|------------------------------------------------------|
-| `src/Router/Route.php`                                  | Interface implemented by all HTTP method attributes. |
-| `src/Router/RouteDecorator.php`                         | Interface for `Prefix`, `Middleware`, `Domain`.      |
-| `src/Router/Method.php`                                 | HTTP verb enum.                                      |
-| `src/Router/Get.php`, `Post.php`, ...                   | One per HTTP verb.                                   |
-| `src/Router/Prefix.php`, `Middleware.php`, `Domain.php` | Class/method decorators.                             |
-| `src/Router/RouteDiscovery.php`                         | The discovery class.                                 |

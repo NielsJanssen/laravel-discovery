@@ -81,36 +81,32 @@ Both `welcome` and `notifyAdmins` will fire when `UserRegistered` is dispatched.
 
 ## Deferred listeners
 
-By default, listeners are registered eagerly when the service provider boots. If your listener class is expensive to
-construct (heavy dependencies, slow setup), you can defer registration until something actually needs to resolve the
-class:
+By default, listeners are registered eagerly when the service provider boots. If you are in control of the lifecycle of
+a listener class, you can defer registration until the first time it's resolved from the container. This is especially
+useful for listeners that should be registered only in certain contexts. For example a listener that only runs for a
+certain command:
 
 ```php
-class HeavyListener
+class WorkCommand
 {
-    public function __construct(
-        private SomeBigService $service,
-        private AnotherBigService $other,
-    ) {}
+    #[ConsoleCommand('app:work')]
+    public function __invoke() {
+        // ...
+    }
 
     #[EventHandler(deferred: true)]
-    public function process(SomeEvent $event): void
+    public function process(CommandFinished $event): void
     {
-        // ...
+        $event->output->writeln('app:work command finished!');
     }
 }
 ```
 
-The listener is not registered with the dispatcher until the first time `HeavyListener` is resolved from the container.
-Use this sparingly; it's a useful escape hatch, not a default.
+The listener is not registered with the dispatcher until the first time the `WorkCommand` is resolved from the
+container, which happens when the command is executed.
 
-If the listener class has already been resolved by the time discovery runs, deferred registration falls back to
-immediate registration.
-
-## Method resolution
-
-Listeners are registered as `ClassName@methodName` strings. When the event fires, Laravel resolves the listener class
-through the container, so constructor injection works as you'd expect.
+Use this with caution. Deferred listeners won't run if the class is never resolved, so always pair it with something you
+know will run, like a command, request or schedule.
 
 ## A larger example
 
@@ -144,12 +140,3 @@ class OrderListener
     }
 }
 ```
-
-No `EventServiceProvider` entries are needed. The dispatcher receives all three listener registrations during boot.
-
-## Reference
-
-| File                           | Purpose                          |
-|--------------------------------|----------------------------------|
-| `src/Event/EventHandler.php`   | The `#[EventHandler]` attribute. |
-| `src/Event/EventDiscovery.php` | The discovery class.             |
