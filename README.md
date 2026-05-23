@@ -1,6 +1,9 @@
-# laravel-discovery
+<img src="assets/discovery-horizontal.svg" alt="Discovery for Laravel" width="540">
 
-Bring [Tempest Discovery](https://tempestphp.com/) to Laravel. Register commands, event listeners, routes, and scheduled tasks with attributes instead of editing your service providers.
+<br>
+
+Bring [Tempest Discovery](https://tempestphp.com/) to Laravel. Register commands, event listeners, routes, and scheduled
+tasks with attributes instead of editing your service providers.
 
 ```php
 class Tasks
@@ -19,14 +22,18 @@ class Tasks
 }
 ```
 
-The command appears in `php artisan list`, and the scheduled task runs every night. No service provider changes are required.
+The command appears in `php artisan list`, and the scheduled task runs every night. No service provider changes are
+required.
 
 ## Features
 
-- **Commands**: register Artisan commands with `#[ConsoleCommand]`, with typed argument and option resolution and pluggable middleware (benchmark, transaction, production-confirm).
+- **Commands**: register Artisan commands with `#[ConsoleCommand]`, with typed argument and option resolution and
+  pluggable middleware (benchmark, transaction, production-confirm).
 - **Events**: wire listeners with `#[EventHandler]`. The package infers the event class from your method signature.
-- **Routes**: declare HTTP routes with `#[Get]`, `#[Post]`, and friends. Group them with `#[Prefix]`, `#[Middleware]`, and `#[Domain]`.
-- **Schedule**: schedule methods with `#[Scheduled]` using a `Frequency` enum, a frequency string, or a closure for full control.
+- **Routes**: declare HTTP routes with `#[Get]`, `#[Post]`, and friends. Group them with `#[Prefix]`, `#[Middleware]`,
+  and `#[Domain]`.
+- **Schedule**: schedule methods with `#[Scheduled]` using a `Frequency` enum, a frequency string, or a closure for full
+  control.
 - **Custom discovery**: use the same machinery for your own patterns. `php artisan make:discovery` scaffolds one.
 - **Caching**: production-ready discovery cache via `php artisan discovery:cache` (and `php artisan optimize`).
 
@@ -48,7 +55,9 @@ See [docs/installation.md](docs/installation.md) for configuration and caching.
 
 ## How it works
 
-You add attributes to methods on your classes. When the application boots, the package scans your autoloaded code, reads those attributes, and registers each one with the matching Laravel system: Artisan, the event dispatcher, the router, or the scheduler.
+You add attributes to methods on your classes. When the application boots, the package scans your autoloaded code, reads
+those attributes, and registers each one with the matching Laravel system: Artisan, the event dispatcher, the router, or
+the scheduler.
 
 ```text
 app/                                Laravel reads attributes ->
@@ -97,7 +106,8 @@ class Inventory
 }
 ```
 
-After booting, `php artisan list`, `php artisan route:list`, and `php artisan schedule:list` will each show the registered handlers.
+After booting, `php artisan list`, `php artisan route:list`, and `php artisan schedule:list` will each show the
+registered handlers.
 
 ## Documentation
 
@@ -118,4 +128,5 @@ MIT. See [composer.json](composer.json).
 
 ## Credits
 
-Built on top of [Tempest Discovery](https://tempestphp.com/) by the Tempest team. This package wires it into Laravel; the underlying scanning engine is theirs.
+Built on top of [Tempest Discovery](https://tempestphp.com/) by the Tempest team. This package wires it into Laravel;
+the underlying scanning engine is theirs.

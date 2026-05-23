@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="11 11 138 138" role="img" aria-label="Discovery for Laravel">
+  <title>Discovery for Laravel</title>
+  <style>
+    svg { --fg: #1f1d1a; --accent: #E03A2B; }
+    @media (prefers-color-scheme: dark) {
+      svg { --fg: #f6f4ef; --accent: #F26A4F; }
+    }
+    .s { stroke: var(--fg); fill: none; }
+    .f { fill: var(--fg); }
+    .a { fill: var(--accent); }
+    .fop { fill: var(--fg); fill-opacity: 0.14; }
+  </style>
+  <!-- sweep wedge (flat fill, no gradient - survives at small sizes) -->
+  <path d="M 80 80 L 80 14 A 66 66 0 0 1 146 80 Z" class="fop"/>
+  <!-- outer ring -->
+  <circle cx="80" cy="80" r="66" class="s" stroke-width="6"/>
+  <!-- single inner range ring -->
+  <circle cx="80" cy="80" r="34" class="s" stroke-width="3"/>
+  <!-- sweep leading edge -->
+  <line x1="80" y1="80" x2="80" y2="14" class="s" stroke-width="6" stroke-linecap="round"/>
+  <!-- coral contact -->
+  <circle cx="118" cy="42" r="13" class="a"/>
+  <!-- center antenna -->
+  <circle cx="80" cy="80" r="6" class="f"/>
+</svg>
