@@ -44,15 +44,32 @@ class RouteDiscovery implements Discovery
             return;
         }
 
+        $named = false;
+
         foreach ($this->discoveryItems as $discoveredRoute) {
-            $this->route->addRoute(
+            $route = $this->route->addRoute(
                 methods: [$discoveredRoute->method->value],
                 uri: $discoveredRoute->uri,
                 action: $discoveredRoute->action,
             )
                 ->middleware($discoveredRoute->middleware)
-                ->withoutMiddleware($discoveredRoute->withoutMiddleware)
-                ->domain($discoveredRoute->domain);
+                ->withoutMiddleware($discoveredRoute->withoutMiddleware);
+
+            if ($discoveredRoute->domain !== null) {
+                $route->domain($discoveredRoute->domain);
+            }
+
+            if ($discoveredRoute->name !== null) {
+                $route->name($discoveredRoute->name);
+                $named = true;
+            }
+        }
+
+        // Laravel populates the name lookup table only when a route is added
+        // to the collection; names set afterwards via the fluent API need a
+        // manual refresh, otherwise route() and getByName() can't find them.
+        if ($named) {
+            $this->route->getRoutes()->refreshNameLookups();
         }
     }
 }

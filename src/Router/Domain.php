@@ -8,7 +8,7 @@ namespace NielsJanssen\Laravel\Discovery\Router;
 class Domain implements RouteDecorator
 {
     public function __construct(
-        public string $name,
+        public string|\BackedEnum $name,
     ) {}
 
     public function decorate(Route $route): Route

@@ -12,14 +12,19 @@ use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\Router\AllMethodsController;
 use Tests\Fixtures\Router\DomainController;
+use Tests\Fixtures\Router\EnumDomainController;
+use Tests\Fixtures\Router\EnumNamedRouteController;
 use Tests\Fixtures\Router\MethodPrefixController;
 use Tests\Fixtures\Router\MiddlewareController;
 use Tests\Fixtures\Router\MiddlewareTrackingController;
+use Tests\Fixtures\Router\NamedRouteController;
 use Tests\Fixtures\Router\NoRouteController;
 use Tests\Fixtures\Router\PrefixedController;
 use Tests\Fixtures\Router\RepeatableRouteController;
 use Tests\Fixtures\Router\RespondingController;
+use Tests\Fixtures\Router\RouteDomain;
 use Tests\Fixtures\Router\RouteLog;
+use Tests\Fixtures\Router\RouteName;
 use Tests\Fixtures\Router\SimpleGetController;
 use Tests\Fixtures\Router\TrackingMiddleware;
 
@@ -139,6 +144,75 @@ describe('decorators', function () {
 
         expect($routes)->toHaveCount(1);
         expect($routes[0]->domain)->toBe('api.example.com');
+    });
+
+    it('leaves the name null when not specified', function () {
+        $routes = [...discoverRoutes(SimpleGetController::class)->getItems()];
+
+        expect($routes[0]->name)->toBeNull();
+    });
+
+    it('sets the name from the route attribute', function () {
+        $routes = [...discoverRoutes(NamedRouteController::class)->getItems()];
+
+        expect($routes)->toHaveCount(1);
+        expect($routes[0]->name)->toBe('named.route');
+    });
+
+    it('accepts a BackedEnum as the name on the route attribute', function () {
+        $routes = [...discoverRoutes(EnumNamedRouteController::class)->getItems()];
+
+        expect($routes)->toHaveCount(1);
+        expect($routes[0]->name)->toBe(RouteName::EnumNamed);
+    });
+
+    it('accepts a BackedEnum as the domain on the Domain decorator', function () {
+        $routes = [...discoverRoutes(EnumDomainController::class)->getItems()];
+
+        expect($routes)->toHaveCount(1);
+        expect($routes[0]->domain)->toBe(RouteDomain::Api);
+    });
+});
+
+describe('route name registration', function () {
+    it('registers a named route on the Laravel router', function () {
+        discoverRoutes(NamedRouteController::class);
+
+        $route = app(Router::class)->getRoutes()->getByName('named.route');
+
+        expect($route)->not->toBeNull();
+        expect($route->uri())->toBe('named');
+    });
+
+    it('resolves a BackedEnum name to its string value when registering', function () {
+        discoverRoutes(EnumNamedRouteController::class);
+
+        $route = app(Router::class)->getRoutes()->getByName(RouteName::EnumNamed->value);
+
+        expect($route)->not->toBeNull();
+        expect($route->uri())->toBe('enum-named');
+    });
+
+    it('resolves a BackedEnum domain to its string value when registering', function () {
+        discoverRoutes(EnumDomainController::class);
+
+        $route = app(Router::class)
+            ->getRoutes()
+            ->getByAction(EnumDomainController::class . '@index');
+
+        expect($route)->not->toBeNull();
+        expect($route->getDomain())->toBe(RouteDomain::Api->value);
+    });
+
+    it('does not register a name on routes that omit it', function () {
+        discoverRoutes(SimpleGetController::class);
+
+        $route = app(Router::class)
+            ->getRoutes()
+            ->getByAction(SimpleGetController::class . '@index');
+
+        expect($route)->not->toBeNull();
+        expect($route->getName())->toBeNull();
     });
 });
 

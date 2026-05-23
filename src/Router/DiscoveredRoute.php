@@ -12,9 +12,10 @@ class DiscoveredRoute
         public Method $method,
         public string $uri,
         public string $action,
-        public ?string $domain = null,
+        public string|\BackedEnum|null $domain = null,
         public array $middleware = [],
         public array $withoutMiddleware = [],
+        public string|\BackedEnum|null $name = null,
     ) {}
 
     /**
@@ -33,6 +34,7 @@ class DiscoveredRoute
             $route->domain,
             $route->middleware,
             $route->withoutMiddleware,
+            $route->name,
         );
     }
 }
