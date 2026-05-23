@@ -11,7 +11,7 @@ class Prefix implements RouteDecorator
         public string $prefix,
     ) {}
 
-    public function decorate(Route $route): Route
+    public function decorate(Routable $route): Routable
     {
         $route->uri = $this->prefix . '/' . ltrim($route->uri, '/');
 

@@ -6,5 +6,5 @@ namespace NielsJanssen\Laravel\Discovery\Router;
 
 interface RouteDecorator
 {
-    public function decorate(Route $route): Route;
+    public function decorate(Routable $route): Routable;
 }

@@ -7,9 +7,9 @@ namespace NielsJanssen\Laravel\Discovery\Router;
 use Attribute;
 
 #[Attribute(Attribute::IS_REPEATABLE | Attribute::TARGET_METHOD)]
-final class Put implements Route
+final class Put implements Routable
 {
-    public Method $method = Method::Put;
+    public array $methods = [Method::Put];
 
     /**
      * @param class-string<class-string|string>[] $middleware Middleware specific to this route.

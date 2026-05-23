@@ -77,6 +77,35 @@ enum RouteName: string
 public function index(): array { /* ... */ }
 ```
 
+## Multi-verb routes
+
+When an action should respond to several HTTP methods at the same URI, use `#[Route]` and pass the methods explicitly:
+
+```php
+use NielsJanssen\Laravel\Discovery\Router\Method;
+use NielsJanssen\Laravel\Discovery\Router\Route;
+
+class InventoryController
+{
+    #[Route([Method::Get, Method::Post], '/inventory')]
+    public function handle(): array { /* ... */ }
+}
+```
+
+`#[Route]` accepts the same optional parameters as the verb-specific attributes, with `methods` and `uri` as the
+leading positional arguments:
+
+| Parameter           | Type                         | Default    |
+|---------------------|------------------------------|------------|
+| `methods`           | `list<Method>`               | (required) |
+| `uri`               | `string`                     | (required) |
+| `middleware`        | `list<string\|class-string>` | `[]`       |
+| `withoutMiddleware` | `list<string\|class-string>` | `[]`       |
+| `domain`            | `string\|\BackedEnum\|null`  | `null`     |
+| `name`              | `string\|\BackedEnum\|null`  | `null`     |
+
+Like the verb-specific attributes, `#[Route]` is repeatable.
+
 ## Class-level decorators
 
 Three attributes can be placed on a controller class to apply to every action in it. They can also be placed on
@@ -175,16 +204,16 @@ across the app.
 
 ## Multiple URIs per action
 
-`#[Get]`, `#[Post]`, etc. are all `IS_REPEATABLE`, so a handler can serve more than one URL. Different verbs on one
-handler also work:
+The verb-specific attributes are repeatable, so a single method can serve more than one URI:
 
 ```php
-#[Get('/cache/{key}')]
-#[Post('/cache/{key}')]
-public function cache(string $key): mixed { /* ... */ }
+#[Get('/orders/{id}')]
+#[Get('/v2/orders/{id}')]
+public function show(int $id): array { /* ... */ }
 ```
 
-Two routes are registered, both pointing at the same controller method.
+Two routes are registered, both pointing at the same method. To register multiple verbs at the same URI, use
+[`#[Route]`](#multi-verb-routes) instead.
 
 ## Route caching
 

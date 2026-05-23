@@ -4,19 +4,22 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\Router;
 
-interface Route
+use Attribute;
+
+#[Attribute(Attribute::IS_REPEATABLE | Attribute::TARGET_METHOD)]
+final class Route implements Routable
 {
-    public Method $method { get; set; }
-
-    public string|\BackedEnum|null $domain { get; set; }
-
-    public string $uri { get; set; }
-
-    public string|\BackedEnum|null $name { get; set; }
-
-    /** @var class-string<class-string|string>[]  */
-    public array $middleware { get; set; }
-
-    /** @var class-string<class-string|string>[]  */
-    public array $withoutMiddleware { get; set; }
+    /**
+     * @param list<\NielsJanssen\Laravel\Discovery\Router\Method> $methods
+     * @param class-string<class-string|string>[] $middleware Middleware specific to this route.
+     * @param class-string<class-string|string>[] $withoutMiddleware Middleware to remove from this route.
+     */
+    public function __construct(
+        public array $methods,
+        public string $uri,
+        public array  $middleware = [],
+        public array  $withoutMiddleware = [],
+        public string|\BackedEnum|null $domain = null,
+        public string|\BackedEnum|null $name = null,
+    ) {}
 }

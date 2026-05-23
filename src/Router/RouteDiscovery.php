@@ -27,7 +27,7 @@ class RouteDiscovery implements Discovery
         $classDecorators = $class->getAttributes(RouteDecorator::class);
 
         foreach ($class->getPublicMethods() as $method) {
-            foreach ($method->getAttributes(Route::class) as $route) {
+            foreach ($method->getAttributes(Routable::class) as $route) {
                 $decorators = [
                     ...$classDecorators,
                     ...$method->getAttributes(RouteDecorator::class),
@@ -48,7 +48,10 @@ class RouteDiscovery implements Discovery
 
         foreach ($this->discoveryItems as $discoveredRoute) {
             $route = $this->route->addRoute(
-                methods: [$discoveredRoute->method->value],
+                methods: array_map(
+                    static fn(Method $method) => $method->value,
+                    $discoveredRoute->methods,
+                ),
                 uri: $discoveredRoute->uri,
                 action: $discoveredRoute->action,
             )
