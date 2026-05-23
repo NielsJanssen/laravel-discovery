@@ -1,12 +1,15 @@
 * text=auto eol=lf
 
 # Excluded from Composer package archives
+.claude/             export-ignore
 .github/             export-ignore
 .idea/               export-ignore
+assets/              export-ignore
 tests/               export-ignore
 workbench/           export-ignore
 .gitattributes       export-ignore
 .gitignore           export-ignore
+CLAUDE.md            export-ignore
 cliff.toml           export-ignore
 composer.lock        export-ignore
 phpunit.xml          export-ignore
