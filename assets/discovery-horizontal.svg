@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 16 400 168" role="img" aria-label="Discovery for Laravel">
+  <title>Discovery for Laravel</title>
+  <style>
+    svg { --fg: #1f1d1a; --accent: #E03A2B; --muted: #8a857c; }
+    @media (prefers-color-scheme: dark) {
+    svg { --fg: #f6f4ef; --accent: #F26A4F; --muted: #8a857c; }
+    }
+    .s { stroke: var(--fg); fill: none; }
+    .f { fill: var(--fg); }
+    .a { fill: var(--accent); }
+    .as { stroke: var(--accent); fill: none; }
+    .swp0 { stop-color: var(--fg); stop-opacity: 0; }
+    .swp1 { stop-color: var(--fg); stop-opacity: 0.22; }
+    .word { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-weight: 700; fill: var(--fg); }
+    .sub { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-weight: 400; fill: var(--muted); }
+  </style>
+  <defs>
+    <linearGradient id="sweep-h" x1="0" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" class="swp0"/>
+      <stop offset="100%" class="swp1"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(20, 20)">
+    <path d="M 80 80 L 80 8 A 72 72 0 0 1 152 80 Z" fill="url(#sweep-h)"/>
+    <circle cx="80" cy="80" r="72" class="s" stroke-width="2.5"/>
+    <circle cx="80" cy="80" r="48" class="s" stroke-width="1.5" stroke-dasharray="3 4" opacity="0.55"/>
+    <circle cx="80" cy="80" r="24" class="s" stroke-width="1.5" stroke-dasharray="3 4" opacity="0.55"/>
+    <line x1="80" y1="8" x2="80" y2="152" class="s" stroke-width="1" opacity="0.32"/>
+    <line x1="8" y1="80" x2="152" y2="80" class="s" stroke-width="1" opacity="0.32"/>
+    <line x1="80" y1="80" x2="80" y2="8" class="s" stroke-width="3" stroke-linecap="round"/>
+    <g class="s" stroke-linecap="round">
+      <line x1="80" y1="8" x2="80" y2="-2" stroke-width="2.5"/>
+      <line x1="152" y1="80" x2="162" y2="80" stroke-width="2.5"/>
+      <line x1="80" y1="152" x2="80" y2="162" stroke-width="2.5"/>
+      <line x1="8" y1="80" x2="-2" y2="80" stroke-width="2.5"/>
+      <line x1="116" y1="17.65" x2="119" y2="12.45" stroke-width="1.5"/>
+      <line x1="142.35" y1="44" x2="147.55" y2="41" stroke-width="1.5"/>
+      <line x1="142.35" y1="116" x2="147.55" y2="119" stroke-width="1.5"/>
+      <line x1="116" y1="142.35" x2="119" y2="147.55" stroke-width="1.5"/>
+      <line x1="44" y1="142.35" x2="41" y2="147.55" stroke-width="1.5"/>
+      <line x1="17.65" y1="116" x2="12.45" y2="119" stroke-width="1.5"/>
+      <line x1="17.65" y1="44" x2="12.45" y2="41" stroke-width="1.5"/>
+      <line x1="44" y1="17.65" x2="41" y2="12.45" stroke-width="1.5"/>
+    </g>
+    <circle cx="118" cy="42" r="18" class="as" stroke-width="2" opacity="0.4"/>
+    <circle cx="118" cy="42" r="11" class="a"/>
+    <circle cx="56" cy="58" r="4" class="s" stroke-width="1.8"/>
+    <circle cx="100" cy="112" r="4" class="f"/>
+    <circle cx="48" cy="104" r="3" class="s" stroke-width="1.5"/>
+    <circle cx="80" cy="80" r="4" class="f"/>
+  </g>
+  <text x="210" y="104" class="word" font-size="44" letter-spacing="-0.5">Discovery</text>
+  <text x="210" y="132" class="sub" font-size="15" letter-spacing="2.3">FOR LARAVEL</text>
+</svg>
