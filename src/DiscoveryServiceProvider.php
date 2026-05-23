@@ -7,6 +7,7 @@ namespace NielsJanssen\Laravel\Discovery;
 use Illuminate\Support\ServiceProvider;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
 use Tempest\Discovery\BootDiscovery;
+use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryCache;
 use Tempest\Discovery\DiscoveryCacheStrategy;
 use Tempest\Discovery\DiscoveryConfig;
@@ -44,6 +45,14 @@ class DiscoveryServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->app->call(BootDiscovery::class);
+        $discoveries = $this->app->call(BootDiscovery::class);
+
+        $this->app->make('config')->set(
+            'discovery.discovery_classes',
+            array_map(
+                static fn(Discovery $discovery) => $discovery::class,
+                $discoveries,
+            ),
+        );
     }
 }
