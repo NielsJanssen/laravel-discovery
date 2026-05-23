@@ -28,7 +28,7 @@ function discoverEvents(string ...$classes): Dispatcher
 
     $location = new DiscoveryLocation(
         namespace: 'Tests\\Fixtures\\Event',
-        path: dirname(__DIR__, 3) . '/Fixtures/Event',
+        path: dirname(__DIR__, 2) . '/Fixtures/Event',
     );
 
     foreach ($classes as $class) {
