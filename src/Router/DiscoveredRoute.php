@@ -19,7 +19,7 @@ class DiscoveredRoute
     ) {}
 
     /**
-     * @param list<\NielsJanssen\Laravel\Discovery\Router\RouteDecorator> $decorators
+     * @param list<RouteDecorator> $decorators
      */
     public static function from(Routable $route, array $decorators, MethodReflector $method): self
     {

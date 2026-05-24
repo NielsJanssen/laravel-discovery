@@ -10,7 +10,7 @@ use Attribute;
 final class Route implements Routable
 {
     /**
-     * @param list<\NielsJanssen\Laravel\Discovery\Router\Method> $methods
+     * @param list<Method> $methods
      * @param class-string<class-string|string>[] $middleware Middleware specific to this route.
      * @param class-string<class-string|string>[] $withoutMiddleware Middleware to remove from this route.
      */
