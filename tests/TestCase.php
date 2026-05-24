@@ -6,8 +6,8 @@ namespace Tests;
 
 use NielsJanssen\Laravel\Discovery\DiscoveryServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
-use Tempest\Discovery\DiscoveryConfig;
-use Tempest\Discovery\DiscoveryLocation;
+use Rebing\GraphQL\GraphQLServiceProvider;
+use Workbench\App\Providers\WorkbenchServiceProvider;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -15,16 +15,10 @@ abstract class TestCase extends BaseTestCase
     {
         return [
             DiscoveryServiceProvider::class,
+            GraphQLServiceProvider::class,
+            WorkbenchServiceProvider::class,
         ];
     }
 
-    protected function defineEnvironment($app): void
-    {
-        $app['config']->set('discovery.autoload', dirname(__DIR__));
-
-        $app[DiscoveryConfig::class]->locations[] = new DiscoveryLocation(
-            namespace: 'Workbench\\App',
-            path: dirname(__DIR__) . '/workbench/app',
-        );
-    }
+    protected function defineEnvironment($app): void {}
 }
