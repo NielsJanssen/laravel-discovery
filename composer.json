@@ -1,7 +1,13 @@
 {
   "name": "nielsjanssen/laravel-discovery",
   "description": "Laravel service provider and artisan command discovery powered by Tempest Discovery",
-  "keywords": ["laravel", "discovery", "service-provider", "commands", "tempest"],
+  "keywords": [
+    "laravel",
+    "discovery",
+    "service-provider",
+    "commands",
+    "tempest"
+  ],
   "homepage": "https://github.com/NielsJanssen/laravel-discovery",
   "type": "library",
   "license": "MIT",
@@ -38,7 +44,8 @@
     "orchestra/testbench": "^11.1",
     "pestphp/pest": "4.6.*",
     "pestphp/pest-plugin-laravel": "^4.1",
-    "laravel/pao": "^1.0"
+    "laravel/pao": "^1.0",
+    "rebing/graphql-laravel": "10.x-dev"
   },
   "scripts": {
     "post-autoload-dump": [
