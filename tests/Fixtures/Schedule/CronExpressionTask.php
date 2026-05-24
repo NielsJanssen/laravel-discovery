@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Fixtures\Schedule;
 
-use NielsJanssen\Laravel\Discovery\Schedule\Every;
+use NielsJanssen\Laravel\Discovery\Schedule\Cron;
 use NielsJanssen\Laravel\Discovery\Schedule\Scheduled;
 
-class HourlyTask
+class CronExpressionTask
 {
-    #[Scheduled(Every::Hour)]
+    #[Scheduled(new Cron('30 6 * * 1'))]
     public function run(): void {}
 }
