@@ -5,15 +5,31 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\Schedule;
 
 use Attribute;
+use Illuminate\Console\Scheduling\Event;
 
 #[Attribute(Attribute::IS_REPEATABLE | Attribute::TARGET_METHOD)]
-final readonly class Scheduled
+final class Scheduled
 {
     /**
-     * @param string|Frequency|\Closure(\Illuminate\Console\Scheduling\Event): void $schedule
+     * @param Cron|Every|\Closure(Event): void $schedule
      */
     public function __construct(
-        public string|Frequency|\Closure $schedule,
-        public ?string                   $name = null,
+        private(set) Cron|Every|\Closure $schedule,
+        public readonly ?BetweenTime $between = null,
+        public readonly ?BetweenTime $unlessBetween = null,
+        public readonly ?string $name = null,
+        public bool $withoutOverlapping = false,
+        public bool $onOneServer = false,
+        public ?string $timezone = null,
     ) {}
+
+    public int $withoutOverlappingExpiry = 1440;
+    public bool $releaseOnTerminationSignals = true;
+
+    public function clearClosure(): void
+    {
+        if ($this->schedule instanceof \Closure) {
+            unset($this->schedule);
+        }
+    }
 }

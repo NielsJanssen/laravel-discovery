@@ -6,8 +6,10 @@ namespace Tests\Fixtures\Schedule;
 
 use NielsJanssen\Laravel\Discovery\Schedule\Every;
 use NielsJanssen\Laravel\Discovery\Schedule\Scheduled;
+use NielsJanssen\Laravel\Discovery\Schedule\WithoutOverlapping;
 
-class HourlyTask
+#[WithoutOverlapping]
+class WithoutOverlappingTask
 {
     #[Scheduled(Every::Hour)]
     public function run(): void {}

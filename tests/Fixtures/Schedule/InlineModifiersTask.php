@@ -7,8 +7,8 @@ namespace Tests\Fixtures\Schedule;
 use NielsJanssen\Laravel\Discovery\Schedule\Every;
 use NielsJanssen\Laravel\Discovery\Schedule\Scheduled;
 
-class HourlyTask
+class InlineModifiersTask
 {
-    #[Scheduled(Every::Hour)]
+    #[Scheduled(Every::Hour, withoutOverlapping: true, onOneServer: true, timezone: 'UTC')]
     public function run(): void {}
 }

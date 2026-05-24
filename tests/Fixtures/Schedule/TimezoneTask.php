@@ -6,9 +6,11 @@ namespace Tests\Fixtures\Schedule;
 
 use NielsJanssen\Laravel\Discovery\Schedule\Every;
 use NielsJanssen\Laravel\Discovery\Schedule\Scheduled;
+use NielsJanssen\Laravel\Discovery\Schedule\Timezone;
 
-class HourlyTask
+class TimezoneTask
 {
     #[Scheduled(Every::Hour)]
+    #[Timezone('Europe/Amsterdam')]
     public function run(): void {}
 }

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Fixtures\Schedule;
 
-use NielsJanssen\Laravel\Discovery\Schedule\Frequency;
+use NielsJanssen\Laravel\Discovery\Schedule\Every;
 use NielsJanssen\Laravel\Discovery\Schedule\Scheduled;
 
 class FrequencyEnumTask
 {
-    #[Scheduled(Frequency::Daily)]
+    #[Scheduled(Every::Day)]
     public function run(): void {}
 }

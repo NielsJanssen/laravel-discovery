@@ -14,7 +14,7 @@ class Tasks
         // ...
     }
 
-    #[Scheduled(Frequency::Daily)]
+    #[Scheduled(Every::Day)]
     public function runNightlyReports(): void
     {
         // ...
@@ -32,8 +32,8 @@ required.
 - **Events**: wire listeners with `#[EventHandler]`. The package infers the event class from your method signature.
 - **Routes**: declare HTTP routes with `#[Get]`, `#[Post]`, and friends. Group them with `#[Prefix]`, `#[Middleware]`,
   and `#[Domain]`.
-- **Schedule**: schedule methods with `#[Scheduled]` using a `Frequency` enum, a frequency string, or a closure for full
-  control.
+- **Schedule**: schedule methods with `#[Scheduled]` using the `Every` enum, a raw `Cron` expression, or a closure for
+  full control.
 - **Custom discovery**: use the same machinery for your own patterns. `php artisan make:discovery` scaffolds one.
 - **Caching**: production-ready discovery cache via `php artisan discovery:cache` (and `php artisan optimize`).
 
@@ -76,7 +76,7 @@ use NielsJanssen\Laravel\Discovery\Command\ConsoleCommand;
 use NielsJanssen\Laravel\Discovery\Event\EventHandler;
 use NielsJanssen\Laravel\Discovery\Router\Get;
 use NielsJanssen\Laravel\Discovery\Schedule\Scheduled;
-use NielsJanssen\Laravel\Discovery\Schedule\Frequency;
+use NielsJanssen\Laravel\Discovery\Schedule\Every;
 
 class Inventory
 {
@@ -98,7 +98,7 @@ class Inventory
         // ...
     }
 
-    #[Scheduled(Frequency::Hourly)]
+    #[Scheduled(Every::Hour)]
     public function reconcile(): void
     {
         // ...
@@ -115,7 +115,7 @@ registered handlers.
 - [Commands](docs/command.md): `#[ConsoleCommand]`, arguments, options, middleware.
 - [Events](docs/event.md): `#[EventHandler]`, inferred event types, deferred listeners.
 - [Routes](docs/router.md): HTTP attributes and class-level decorators.
-- [Schedule](docs/schedule.md): `#[Scheduled]`, the `Frequency` enum, closures.
+- [Schedule](docs/schedule.md): `#[Scheduled]`, the `Every` enum, `Cron`, time windows, overlap constraints.
 - [Discovery internals](docs/discovery.md): how Tempest Discovery is wired into Laravel, and how to write your own.
 
 ## Contributing

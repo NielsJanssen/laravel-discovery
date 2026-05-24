@@ -15,7 +15,17 @@ use Tests\Fixtures\Schedule\FrequencyEnumTask;
 use Tests\Fixtures\Schedule\HourlyTask;
 use Tests\Fixtures\Schedule\MultipleScheduledTask;
 use Tests\Fixtures\Schedule\NamedTask;
+use Tests\Fixtures\Schedule\BetweenTask;
+use Tests\Fixtures\Schedule\ClassDecoratorTask;
+use Tests\Fixtures\Schedule\CronExpressionTask;
+use Tests\Fixtures\Schedule\InlineModifiersTask;
+use Tests\Fixtures\Schedule\OnOneServerTask;
+use Tests\Fixtures\Schedule\ReleaseOnTerminationTask;
+use Tests\Fixtures\Schedule\TimezoneTask;
 use Tests\Fixtures\Schedule\UnattributedTask;
+use Tests\Fixtures\Schedule\UnlessBetweenTask;
+use Tests\Fixtures\Schedule\WithoutOverlappingExpiryTask;
+use Tests\Fixtures\Schedule\WithoutOverlappingTask;
 
 function discoverSchedule(string ...$classes): Schedule
 {
@@ -99,4 +109,85 @@ it('accepts a Frequency enum as the every value', function () {
 
     expect($schedule->events())->toHaveCount(1);
     expect($schedule->events()[0]->expression)->toBe('0 0 * * *');
+});
+
+it('registers a task with a raw Cron expression', function () {
+    $schedule = discoverSchedule(CronExpressionTask::class);
+
+    expect($schedule->events())->toHaveCount(1);
+    expect($schedule->events()[0]->expression)->toBe('30 6 * * 1');
+});
+
+it('registers a task with a between time window', function () {
+    $schedule = discoverSchedule(BetweenTask::class);
+
+    expect($schedule->events())->toHaveCount(1);
+    expect($schedule->events()[0]->expression)->toBe('0 * * * *');
+});
+
+it('registers a task with an unless-between time window', function () {
+    $schedule = discoverSchedule(UnlessBetweenTask::class);
+
+    expect($schedule->events())->toHaveCount(1);
+    expect($schedule->events()[0]->expression)->toBe('0 * * * *');
+});
+
+it('registers a task with withoutOverlapping', function () {
+    $schedule = discoverSchedule(WithoutOverlappingTask::class);
+
+    expect($schedule->events())->toHaveCount(1);
+    expect($schedule->events()[0]->withoutOverlapping)->toBeTrue();
+});
+
+it('registers a task with onOneServer', function () {
+    $schedule = discoverSchedule(OnOneServerTask::class);
+
+    expect($schedule->events())->toHaveCount(1);
+    expect($schedule->events()[0]->onOneServer)->toBeTrue();
+});
+
+it('applies a method-level Timezone decorator', function () {
+    $schedule = discoverSchedule(TimezoneTask::class);
+
+    expect($schedule->events())->toHaveCount(1);
+    expect($schedule->events()[0]->timezone)->toBe('Europe/Amsterdam');
+});
+
+it('applies withoutOverlapping with a custom expiry', function () {
+    $schedule = discoverSchedule(WithoutOverlappingExpiryTask::class);
+
+    expect($schedule->events())->toHaveCount(1);
+    expect($schedule->events()[0]->withoutOverlapping)->toBeTrue();
+    expect($schedule->events()[0]->expiresAt)->toBe(60);
+});
+
+it('applies inline withoutOverlapping, onOneServer and timezone on #[Scheduled]', function () {
+    $schedule = discoverSchedule(InlineModifiersTask::class);
+
+    $event = $schedule->events()[0];
+    expect($event->withoutOverlapping)->toBeTrue();
+    expect($event->onOneServer)->toBeTrue();
+    expect($event->timezone)->toBe('UTC');
+});
+
+it('passes releaseOnTerminationSignals through the WithoutOverlapping decorator', function () {
+    $schedule = discoverSchedule(ReleaseOnTerminationTask::class);
+
+    $event = $schedule->events()[0];
+    expect($event->withoutOverlapping)->toBeTrue();
+    expect($event->expiresAt)->toBe(60);
+    expect($event->releaseOnTerminationSignals)->toBeFalse();
+});
+
+it('applies class-level decorators to every method', function () {
+    $schedule = discoverSchedule(ClassDecoratorTask::class);
+
+    expect($schedule->events())->toHaveCount(2);
+
+    foreach ($schedule->events() as $event) {
+        expect($event->timezone)->toBe('Europe/Amsterdam');
+        expect($event->withoutOverlapping)->toBeTrue();
+        expect($event->expiresAt)->toBe(60);
+        expect($event->onOneServer)->toBeTrue();
+    }
 });
