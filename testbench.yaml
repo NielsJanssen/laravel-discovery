@@ -1,8 +1,6 @@
 laravel: './workbench'
 
 providers:
-    - NielsJanssen\Laravel\Discovery\DiscoveryServiceProvider
-#   - Workbench\App\Providers\WorkbenchServiceProvider
 
 migrations:
   - workbench/database/migrations
