@@ -12,6 +12,7 @@ use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
 use Tempest\Reflection\ClassReflector;
+use NielsJanssen\Laravel\Discovery\Command\Exception\InvalidCommandRegistrationException;
 
 #[Singleton]
 final class CommandDiscovery implements Discovery
@@ -23,7 +24,7 @@ final class CommandDiscovery implements Discovery
     ) {}
 
     /**
-     * @throws \NielsJanssen\Laravel\Discovery\Command\Exception\InvalidCommandRegistrationException
+     * @throws InvalidCommandRegistrationException
      */
     public function discover(DiscoveryLocation $location, ClassReflector $class): void
     {

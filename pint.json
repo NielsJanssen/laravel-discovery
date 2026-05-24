@@ -1,6 +1,10 @@
 {
   "preset": "per",
   "rules": {
-    "declare_strict_types": true
+    "declare_strict_types": true,
+"fully_qualified_strict_types": {
+      "import_symbols": true,
+      "phpdoc_tags": ["param", "return", "var", "throws", "property", "property-read", "property-write", "method"]
+    }
   }
 }

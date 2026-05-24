@@ -6,7 +6,7 @@ namespace NielsJanssen\Laravel\Discovery\Router;
 
 interface Routable
 {
-    /** @var list<\NielsJanssen\Laravel\Discovery\Router\Method> */
+    /** @var list<Method> */
     public array $methods { get; set; }
 
     public string|\BackedEnum|null $domain { get; set; }

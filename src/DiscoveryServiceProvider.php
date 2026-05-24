@@ -41,14 +41,14 @@ class DiscoveryServiceProvider extends ServiceProvider
         });
 
         $this->optimizes('discovery:cache', 'discovery:clear');
+
+        $this->publishes([
+            __DIR__ . '/../config/discovery.php' => config_path('discovery.php'),
+        ], 'discovery-config');
     }
 
     public function boot(): void
     {
-        $this->publishes([
-            __DIR__ . '/../config/discovery.php' => config_path('discovery.php'),
-        ], 'discovery-config');
-
         $discoveries = $this->app->call(BootDiscovery::class);
 
         $this->app->make('config')->set(
