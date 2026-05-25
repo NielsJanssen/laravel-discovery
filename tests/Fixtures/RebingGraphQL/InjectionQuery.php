@@ -18,7 +18,7 @@ class InjectionQuery
         mixed $root,
         #[Context]
         mixed $context,
-        ResolveInfo $info,
+        ?ResolveInfo $info,
     ): string {
         return $name;
     }

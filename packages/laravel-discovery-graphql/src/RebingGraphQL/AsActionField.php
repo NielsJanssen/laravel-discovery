@@ -68,7 +68,7 @@ trait AsActionField
             }
 
             if ($arg->hasRules) {
-                $entry['rules'] = $this->resolveClosureRules($arg->paramName);
+                $entry['rules'] = $this->resolveRules($arg->paramName);
             }
 
             if ($arg->deprecationReason !== null) {
@@ -150,7 +150,7 @@ trait AsActionField
         return $this->failedAuthorize?->message ?? parent::getAuthorizationMessage();
     }
 
-    private function resolveClosureRules(string $paramName): \Closure
+    private function resolveRules(string $paramName): array|\Closure
     {
         $class = $this->discoveredAction->class;
         $method = $this->discoveredAction->method;
