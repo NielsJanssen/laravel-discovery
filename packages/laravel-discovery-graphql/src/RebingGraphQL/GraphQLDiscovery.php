@@ -53,6 +53,7 @@ class GraphQLDiscovery implements Discovery
         $classMiddleware = collect($class->getAttributes(Middleware::class))
             ->flatMap(fn(Middleware $m) => $m->middleware)
             ->all();
+        $classAuthorizations = $class->getAttributes(Authorize::class);
 
         foreach ($class->getPublicMethods() as $method) {
             $action = $method->getAttribute(Query::class) ?? $method->getAttribute(Mutation::class);
@@ -95,6 +96,11 @@ class GraphQLDiscovery implements Discovery
                     ->all(),
             ];
 
+            $authorizations = [
+                ...$classAuthorizations,
+                ...$method->getAttributes(Authorize::class),
+            ];
+
             $this->discoveryItems->add($location, new DiscoveredAction(
                 $action,
                 $class->getName(),
@@ -103,6 +109,40 @@ class GraphQLDiscovery implements Discovery
                 $injections,
                 $middleware,
                 $this->resolveDeprecationReason($method->getAttribute(\Deprecated::class)),
+                $authorizations,
+            ));
+        }
+    }
+
+    public function apply(): void
+    {
+        $buildConfig = !$this->app->configurationIsCached();
+
+        $config = $this->app->make('config');
+
+        $schemas = [];
+
+        foreach ($this->discoveryItems as $item) {
+            $defaultSchema = $config->get('graphql.default_schema', 'default');
+
+            if ($item instanceof DiscoveredAction) {
+                $schema = $item->action->schema ?? $defaultSchema;
+                $bindName = 'discovery.rebing_graphql.' . hash('sha256', serialize($item));
+
+                $this->app->singleton($bindName, $item->createType(...));
+
+                if ($buildConfig) {
+                    $schemas[$schema][$item->fieldType][$item->action->name] = $bindName;
+                }
+            } elseif ($item instanceof DiscoveredField && $buildConfig) {
+                $schemas[$item->schema ?? $defaultSchema][$item->fieldType][$item->getName()] = $item->class;
+            }
+        }
+
+        if ($buildConfig && !empty($schemas)) {
+            $config->set('graphql.schemas', array_merge_recursive(
+                $config->get('graphql.schemas', []),
+                $schemas,
             ));
         }
     }
@@ -144,39 +184,6 @@ class GraphQLDiscovery implements Discovery
             $since !== null => "Deprecated since {$since}",
             default => 'Deprecated',
         };
-    }
-
-    public function apply(): void
-    {
-        $buildConfig = !$this->app->configurationIsCached();
-
-        $config = $this->app->make('config');
-
-        $schemas = [];
-
-        foreach ($this->discoveryItems as $item) {
-            $defaultSchema = $config->get('graphql.default_schema', 'default');
-
-            if ($item instanceof DiscoveredAction) {
-                $schema = $item->action->schema ?? $defaultSchema;
-                $bindName = 'discovery.rebing_graphql.' . hash('sha256', serialize($item));
-
-                $this->app->singleton($bindName, $item->createType(...));
-
-                if ($buildConfig) {
-                    $schemas[$schema][$item->fieldType][$item->action->name] = $bindName;
-                }
-            } elseif ($item instanceof DiscoveredField && $buildConfig) {
-                $schemas[$item->schema ?? $defaultSchema][$item->fieldType][$item->getName()] = $item->class;
-            }
-        }
-
-        if ($buildConfig && !empty($schemas)) {
-            $config->set('graphql.schemas', array_merge_recursive(
-                $config->get('graphql.schemas', []),
-                $schemas,
-            ));
-        }
     }
 
     /**

@@ -21,6 +21,8 @@ class DiscoveredAction
         /** @var list<class-string<RebingMiddleware>> outermost first */
         public array $middleware = [],
         public ?string $deprecationReason = null,
+        /** @var list<Authorize> class-first then method-first, all must pass */
+        public array $authorizations = [],
     ) {}
 
     public function createType(Application $app): Field

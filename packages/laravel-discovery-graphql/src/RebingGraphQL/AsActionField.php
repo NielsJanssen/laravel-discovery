@@ -18,6 +18,8 @@ trait AsActionField
     /** @var \ReflectionParameter[] */
     private array $reflectionParameters;
 
+    private ?Authorize $failedAuthorize = null;
+
     public function __construct(
         private readonly Application $app,
         private readonly DiscoveredAction $discoveredAction,
@@ -124,6 +126,28 @@ trait AsActionField
     protected function getMiddleware(): array
     {
         return $this->discoveredAction->middleware;
+    }
+
+    public function authorize(mixed $root, array $args, mixed $context, ?ResolveInfo $resolveInfo = null): bool
+    {
+        foreach ($this->discoveredAction->authorizations as $auth) {
+            $passed = $auth->gate !== null
+                ? $this->app->make($auth->gate)->check($root, $args, $context, $resolveInfo)
+                : auth()->check();
+
+            if (! $passed) {
+                $this->failedAuthorize = $auth;
+
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public function getAuthorizationMessage(): string
+    {
+        return $this->failedAuthorize?->message ?? parent::getAuthorizationMessage();
     }
 
     private function resolveClosureRules(string $paramName): \Closure
