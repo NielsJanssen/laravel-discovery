@@ -15,6 +15,8 @@ class DiscoveredAction
         public string $method,
         /** @var DiscoveredArg[] */
         public array $args = [],
+        /** @var array<string, 'root'|'context'|'info'> keyed by paramName */
+        public array $injections = [],
         public ?string $deprecationReason = null,
     ) {}
 

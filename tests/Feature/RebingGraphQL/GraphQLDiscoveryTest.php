@@ -11,6 +11,7 @@ use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\RebingGraphQL\DeprecatedQuery;
 use Tests\Fixtures\RebingGraphQL\DescribedQuery;
+use Tests\Fixtures\RebingGraphQL\InjectionQuery;
 use Tests\Fixtures\RebingGraphQL\MissingTypeQuery;
 use Tests\Fixtures\RebingGraphQL\NonScalarQuery;
 use Tests\Fixtures\RebingGraphQL\NullableScalarReturnQuery;
@@ -240,6 +241,21 @@ it('keeps decorated actions in their declared schema even when graphql.default_s
     expect($schemas['admin']['query'])->toHaveKey('methodLevel')
         ->and($schemas['custom']['query'] ?? [])->not->toBeEmpty()
         ->and($schemas['custom']['query'] ?? [])->not->toHaveKey('methodLevel');
+});
+
+it('treats #[Root], #[Context] and ResolveInfo-typed parameters as injections, not GraphQL args', function () {
+    $items = iterator_to_array(discoverGraphQL(InjectionQuery::class)->getItems());
+
+    /** @var DiscoveredAction $item */
+    $item = $items[0];
+
+    expect($item->args)->toHaveCount(1)
+        ->and($item->args[0]->paramName)->toBe('name')
+        ->and($item->injections)->toBe([
+            'root' => 'root',
+            'context' => 'context',
+            'info' => 'info',
+        ]);
 });
 
 it('exposes #[Query(description: ...)] on the discovered action and the Field attributes', function () {
