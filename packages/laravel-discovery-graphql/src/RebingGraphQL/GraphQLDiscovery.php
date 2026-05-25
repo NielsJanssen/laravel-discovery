@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
+use GraphQL\Type\Definition\ResolveInfo;
 use Illuminate\Foundation\Application;
 use Rebing\GraphQL\GraphQL;
 use Rebing\GraphQL\Support\Mutation as RebingMutation;
@@ -49,7 +50,9 @@ class GraphQLDiscovery implements Discovery
         }
 
         $classDecorators = $class->getAttributes(ActionDecorator::class);
-        $classMiddleware = $this->collectMiddleware($class->getAttributes(Middleware::class));
+        $classMiddleware = collect($class->getAttributes(Middleware::class))
+            ->flatMap(fn(Middleware $m) => $m->middleware)
+            ->all();
 
         foreach ($class->getPublicMethods() as $method) {
             $action = $method->getAttribute(Query::class) ?? $method->getAttribute(Mutation::class);
@@ -85,12 +88,20 @@ class GraphQLDiscovery implements Discovery
                 $args[] = $this->discoverActionParameter($param, $class, $method);
             }
 
+            $middleware = [
+                ...$classMiddleware,
+                ...collect($method->getAttributes(Middleware::class))
+                    ->flatMap(fn(Middleware $m) => $m->middleware)
+                    ->all(),
+            ];
+
             $this->discoveryItems->add($location, new DiscoveredAction(
                 $action,
                 $class->getName(),
                 $method->getName(),
                 $args,
                 $injections,
+                $middleware,
                 $this->resolveDeprecationReason($method->getAttribute(\Deprecated::class)),
             ));
         }
