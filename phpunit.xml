@@ -10,7 +10,8 @@
     </testsuites>
     <source>
         <include>
-            <directory>src</directory>
+            <directory>packages/laravel-discovery/src</directory>
+            <directory>packages/laravel-discovery-graphql/src</directory>
         </include>
     </source>
 </phpunit>
