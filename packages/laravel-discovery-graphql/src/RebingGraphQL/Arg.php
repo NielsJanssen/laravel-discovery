@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
-#[\Attribute(\Attribute::TARGET_PARAMETER)]
+use Attribute;
+
+#[Attribute(Attribute::TARGET_PARAMETER)]
 class Arg
 {
     public function __construct(

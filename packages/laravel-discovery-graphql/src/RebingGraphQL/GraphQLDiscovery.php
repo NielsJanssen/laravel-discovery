@@ -13,6 +13,8 @@ use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
 use Tempest\Reflection\ClassReflector;
+use Tempest\Reflection\MethodReflector;
+use Tempest\Reflection\ParameterReflector;
 
 class GraphQLDiscovery implements Discovery
 {
@@ -54,61 +56,13 @@ class GraphQLDiscovery implements Discovery
             }
 
             if ($action->type === null) {
-                $returnType = $method->getReturnType();
-                $phpType = $returnType?->getName();
-
-                if ($phpType === 'void') {
-                    $action->type = 'void';
-                    $action->nullable = true;
-                } elseif ($returnType !== null && $returnType->isScalar()) {
-                    $action->type = $phpType;
-
-                    if ($returnType->isNullable()) {
-                        $action->nullable = true;
-                    }
-                } else {
-                    throw new \RuntimeException(sprintf(
-                        'Method %s::%s has no scalar return type. Specify type: in #[%s], or use a scalar or void return type hint.',
-                        $class->getName(),
-                        $method->getName(),
-                        class_basename($action::class),
-                    ));
-                }
+                [$action->type, $action->nullable] = $this->discoverActionReturnType($action, $class, $method);
             }
 
             $args = [];
+
             foreach ($method->getParameters() as $param) {
-                $typeReflector = $param->getType();
-
-                /** @var Arg|null $argAttr */
-                $argAttr = $param->getAttribute(Arg::class);
-
-                if ($argAttr?->type !== null) {
-                    $typeName = $argAttr->type;
-                } elseif ($typeReflector->isScalar()) {
-                    $typeName = $typeReflector->getName();
-                } else {
-                    throw new \RuntimeException(sprintf(
-                        'Parameter $%s in %s::%s is not a scalar type. Use #[Arg(type: \'GraphQLTypeName\')] to specify the GraphQL type.',
-                        $param->getName(),
-                        $class->getName(),
-                        $method->getName(),
-                    ));
-                }
-
-                $hasRules = !empty($argAttr?->rules);
-                $hasDefault = $param->hasDefaultValue();
-
-                $args[] = new DiscoveredArg(
-                    name: $argAttr?->name ?? $param->getName(),
-                    paramName: $param->getName(),
-                    type: $typeName,
-                    nullable: $typeReflector->isNullable() || $hasDefault,
-                    description: $argAttr?->description,
-                    hasRules: $hasRules,
-                    hasDefault: $hasDefault,
-                    defaultValue: $hasDefault ? $param->getDefaultValue() : null,
-                );
+                $args[] = $this->discoverActionParameter($param, $class, $method);
             }
 
             $this->discoveryItems->add($location, new DiscoveredAction($action, $class->getName(), $method->getName(), $args));
@@ -143,5 +97,64 @@ class GraphQLDiscovery implements Discovery
                 $schemas,
             ));
         }
+    }
+
+    /**
+     * @return array{0: string, 1: bool} [type, nullable]
+     */
+    private function discoverActionReturnType(Action $action, ClassReflector $class, MethodReflector $method): array
+    {
+        $returnType = $method->getReturnType();
+        $phpType = $returnType?->getName();
+
+        if ($phpType === 'void') {
+            return ['void', true];
+        }
+
+        if ($returnType !== null && $returnType->isScalar()) {
+            return [$phpType, $returnType->isNullable()];
+        }
+
+        throw new \RuntimeException(sprintf(
+            'Method %s::%s has no scalar return type. Specify type: in #[%s], or use a scalar or void return type hint.',
+            $class->getName(),
+            $method->getName(),
+            class_basename($action::class),
+        ));
+    }
+
+    private function discoverActionParameter(ParameterReflector $param, ClassReflector $class, MethodReflector $method): DiscoveredArg
+    {
+        $typeReflector = $param->getType();
+
+        /** @var Arg|null $argAttr */
+        $argAttr = $param->getAttribute(Arg::class);
+
+        if ($argAttr?->type !== null) {
+            $typeName = $argAttr->type;
+        } elseif ($typeReflector->isScalar()) {
+            $typeName = $typeReflector->getName();
+        } else {
+            throw new \RuntimeException(sprintf(
+                'Parameter $%s in %s::%s is not a scalar type. Use #[Arg(type: \'GraphQLTypeName\')] to specify the GraphQL type.',
+                $param->getName(),
+                $class->getName(),
+                $method->getName(),
+            ));
+        }
+
+        $hasRules = !empty($argAttr?->rules);
+        $hasDefault = $param->hasDefaultValue();
+
+        return new DiscoveredArg(
+            name: $argAttr?->name ?? $param->getName(),
+            paramName: $param->getName(),
+            type: $typeName,
+            nullable: $typeReflector->isNullable() || $hasDefault,
+            description: $argAttr?->description,
+            hasRules: $hasRules,
+            hasDefault: $hasDefault,
+            defaultValue: $hasDefault ? $param->getDefaultValue() : null,
+        );
     }
 }
