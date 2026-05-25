@@ -9,15 +9,23 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use Tempest\Discovery\DiscoveryItems;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredField;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\NullType;
 use Tests\Fixtures\RebingGraphQL\AlwaysAllowGate;
 use Tests\Fixtures\RebingGraphQL\AlwaysDenyGate;
 use Tests\Fixtures\RebingGraphQL\AuthorizedQuery;
+use Tests\Fixtures\RebingGraphQL\BareDeprecatedQuery;
+use Tests\Fixtures\RebingGraphQL\BoolReturnQuery;
 use Tests\Fixtures\RebingGraphQL\DeprecatedQuery;
 use Tests\Fixtures\RebingGraphQL\DescribedQuery;
 use Tests\Fixtures\RebingGraphQL\ExclamationMiddleware;
+use Tests\Fixtures\RebingGraphQL\ExplicitTypeArgQuery;
+use Tests\Fixtures\RebingGraphQL\FloatBoolQuery;
 use Tests\Fixtures\RebingGraphQL\GatedQuery;
 use Tests\Fixtures\RebingGraphQL\InjectionQuery;
 use Tests\Fixtures\RebingGraphQL\MiddlewareQuery;
+use Tests\Fixtures\RebingGraphQL\SinceOnlyDeprecatedQuery;
+use Workbench\App\GraphQL\Mutations\RebingNativeMutation;
 use Tests\Fixtures\RebingGraphQL\MissingTypeQuery;
 use Tests\Fixtures\RebingGraphQL\NonScalarQuery;
 use Tests\Fixtures\RebingGraphQL\NullableScalarReturnQuery;
@@ -30,6 +38,7 @@ use Tests\Fixtures\RebingGraphQL\SchemaOnMethodQuery;
 use Tests\Fixtures\RebingGraphQL\UppercaseMiddleware;
 use Tests\Fixtures\RebingGraphQL\VoidQuery;
 use Workbench\App\Models\User;
+use GraphQL\Language\AST\StringValueNode;
 
 function discoverGraphQL(string ...$classes): GraphQLDiscovery
 {
@@ -159,6 +168,71 @@ describe('resolution and return-type inference', function () {
             ->assertOk()
             ->assertJsonPath('data.clearCache', null);
     });
+
+    it('runs #[Arg(rules:)] validation and rejects requests with invalid args', function () {
+        $this->postJson('/graphql', ['query' => '{ validatedHello(name: "ab") }'])
+            ->assertOk()
+            ->assertJsonPath('data.validatedHello', null)
+            ->assertJsonPath('errors.0.extensions.validation.name.0', 'The name field must be at least 3 characters.');
+    });
+
+    it('resolves the query when #[Arg(rules:)] validation passes', function () {
+        $this->postJson('/graphql', ['query' => '{ validatedHello(name: "Niels") }'])
+            ->assertOk()
+            ->assertJsonPath('data.validatedHello', 'hi, Niels');
+    });
+
+    it('maps float and bool to their GraphQL scalar types for both args and return type', function () {
+        $items = iterator_to_array(discoverGraphQL(FloatBoolQuery::class)->getItems());
+        /** @var DiscoveredAction $item */
+        $item = $items[0];
+
+        $field = $item->createType(app());
+
+        expect($item->action->type)->toBe('float')
+            ->and($item->args[0]->type)->toBe('bool')
+            ->and($item->args[1]->type)->toBe('float')
+            ->and((string) $field->type())->toBe('Float!')
+            ->and((string) $field->args()['enabled']['type'])->toBe('Boolean!')
+            ->and((string) $field->args()['threshold']['type'])->toBe('Float!');
+    });
+
+    it('maps a bool return type to the GraphQL Boolean scalar', function () {
+        $items = iterator_to_array(discoverGraphQL(BoolReturnQuery::class)->getItems());
+        $field = $items[0]->createType(app());
+
+        expect((string) $field->type())->toBe('Boolean!');
+    });
+
+    it('honours #[Arg(type: ...)] as an explicit GraphQL type override', function () {
+        $items = iterator_to_array(discoverGraphQL(ExplicitTypeArgQuery::class)->getItems());
+
+        expect($items[0]->args[0]->type)->toBe('CustomFilter');
+    });
+});
+
+describe('class-based registrations', function () {
+    it('registers classes that extend Rebing\'s Mutation as discovered mutation fields', function () {
+        $items = iterator_to_array(discoverGraphQL(RebingNativeMutation::class)->getItems());
+
+        expect($items)->toHaveCount(1)
+            ->and($items[0])->toBeInstanceOf(DiscoveredField::class)
+            ->and($items[0]->fieldType)->toBe('mutation')
+            ->and($items[0]->class)->toBe(RebingNativeMutation::class);
+    });
+});
+
+describe('null type', function () {
+    it('serializes to null and refuses to parse input', function () {
+        $type = new NullType();
+
+        expect($type->serialize('anything'))->toBeNull()
+            ->and(fn() => $type->parseValue('x'))
+                ->toThrow(\RuntimeException::class, 'cannot be used as an input argument')
+            ->and(fn() => $type->parseLiteral(new StringValueNode(['value' => 'x'])))
+                ->toThrow(\RuntimeException::class, 'cannot be used as an input argument')
+            ->and($type->toType())->toBeInstanceOf(NullType::class);
+    });
 });
 
 describe('schema routing', function () {
@@ -269,6 +343,30 @@ describe('parameter injections', function () {
                 'info' => 'info',
             ]);
     });
+
+    it('wires #[Root], #[Context] and ResolveInfo into the resolve() call when invoked directly', function () {
+        $items = iterator_to_array(discoverGraphQL(InjectionQuery::class)->getItems());
+        $field = $items[0]->createType(app());
+
+        expect($field->resolve('root-value', ['name' => 'Niels'], 'context-value', null))
+            ->toBe('Niels');
+    });
+
+    it('passes ResolveInfo into resolve() with the actual field name at runtime', function () {
+        auth()->logout();
+
+        $this->postJson('/graphql', ['query' => '{ whoami }'])
+            ->assertOk()
+            ->assertJsonPath('data.whoami', 'field=whoami context=guest');
+    });
+
+    it('passes the authenticated user as Context into resolve() via Rebing AddAuthUserContextValueMiddleware', function () {
+        $this->actingAs(new User());
+
+        $this->postJson('/graphql', ['query' => '{ whoami }'])
+            ->assertOk()
+            ->assertJsonPath('data.whoami', 'field=whoami context=user');
+    });
 });
 
 describe('description', function () {
@@ -299,6 +397,18 @@ describe('deprecation', function () {
             ->and($item->args[0]->deprecationReason)->toBe('Pass name via context')
             ->and($field->attributes())->toHaveKey('deprecationReason', 'Use newGreet instead (since 2.0.0)')
             ->and($field->args()['name'])->toHaveKey('deprecationReason', 'Pass name via context');
+    });
+
+    it('formats #[\Deprecated(since:)] without a message as "Deprecated since X"', function () {
+        $items = iterator_to_array(discoverGraphQL(SinceOnlyDeprecatedQuery::class)->getItems());
+
+        expect($items[0]->deprecationReason)->toBe('Deprecated since 3.0.0');
+    });
+
+    it('falls back to a plain "Deprecated" reason for a bare #[\Deprecated]', function () {
+        $items = iterator_to_array(discoverGraphQL(BareDeprecatedQuery::class)->getItems());
+
+        expect($items[0]->deprecationReason)->toBe('Deprecated');
     });
 });
 
