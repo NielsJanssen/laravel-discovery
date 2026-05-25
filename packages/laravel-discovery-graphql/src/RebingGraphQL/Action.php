@@ -9,6 +9,7 @@ interface Action
     public ?string $type {get; set;}
     public ?string $name {get; set;}
     public ?string $schema {get; set;}
+    public ?string $description {get; set;}
     public bool $list {get; set;}
     public bool $nullable {get; set;}
 }

@@ -15,6 +15,7 @@ class DiscoveredAction
         public string $method,
         /** @var DiscoveredArg[] */
         public array $args = [],
+        public ?string $deprecationReason = null,
     ) {}
 
     public function createType(Application $app): Field

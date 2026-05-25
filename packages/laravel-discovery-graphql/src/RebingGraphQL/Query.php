@@ -13,6 +13,7 @@ class Query implements Action
         public ?string $name = null,
         public ?string $type = null,
         public ?string $schema = null,
+        public ?string $description = null,
         public bool $list = false,
         public bool $nullable = false,
     ) {}

@@ -15,5 +15,6 @@ class DiscoveredArg
         public readonly bool    $hasRules = false,
         public readonly bool    $hasDefault = false,
         public readonly mixed   $defaultValue = null,
+        public readonly ?string $deprecationReason = null,
     ) {}
 }
