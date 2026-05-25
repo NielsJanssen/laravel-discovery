@@ -6,6 +6,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Illuminate\Foundation\Application;
 use Rebing\GraphQL\Support\Field;
+use Rebing\GraphQL\Support\Middleware as RebingMiddleware;
 
 class DiscoveredAction
 {
@@ -17,6 +18,8 @@ class DiscoveredAction
         public array $args = [],
         /** @var array<string, 'root'|'context'|'info'> keyed by paramName */
         public array $injections = [],
+        /** @var list<class-string<RebingMiddleware>> outermost first */
+        public array $middleware = [],
         public ?string $deprecationReason = null,
     ) {}
 

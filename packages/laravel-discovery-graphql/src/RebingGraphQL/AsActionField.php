@@ -121,6 +121,11 @@ trait AsActionField
             ->{$this->discoveredAction->method}(...$mappedArgs);
     }
 
+    protected function getMiddleware(): array
+    {
+        return $this->discoveredAction->middleware;
+    }
+
     private function resolveClosureRules(string $paramName): \Closure
     {
         $class = $this->discoveredAction->class;

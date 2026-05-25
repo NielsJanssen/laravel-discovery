@@ -11,7 +11,9 @@ use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\RebingGraphQL\DeprecatedQuery;
 use Tests\Fixtures\RebingGraphQL\DescribedQuery;
+use Tests\Fixtures\RebingGraphQL\ExclamationMiddleware;
 use Tests\Fixtures\RebingGraphQL\InjectionQuery;
+use Tests\Fixtures\RebingGraphQL\MiddlewareQuery;
 use Tests\Fixtures\RebingGraphQL\MissingTypeQuery;
 use Tests\Fixtures\RebingGraphQL\NonScalarQuery;
 use Tests\Fixtures\RebingGraphQL\NullableScalarReturnQuery;
@@ -21,6 +23,7 @@ use Tests\Fixtures\RebingGraphQL\SchemaExplicitArgQuery;
 use Tests\Fixtures\RebingGraphQL\SchemaMethodOverridesClassQuery;
 use Tests\Fixtures\RebingGraphQL\SchemaOnClassQuery;
 use Tests\Fixtures\RebingGraphQL\SchemaOnMethodQuery;
+use Tests\Fixtures\RebingGraphQL\UppercaseMiddleware;
 use Tests\Fixtures\RebingGraphQL\VoidQuery;
 
 function discoverGraphQL(string ...$classes): GraphQLDiscovery
@@ -283,4 +286,47 @@ it('maps native #[\Deprecated] on methods and parameters to GraphQL deprecationR
         ->and($item->args[0]->deprecationReason)->toBe('Pass name via context')
         ->and($field->attributes())->toHaveKey('deprecationReason', 'Use newGreet instead (since 2.0.0)')
         ->and($field->args()['name'])->toHaveKey('deprecationReason', 'Pass name via context');
+});
+
+it('collects class-level then method-level middleware in execution order', function () {
+    $items = iterator_to_array(discoverGraphQL(MiddlewareQuery::class)->getItems());
+
+    /** @var DiscoveredAction $shout */
+    /** @var DiscoveredAction $whisper */
+    [$shout, $whisper] = array_values(array_combine(
+        array_map(fn(DiscoveredAction $i) => $i->action->name, $items),
+        $items,
+    ));
+
+    expect($shout->middleware)->toBe([
+        ExclamationMiddleware::class,
+        UppercaseMiddleware::class,
+    ])
+        ->and($whisper->middleware)->toBe([
+            ExclamationMiddleware::class,
+        ]);
+});
+
+it('exposes discovered middleware to Rebing via the Field getMiddleware() hook', function () {
+    $items = iterator_to_array(discoverGraphQL(MiddlewareQuery::class)->getItems());
+    /** @var DiscoveredAction $shout */
+    $shout = collect($items)->first(fn(DiscoveredAction $i) => $i->action->name === 'shout');
+
+    $field = $shout->createType(app());
+
+    $reflected = (new \ReflectionClass($field))->getMethod('getMiddleware');
+    $reflected->setAccessible(true);
+
+    expect($reflected->invoke($field))->toBe([
+        ExclamationMiddleware::class,
+        UppercaseMiddleware::class,
+    ]);
+});
+
+it('runs discovered middleware around the resolver in class-then-method order over a real GraphQL request', function () {
+    $this->postJson('/graphql', [
+        'query' => '{ shout(name: "world") }',
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.shout', 'HELLO WORLD!');
 });

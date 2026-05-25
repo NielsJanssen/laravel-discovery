@@ -174,13 +174,26 @@ Two registration modes coexist:
 1. **Class-based** — classes extending Rebing's `Type`, `Query`, or `Mutation` are auto-registered in `config('graphql.schemas')` (default schema). `QueryField`/`MutationField` are excluded since they are the dynamic wrappers for mode 2.
 2. **Action-based** (preferred for new code) — methods annotated with `#[Query]` or `#[Mutation]` are registered as discovered `Field` instances (`QueryField`/`MutationField` via the `AsActionField` trait):
    - Return type is inferred from the method's PHP return type hint when scalar (or `void` → `NullType`); otherwise `type:` must be specified on the attribute
-   - Each parameter becomes a GraphQL arg. Scalar PHP types map directly; non-scalar parameters require `#[Arg(type: 'GraphQLTypeName')]`
-   - `#[Arg]` also accepts `name`, `description`, and `rules` (array or `Closure` for lazy validation)
+   - `#[Query]` / `#[Mutation]` accept `description:` (surfaced as the field description in GraphiQL)
+   - Each parameter becomes a GraphQL arg **unless** it is one of the injection sources below
+   - `#[Arg]` accepts `name`, `description`, `rules` (array or `Closure` for lazy validation), and `deprecationReason`
    - The discovered action is bound as a singleton at `discovery.rebing_graphql.<sha256-of-item>`; the schema config is only written when `configurationIsCached()` is false (so cached config wins in production)
+
+**Parameter injections.** A `#[Query]`/`#[Mutation]` method can mix GraphQL args with values plucked from the resolver call. These parameters are *excluded* from the generated `args()` definition:
+
+- `#[Root] mixed $root` — the parent object (top-level queries see `null`)
+- `#[Context] mixed $context` — Rebing's context value (typically built by `AddAuthUserContextValueMiddleware` or a custom context factory)
+- `GraphQL\Type\Definition\ResolveInfo $info` — detected by **type**, no attribute needed; the standard webonyx resolve-info handle
+
+Internally these become entries in `DiscoveredAction::$injections` keyed by `paramName`, and `AsActionField::resolve()` fills them in alongside the real GraphQL args before calling the user's method.
+
+**Deprecation.** Use PHP 8.4's native `#[\Deprecated(message:, since:)]` attribute on the method (the field), or `#[Arg(deprecationReason: '...')]` on a parameter — PHP's native `Deprecated` cannot target parameters, hence the `Arg`-level field. Both surface as GraphQL's `deprecationReason`. Method-level `message` + `since` are concatenated as `"{message} (since {since})"`.
 
 **Decorators (`ActionDecorator` interface).** Class-level and method-level attributes implementing `ActionDecorator` are collected generically by `GraphQLDiscovery::discover()` and applied to each `Action` via `decorate()` — method-level first, then class-level, so method-level wins for decorators that use first-wins semantics (`if ($action->X === null) ...`). Adding a new decorator only needs the attribute class + `implements ActionDecorator`; no edit to the discovery flow.
 
 - **`#[Schema('name')]`** (`TARGET_CLASS | TARGET_METHOD`) routes a `#[Query]`/`#[Mutation]` action to a named GraphQL schema instead of `default`. Priority: explicit `#[Query(schema: '…')]` arg > method-level `#[Schema]` > class-level `#[Schema]`. Only applies to action methods — class-based registrations (classes extending Rebing's `Type`/`Query`/`Mutation`) currently always land in `default` since there is no `Action` to decorate.
+
+**Middleware (`#[Middleware]`).** Repeatable, `TARGET_CLASS | TARGET_METHOD`. Carries one or more `class-string<\Rebing\GraphQL\Support\Middleware>` values. Class-level attributes are flattened first, then method-level (so class middleware wraps method middleware — class is outermost). The list is exposed to Rebing through an `AsActionField::getMiddleware()` override, so it flows through Rebing's existing `Pipeline::send($arguments)->through($middleware)->via('resolve')` pipeline alongside global middleware and `terminate()` hooks. We do **not** ship a custom middleware interface — users extend `Rebing\GraphQL\Support\Middleware` and inherit its `handle(mixed $root, array $args, mixed $context, ResolveInfo $info, Closure $next): mixed` contract.
 
 ```php
 #[Schema('admin')]
