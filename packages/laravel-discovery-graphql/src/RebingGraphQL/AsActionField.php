@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
+use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Type\Definition\Type as GraphQLType;
 use Illuminate\Foundation\Application;
 use Rebing\GraphQL\Support\Facades\GraphQL;
@@ -24,9 +25,21 @@ trait AsActionField
 
     public function attributes(): array
     {
-        return [
-            'name' => $this->discoveredAction->action->name ?? $this->discoveredAction->method,
+        $action = $this->discoveredAction->action;
+
+        $attrs = [
+            'name' => $action->name ?? $this->discoveredAction->method,
         ];
+
+        if ($action->description !== null) {
+            $attrs['description'] = $action->description;
+        }
+
+        if ($this->discoveredAction->deprecationReason !== null) {
+            $attrs['deprecationReason'] = $this->discoveredAction->deprecationReason;
+        }
+
+        return $attrs;
     }
 
     public function args(): array
@@ -54,6 +67,10 @@ trait AsActionField
 
             if ($arg->hasRules) {
                 $entry['rules'] = $this->resolveClosureRules($arg->paramName);
+            }
+
+            if ($arg->deprecationReason !== null) {
+                $entry['deprecationReason'] = $arg->deprecationReason;
             }
 
             $args[$arg->name] = $entry;

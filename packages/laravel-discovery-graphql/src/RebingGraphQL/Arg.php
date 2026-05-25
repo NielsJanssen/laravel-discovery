@@ -14,5 +14,6 @@ class Arg
         public readonly ?string $type = null,
         public array|\Closure|null $rules = null,
         public readonly ?string $description = null,
+        public readonly ?string $deprecationReason = null,
     ) {}
 }

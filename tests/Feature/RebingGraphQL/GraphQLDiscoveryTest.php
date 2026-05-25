@@ -9,6 +9,8 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use Tempest\Discovery\DiscoveryItems;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
+use Tests\Fixtures\RebingGraphQL\DeprecatedQuery;
+use Tests\Fixtures\RebingGraphQL\DescribedQuery;
 use Tests\Fixtures\RebingGraphQL\MissingTypeQuery;
 use Tests\Fixtures\RebingGraphQL\NonScalarQuery;
 use Tests\Fixtures\RebingGraphQL\NullableScalarReturnQuery;
@@ -238,4 +240,31 @@ it('keeps decorated actions in their declared schema even when graphql.default_s
     expect($schemas['admin']['query'])->toHaveKey('methodLevel')
         ->and($schemas['custom']['query'] ?? [])->not->toBeEmpty()
         ->and($schemas['custom']['query'] ?? [])->not->toHaveKey('methodLevel');
+});
+
+it('exposes #[Query(description: ...)] on the discovered action and the Field attributes', function () {
+    $items = iterator_to_array(discoverGraphQL(DescribedQuery::class)->getItems());
+    /** @var DiscoveredAction $item */
+    $item = $items[0];
+
+    $field = $item->createType(app());
+
+    expect($item->action->description)->toBe('Returns a greeting')
+        ->and($field->attributes())->toMatchArray([
+            'name' => 'described',
+            'description' => 'Returns a greeting',
+        ]);
+});
+
+it('maps native #[\Deprecated] on methods and parameters to GraphQL deprecationReason', function () {
+    $items = iterator_to_array(discoverGraphQL(DeprecatedQuery::class)->getItems());
+    /** @var DiscoveredAction $item */
+    $item = $items[0];
+
+    $field = $item->createType(app());
+
+    expect($item->deprecationReason)->toBe('Use newGreet instead (since 2.0.0)')
+        ->and($item->args[0]->deprecationReason)->toBe('Pass name via context')
+        ->and($field->attributes())->toHaveKey('deprecationReason', 'Use newGreet instead (since 2.0.0)')
+        ->and($field->args()['name'])->toHaveKey('deprecationReason', 'Pass name via context');
 });

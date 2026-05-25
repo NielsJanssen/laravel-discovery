@@ -49,6 +49,7 @@ class GraphQLDiscovery implements Discovery
         }
 
         $classDecorators = $class->getAttributes(ActionDecorator::class);
+        $classMiddleware = $this->collectMiddleware($class->getAttributes(Middleware::class));
 
         foreach ($class->getPublicMethods() as $method) {
             $action = $method->getAttribute(Query::class) ?? $method->getAttribute(Mutation::class);
@@ -76,8 +77,31 @@ class GraphQLDiscovery implements Discovery
                 $args[] = $this->discoverActionParameter($param, $class, $method);
             }
 
-            $this->discoveryItems->add($location, new DiscoveredAction($action, $class->getName(), $method->getName(), $args));
+            $this->discoveryItems->add($location, new DiscoveredAction(
+                $action,
+                $class->getName(),
+                $method->getName(),
+                $args,
+                $this->resolveDeprecationReason($method->getAttribute(\Deprecated::class)),
+            ));
         }
+    }
+
+    private function resolveDeprecationReason(?\Deprecated $deprecated): ?string
+    {
+        if ($deprecated === null) {
+            return null;
+        }
+
+        $message = $deprecated->message;
+        $since = $deprecated->since;
+
+        return match (true) {
+            $message !== null && $since !== null => "{$message} (since {$since})",
+            $message !== null => $message,
+            $since !== null => "Deprecated since {$since}",
+            default => 'Deprecated',
+        };
     }
 
     public function apply(): void
@@ -169,6 +193,7 @@ class GraphQLDiscovery implements Discovery
             hasRules: $hasRules,
             hasDefault: $hasDefault,
             defaultValue: $hasDefault ? $param->getDefaultValue() : null,
+            deprecationReason: $argAttr?->deprecationReason,
         );
     }
 }
