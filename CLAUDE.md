@@ -195,6 +195,13 @@ Internally these become entries in `DiscoveredAction::$injections` keyed by `par
 
 **Middleware (`#[Middleware]`).** Repeatable, `TARGET_CLASS | TARGET_METHOD`. Carries one or more `class-string<\Rebing\GraphQL\Support\Middleware>` values. Class-level attributes are flattened first, then method-level (so class middleware wraps method middleware — class is outermost). The list is exposed to Rebing through an `AsActionField::getMiddleware()` override, so it flows through Rebing's existing `Pipeline::send($arguments)->through($middleware)->via('resolve')` pipeline alongside global middleware and `terminate()` hooks. We do **not** ship a custom middleware interface — users extend `Rebing\GraphQL\Support\Middleware` and inherit its `handle(mixed $root, array $args, mixed $context, ResolveInfo $info, Closure $next): mixed` contract.
 
+**Authorization (`#[Authorize]`).** Repeatable, `TARGET_CLASS | TARGET_METHOD`. Two modes:
+
+- **Bare `#[Authorize]`** — enforces "must be logged in" via `auth()->check()`. Works regardless of whether Rebing's `AddAuthUserContextValueMiddleware` is enabled.
+- **`#[Authorize(gate: SomeGate::class)]`** — delegates to a class implementing `AuthorizationGate::check(mixed $root, array $args, mixed $context, ?ResolveInfo $info): bool`. The gate is resolved from the container, so it gets constructor DI. Use this for anything more involved than a logged-in check (policies, fetch-then-authorize, role checks, etc).
+
+Attributes are collected class-first then method-first; **all** must pass (AND semantics). The first failing attribute's optional `message:` surfaces via `getAuthorizationMessage()` (otherwise Rebing's default "Unauthorized"). Hooks in via overrides of `Field::authorize()` and `Field::getAuthorizationMessage()` on `AsActionField`, so Rebing's resolver pipeline blocks the request **before** validation runs.
+
 ```php
 #[Schema('admin')]
 class AdminQueries
