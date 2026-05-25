@@ -1,6 +1,32 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [1.0.0-beta.3] - 2026-05-25
+
+### Documentation
+
+- Touchups in the documentation
+
+### Features
+
+- Add multi-verb #[Route] attribute
+- Reworked Scheduled attribute to allow more native freedom in scheduling before resorting to a closure
+- Implement Rebing GraphQL discovery
+
+### Miscellaneous Tasks
+
+- Ignore Claude related files and assets in package export
+- Support `t serve` comamnd in Workbench
+
+### Other Changes
+
+- Use shortName for classes in docblocks
+- Propagate release tags to splits
+
+### Refactoring
+
+- Move to mono-repo structure
+
 ## [1.0.0-beta.1] - 2026-05-23
 
 ### Bug Fixes
