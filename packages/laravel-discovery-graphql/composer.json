@@ -1,0 +1,37 @@
+{
+    "name": "nielsjanssen/laravel-discovery-graphql",
+    "description": "Rebing GraphQL integration for laravel-discovery",
+    "keywords": [
+        "laravel",
+        "discovery",
+        "graphql",
+        "rebing",
+        "tempest"
+    ],
+    "homepage": "https://github.com/NielsJanssen/laravel-discovery-graphql",
+    "type": "library",
+    "license": "MIT",
+    "support": {
+        "issues": "https://github.com/NielsJanssen/laravel-discovery-graphql/issues",
+        "source": "https://github.com/NielsJanssen/laravel-discovery-graphql"
+    },
+    "authors": [
+        {
+            "name": "Niels Janssen",
+            "email": "hi@nielsjanssen.eu"
+        }
+    ],
+    "require": {
+        "php": "^8.5",
+        "nielsjanssen/laravel-discovery": "^1.0",
+        "tempest/discovery": "^3.10",
+        "rebing/graphql-laravel": "10.x-dev"
+    },
+    "autoload": {
+        "psr-4": {
+            "NielsJanssen\\Laravel\\Discovery\\RebingGraphQL\\": "src/RebingGraphQL/"
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

@@ -1,0 +1,46 @@
+{
+    "name": "nielsjanssen/laravel-discovery",
+    "description": "Laravel service provider and artisan command discovery powered by Tempest Discovery",
+    "keywords": [
+        "laravel",
+        "discovery",
+        "service-provider",
+        "commands",
+        "tempest"
+    ],
+    "homepage": "https://github.com/NielsJanssen/laravel-discovery-core",
+    "type": "library",
+    "license": "MIT",
+    "support": {
+        "issues": "https://github.com/NielsJanssen/laravel-discovery/issues",
+        "source": "https://github.com/NielsJanssen/laravel-discovery-core"
+    },
+    "authors": [
+        {
+            "name": "Niels Janssen",
+            "email": "hi@nielsjanssen.eu"
+        }
+    ],
+    "require": {
+        "php": "^8.5",
+        "tempest/discovery": "^3.10"
+    },
+    "autoload": {
+        "psr-4": {
+            "NielsJanssen\\Laravel\\Discovery\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "NielsJanssen\\Laravel\\Discovery\\DiscoveryServiceProvider"
+            ]
+        },
+        "branch-alias": {
+            "dev-main": "1.x-dev",
+            "dev-feat/graphql-laravel-discovery": "1.x-dev"
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

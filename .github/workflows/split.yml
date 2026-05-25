@@ -1,0 +1,50 @@
+name: Split
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+
+permissions:
+  contents: read
+
+jobs:
+  split-laravel-discovery:
+    name: Split laravel-discovery
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: symplify/monorepo-split-github-action@v2
+        with:
+          package_directory: packages/laravel-discovery
+          repository: git@github.com:NielsJanssen/laravel-discovery-core.git
+          branch: main
+          tag: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+          ssh_private_key: ${{ secrets.SPLIT_SSH_PRIVATE_KEY_CORE }}
+
+  split-laravel-discovery-graphql:
+    name: Split laravel-discovery-graphql
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: symplify/monorepo-split-github-action@v2
+        with:
+          package_directory: packages/laravel-discovery-graphql
+          repository: git@github.com:NielsJanssen/laravel-discovery-graphql.git
+          branch: main
+          tag: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+          ssh_private_key: ${{ secrets.SPLIT_SSH_PRIVATE_KEY_GRAPHQL }}

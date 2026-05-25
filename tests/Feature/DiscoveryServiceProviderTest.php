@@ -13,7 +13,7 @@ describe('config publishing', function () {
 
         expect($paths)->toHaveCount(1);
 
-        $expectedSource = realpath(__DIR__ . '/../../config/discovery.php');
+        $expectedSource = realpath(__DIR__ . '/../../packages/laravel-discovery/config/discovery.php');
         $expectedTarget = config_path('discovery.php');
 
         $source = array_key_first($paths);
