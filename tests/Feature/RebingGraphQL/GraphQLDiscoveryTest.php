@@ -14,6 +14,10 @@ use Tests\Fixtures\RebingGraphQL\NonScalarQuery;
 use Tests\Fixtures\RebingGraphQL\NullableScalarReturnQuery;
 use Tests\Fixtures\RebingGraphQL\OptionalArgQuery;
 use Tests\Fixtures\RebingGraphQL\ScalarReturnQuery;
+use Tests\Fixtures\RebingGraphQL\SchemaExplicitArgQuery;
+use Tests\Fixtures\RebingGraphQL\SchemaMethodOverridesClassQuery;
+use Tests\Fixtures\RebingGraphQL\SchemaOnClassQuery;
+use Tests\Fixtures\RebingGraphQL\SchemaOnMethodQuery;
 use Tests\Fixtures\RebingGraphQL\VoidQuery;
 
 function discoverGraphQL(string ...$classes): GraphQLDiscovery
@@ -143,4 +147,95 @@ it('resolves a void mutation returning null', function () {
     ])
         ->assertOk()
         ->assertJsonPath('data.clearCache', null);
+});
+
+it('applies a method-level #[Schema] decorator to the action', function () {
+    $items = iterator_to_array(discoverGraphQL(SchemaOnMethodQuery::class)->getItems());
+
+    expect($items[0]->action->schema)->toBe('admin');
+});
+
+it('applies a class-level #[Schema] decorator to every action method', function () {
+    $items = iterator_to_array(discoverGraphQL(SchemaOnClassQuery::class)->getItems());
+
+    expect($items)->toHaveCount(2)
+        ->and($items[0]->action->schema)->toBe('admin')
+        ->and($items[1]->action->schema)->toBe('admin');
+});
+
+it('lets a method-level #[Schema] decorator override the class-level one', function () {
+    $items = iterator_to_array(discoverGraphQL(SchemaMethodOverridesClassQuery::class)->getItems());
+
+    $bySchema = array_column(array_map(
+        fn($item) => ['name' => $item->action->name, 'schema' => $item->action->schema],
+        $items,
+    ), 'schema', 'name');
+
+    expect($bySchema)->toBe([
+        'methodWins' => 'public',
+        'classFallback' => 'admin',
+    ]);
+});
+
+it('preserves an explicit schema argument on #[Query] over decorators', function () {
+    $items = iterator_to_array(discoverGraphQL(SchemaExplicitArgQuery::class)->getItems());
+
+    expect($items[0]->action->schema)->toBe('reports');
+});
+
+it('routes decorated actions to their declared schema in graphql.schemas config', function () {
+    config()->set('graphql.schemas', []);
+
+    $discovery = discoverGraphQL(SchemaOnMethodQuery::class, SchemaOnClassQuery::class);
+    $discovery->apply();
+
+    $schemas = config('graphql.schemas');
+
+    expect($schemas)->toHaveKey('admin')
+        ->and($schemas['admin']['query'])->toHaveKey('methodLevel')
+        ->and($schemas['admin']['query'])->toHaveKey('classLevelQuery')
+        ->and($schemas['admin']['mutation'])->toHaveKey('classLevelMutation')
+        ->and($schemas['default'] ?? [])->not->toHaveKey('query');
+});
+
+it('routes undecorated actions to graphql.default_schema when configured', function () {
+    config()->set('graphql.schemas', []);
+    config()->set('graphql.default_schema', 'custom');
+
+    $discovery = discoverGraphQL(ScalarReturnQuery::class);
+    $discovery->apply();
+
+    $schemas = config('graphql.schemas');
+
+    expect($schemas)->toHaveKey('custom')
+        ->and($schemas['custom']['query'] ?? [])->not->toBeEmpty()
+        ->and($schemas)->not->toHaveKey('default');
+});
+
+it('uses the Rebing default schema "default" when graphql.default_schema is unchanged', function () {
+    config()->set('graphql.schemas', []);
+
+    expect(config('graphql.default_schema'))->toBe('default');
+
+    $discovery = discoverGraphQL(ScalarReturnQuery::class);
+    $discovery->apply();
+
+    $schemas = config('graphql.schemas');
+
+    expect($schemas)->toHaveKey('default')
+        ->and($schemas['default']['query'] ?? [])->not->toBeEmpty();
+});
+
+it('keeps decorated actions in their declared schema even when graphql.default_schema is set', function () {
+    config()->set('graphql.schemas', []);
+    config()->set('graphql.default_schema', 'custom');
+
+    $discovery = discoverGraphQL(SchemaOnMethodQuery::class, ScalarReturnQuery::class);
+    $discovery->apply();
+
+    $schemas = config('graphql.schemas');
+
+    expect($schemas['admin']['query'])->toHaveKey('methodLevel')
+        ->and($schemas['custom']['query'] ?? [])->not->toBeEmpty()
+        ->and($schemas['custom']['query'] ?? [])->not->toHaveKey('methodLevel');
 });

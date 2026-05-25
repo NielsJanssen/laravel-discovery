@@ -48,6 +48,8 @@ class GraphQLDiscovery implements Discovery
             return;
         }
 
+        $classDecorators = $class->getAttributes(ActionDecorator::class);
+
         foreach ($class->getPublicMethods() as $method) {
             $action = $method->getAttribute(Query::class) ?? $method->getAttribute(Mutation::class);
 
@@ -57,6 +59,15 @@ class GraphQLDiscovery implements Discovery
 
             if ($action->type === null) {
                 [$action->type, $action->nullable] = $this->discoverActionReturnType($action, $class, $method);
+            }
+
+            $decorators = [
+                ...$method->getAttributes(ActionDecorator::class),
+                ...$classDecorators,
+            ];
+
+            foreach ($decorators as $decorator) {
+                $decorator->decorate($action);
             }
 
             $args = [];
@@ -72,12 +83,16 @@ class GraphQLDiscovery implements Discovery
     public function apply(): void
     {
         $buildConfig = !$this->app->configurationIsCached();
+
+        $config = $this->app->make('config');
+
         $schemas = [];
 
         foreach ($this->discoveryItems as $item) {
-            $schema = 'default';
+            $defaultSchema = $config->get('graphql.default_schema', 'default');
 
             if ($item instanceof DiscoveredAction) {
+                $schema = $item->action->schema ?? $defaultSchema;
                 $bindName = 'discovery.rebing_graphql.' . hash('sha256', serialize($item));
 
                 $this->app->singleton($bindName, $item->createType(...));
@@ -86,12 +101,11 @@ class GraphQLDiscovery implements Discovery
                     $schemas[$schema][$item->fieldType][$item->action->name] = $bindName;
                 }
             } elseif ($item instanceof DiscoveredField && $buildConfig) {
-                $schemas[$schema][$item->fieldType][$item->getName()] = $item->class;
+                $schemas[$item->schema ?? $defaultSchema][$item->fieldType][$item->getName()] = $item->class;
             }
         }
 
         if ($buildConfig && !empty($schemas)) {
-            $config = $this->app->make('config');
             $config->set('graphql.schemas', array_merge_recursive(
                 $config->get('graphql.schemas', []),
                 $schemas,
