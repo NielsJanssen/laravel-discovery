@@ -176,8 +176,27 @@ Two registration modes coexist:
    - Return type is inferred from the method's PHP return type hint when scalar (or `void` → `NullType`); otherwise `type:` must be specified on the attribute
    - Each parameter becomes a GraphQL arg. Scalar PHP types map directly; non-scalar parameters require `#[Arg(type: 'GraphQLTypeName')]`
    - `#[Arg]` also accepts `name`, `description`, and `rules` (array or `Closure` for lazy validation)
-   - `#[Schema('name')]` (a `ActionDecorator`) targets the action at a non-default schema (currently still writes to `default` — see `GraphQLDiscovery::apply()`)
    - The discovered action is bound as a singleton at `discovery.rebing_graphql.<sha256-of-item>`; the schema config is only written when `configurationIsCached()` is false (so cached config wins in production)
+
+**Decorators (`ActionDecorator` interface).** Class-level and method-level attributes implementing `ActionDecorator` are collected generically by `GraphQLDiscovery::discover()` and applied to each `Action` via `decorate()` — method-level first, then class-level, so method-level wins for decorators that use first-wins semantics (`if ($action->X === null) ...`). Adding a new decorator only needs the attribute class + `implements ActionDecorator`; no edit to the discovery flow.
+
+- **`#[Schema('name')]`** (`TARGET_CLASS | TARGET_METHOD`) routes a `#[Query]`/`#[Mutation]` action to a named GraphQL schema instead of `default`. Priority: explicit `#[Query(schema: '…')]` arg > method-level `#[Schema]` > class-level `#[Schema]`. Only applies to action methods — class-based registrations (classes extending Rebing's `Type`/`Query`/`Mutation`) currently always land in `default` since there is no `Action` to decorate.
+
+```php
+#[Schema('admin')]
+class AdminQueries
+{
+    #[Query(type: 'User', list: true)]
+    public function users(): array { /* lands in admin schema */ }
+
+    #[Query]
+    #[Schema('reports')]               // method-level overrides class-level
+    public function reportSummary(): string { /* lands in reports schema */ }
+
+    #[Query(schema: 'public')]         // explicit arg overrides both decorators
+    public function ping(): string { return 'pong'; }
+}
+```
 
 ```php
 class BookQueries
