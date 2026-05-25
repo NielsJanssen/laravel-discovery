@@ -72,8 +72,16 @@ class GraphQLDiscovery implements Discovery
             }
 
             $args = [];
+            $injections = [];
 
             foreach ($method->getParameters() as $param) {
+                $kind = $this->detectInjectionKind($param);
+
+                if ($kind !== null) {
+                    $injections[$param->getName()] = $kind;
+                    continue;
+                }
+
                 $args[] = $this->discoverActionParameter($param, $class, $method);
             }
 
@@ -82,9 +90,32 @@ class GraphQLDiscovery implements Discovery
                 $class->getName(),
                 $method->getName(),
                 $args,
+                $injections,
                 $this->resolveDeprecationReason($method->getAttribute(\Deprecated::class)),
             ));
         }
+    }
+
+    /**
+     * @return 'root'|'context'|'info'|null
+     */
+    private function detectInjectionKind(ParameterReflector $param): ?string
+    {
+        if ($param->getAttribute(Root::class) !== null) {
+            return 'root';
+        }
+
+        if ($param->getAttribute(Context::class) !== null) {
+            return 'context';
+        }
+
+        $type = $param->getType();
+
+        if ($type !== null && ! $type->isScalar() && is_a($type->getName(), ResolveInfo::class, true)) {
+            return 'info';
+        }
+
+        return null;
     }
 
     private function resolveDeprecationReason(?\Deprecated $deprecated): ?string

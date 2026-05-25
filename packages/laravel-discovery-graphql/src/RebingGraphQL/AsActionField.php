@@ -100,7 +100,7 @@ trait AsActionField
         return $action->nullable ? $type : GraphQLType::nonNull($type);
     }
 
-    public function resolve($root, array $args): mixed
+    public function resolve(mixed $root, array $args, mixed $context, ?ResolveInfo $info): mixed
     {
         $mappedArgs = [];
 
@@ -109,10 +109,16 @@ trait AsActionField
             $mappedArgs[$discovered->paramName] = $value ?? $discovered->defaultValue;
         }
 
-        $class = $this->discoveredAction->class;
-        $method = $this->discoveredAction->method;
+        foreach ($this->discoveredAction->injections as $paramName => $kind) {
+            $mappedArgs[$paramName] = match ($kind) {
+                'root' => $root,
+                'context' => $context,
+                'info' => $info,
+            };
+        }
 
-        return $this->app->make($class)->$method(...$mappedArgs);
+        return $this->app->make($this->discoveredAction->class)
+            ->{$this->discoveredAction->method}(...$mappedArgs);
     }
 
     private function resolveClosureRules(string $paramName): \Closure
