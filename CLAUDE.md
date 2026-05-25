@@ -4,67 +4,92 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**laravel-discovery** is a Laravel package that brings attribute-based discovery to Laravel applications using the Tempest Discovery library. It enables automatic registration of:
-- **Commands**: Discover Artisan commands via attributes instead of service provider registration
-- **Events**: Discover event listeners via attributes with automatic registration
-- **Routes**: Discover routes via attributes with full support for HTTP method decorators and route modifiers
-- **Schedules**: Discover scheduled tasks via attributes with cron expression or closure configuration
+This is the **laravel-discovery** mono-repo, containing two packages that bring attribute-based discovery to Laravel applications using [Tempest Discovery](https://tempestphp.com/):
 
-The package is built on top of Tempest Discovery (`tempest/discovery: ^3.10`) and integrates seamlessly with Laravel's service container, event dispatcher, router, and scheduler.
+- **`nielsjanssen/laravel-discovery`** (`packages/laravel-discovery/`) — Core: discovers Commands, Events, Routes, and Schedules
+- **`nielsjanssen/laravel-discovery-graphql`** (`packages/laravel-discovery-graphql/`) — Rebing GraphQL integration: discovers GraphQL types, queries, and mutations (including method-level `#[Query]`/`#[Mutation]` actions)
+
+The root `composer.json` is a `type: project` aggregator that `replace`s both packages with `self.version`, so installing the root pulls in everything. Each sub-package has its own `composer.json` so it can be split out to its own repository on release (see `.github/workflows/release.yml` and the SPLIT token).
 
 ## Development Workflow
 
 ### Common Commands
 
 ```bash
-composer install          # Install dependencies
-composer test             # Run all tests
+composer install          # Install dependencies (auto-runs clear + prepare)
+composer test             # Run all tests (Pest)
 composer lint             # Lint code (Laravel Pint)
-composer build            # Build workbench (test application)
+composer build            # Build the workbench test application
 composer serve            # Serve workbench locally
 ```
 
 ```bash
-vendor/bin/pest tests/Feature/Feature/Command/CommandDiscoveryTest.php           # Single file
-vendor/bin/pest tests/Feature/Feature/Command/CommandDiscoveryTest.php --filter=name  # Single test
-vendor/bin/pest --ci      # CI mode (parallel, coverage)
+vendor/bin/pest tests/Feature/Command/CommandDiscoveryTest.php           # Single file
+vendor/bin/pest tests/Feature/Command/CommandDiscoveryTest.php --filter=name  # Single test
+vendor/bin/pest --ci      # CI mode (parallel)
 ```
+
+The `post-autoload-dump` hook runs `testbench package:purge-skeleton` then `testbench package:discover`. If discovery seems stale after editing classes, re-run `composer dump-autoload`.
 
 ## Code Architecture
 
-### High-Level Architecture
+### Repository Layout
 
-The package implements four independent discovery systems that share a common pattern:
+```
+packages/
+  laravel-discovery/           # Core package
+    src/                       # NielsJanssen\Laravel\Discovery\
+      Command/                 # #[ConsoleCommand], middleware
+      Event/                   # #[EventHandler]
+      Router/                  # #[Get], #[Post], etc.
+      Schedule/                # #[Scheduled], Every, Cron, ScheduleDecorator
+      Laravel/                 # Artisan commands (discovery:cache, make:discovery)
+      DiscoveryServiceProvider.php
+    config/discovery.php
+    stubs/                     # make:discovery stub
+  laravel-discovery-graphql/   # GraphQL package
+    src/RebingGraphQL/         # NielsJanssen\Laravel\Discovery\RebingGraphQL\
+tests/
+  Feature/                     # One folder per discovery system
+  Fixtures/                    # Fixture classes per discovery system
+  TestCase.php
+workbench/                     # Minimal Laravel app for integration tests
+```
 
-1. **Command Discovery** (`CommandDiscovery`): Finds and registers Artisan commands
-2. **Event Discovery** (`EventDiscovery`): Finds and registers event listeners
-3. **Route Discovery** (`RouteDiscovery`): Finds and registers HTTP routes
-4. **Schedule Discovery** (`ScheduleDiscovery`): Finds and registers scheduled tasks
+PSR-4 autoload from the root `composer.json`:
+- `NielsJanssen\Laravel\Discovery\` → `packages/laravel-discovery/src/`
+- `NielsJanssen\Laravel\Discovery\RebingGraphQL\` → `packages/laravel-discovery-graphql/src/RebingGraphQL/`
 
-All discoverers implement Tempest's `Discovery` interface, use the `IsDiscovery` trait, and are found automatically when `BootDiscovery` scans the package's `src/` directory.
+When referencing source files, use the full `packages/<pkg>/src/...` path — there is no top-level `/src` directory.
+
+### Discovery Systems
+
+All discoverers implement Tempest's `Discovery` interface, use the `IsDiscovery` trait, and are themselves discovered by `DiscoveryDiscovery` when `BootDiscovery` scans the configured locations. They follow a two-phase contract:
+
+1. `discover(DiscoveryLocation, ClassReflector)` — called per class; populates `$this->discoveryItems` with serializable DTOs (so they can be cached)
+2. `apply()` — called once after all discovery is complete; registers items with Laravel (`Artisan::starting()`, `Event::listen()`, `Route::*`, `Schedule::call()`, `graphql.schemas` config)
 
 ### Discovery Flow
 
-1. `DiscoveryServiceProvider::boot()` calls `BootDiscovery`, storing returned discoveries in `config('discovery.discoveries')`
-2. `BootDiscovery` first runs `DiscoveryDiscovery` to locate all `Discovery` implementations in the configured locations
-3. Each discoverer's `discover()` is called for every class in every location, populating `$this->discoveryItems`
-4. Each discoverer's `apply()` registers found items with Laravel's core systems
-5. Caching is handled by `DiscoveryCache` via Symfony's `PhpFilesAdapter`
+1. `DiscoveryServiceProvider::register()` binds `DiscoveryConfig` (using `discovery.autoload` from config) and `DiscoveryCache` (Symfony `PhpFilesAdapter`, FULL strategy in `discovery.cache_environments`, NONE otherwise)
+2. `DiscoveryServiceProvider::boot()` calls `BootDiscovery`, then stores resolved discovery class names in `config('discovery.discovery_classes')`
+3. `BootDiscovery` runs `DiscoveryDiscovery` first to find every `Discovery` implementation
+4. Each discoverer's `discover()` is invoked for every class in every `DiscoveryLocation`; `apply()` runs after
 
 ### How Discovery Finds the Package's Own Classes
 
-`DiscoveryConfig::autoload(base_path())` reads the project's `composer.json` and scans:
-- **Vendor packages** that require any `tempest/*` package (including `niels-janssen/laravel-discovery` itself, since it requires `tempest/discovery`)
+`DiscoveryConfig::autoload(base_path())` reads the host project's `composer.json` and scans:
+- **Vendor packages** that require any `tempest/*` package (the laravel-discovery packages require `tempest/discovery`, so they are auto-scanned in consumer apps)
 - **App namespaces** defined in the root `composer.json`
 
-For the test environment, the package is the root project (not in `vendor/composer/installed.json`), so `TestCase::defineEnvironment()` sets `discovery.autoload` to `dirname(__DIR__)` (project root) and explicitly appends the workbench app location.
+For the test environment, the package is the root project and the root `composer.json` lists the package namespaces directly under `autoload.psr-4`, so `DiscoveryConfig::autoload(base_path())` (the default) scans them. The current `TestCase::defineEnvironment()` is empty — no manual `discovery.autoload` override is needed.
 
 ### Configuration
 
-`/config/discovery.php`:
+`packages/laravel-discovery/config/discovery.php`:
 ```php
 return [
-    'autoload' => base_path(),              // Must point to a directory with composer.json
+    'autoload' => base_path(),              // Directory with composer.json
     'skip_classes' => [],
     'skip_paths' => [],
     'cache_path' => 'framework/cache/discovery',
@@ -72,14 +97,15 @@ return [
 ];
 ```
 
-### Command Discovery System
+### Command Discovery
 
-**Files**: `/src/Command/*`
+`packages/laravel-discovery/src/Command/`
 
-- **`ConsoleCommand` Attribute**: Marks a method as a discoverable Artisan command
-- **`Command` Class**: Wraps discovered methods to integrate with Laravel's command system, resolving method parameters as CLI arguments, and running a middleware pipeline
-- **`CommandArgumentsDefinition`**: Parses typed method parameters into Symfony input definitions; supports `ConsoleArgument` and `ConsoleOption` attributes
-- **`CommandMiddleware` Interface**: Cross-cutting concerns; built-in: `Benchmark`, `Transaction`, `Caution`; middleware can implement `ProvidesInputOptions` to add custom CLI options
+- **`#[ConsoleCommand]`** marks a method as an Artisan command
+- **`Command`** class wraps discovered methods, resolves typed parameters as args/options, runs middleware
+- **`CommandArgumentsDefinition`** parses parameters into Symfony input definitions; honors `#[ConsoleArgument]` and `#[ConsoleOption]`
+- **Middleware**: `Benchmark`, `Transaction`, `Caution`; implement `CommandMiddleware`; middleware that adds CLI options implements `ProvidesInputOptions`
+- Plain Laravel commands (extending `Illuminate\Console\Command`) are also auto-registered
 
 ```php
 class MyCommands
@@ -90,95 +116,100 @@ class MyCommands
         #[ConsoleOption(shortcut: 'f')] bool $fresh = false,
     ): void {}
 }
-
-// Plain Laravel commands (extend Illuminate\Console\Command) are also auto-discovered
 ```
 
-### Event Discovery System
+### Event Discovery
 
-**Files**: `/src/Event/*`
+`packages/laravel-discovery/src/Event/`
 
-- **`EventHandler` Attribute**: Marks a method as an event listener; event is inferred from the first parameter's type if not explicit
-- Union-typed parameters register the listener for all class types in the union
-- `deferred: true` delays registration until the listener class is resolved from the container
+- **`#[EventHandler]`** marks a method as an event listener; event class is inferred from the first parameter's type if not explicit
+- Union-typed parameters register the listener for every class in the union
+- `deferred: true` defers handler-class resolution until dispatch time
 
-```php
-class EventListeners
-{
-    #[EventHandler]
-    public function onUserCreated(UserCreated $event): void {}
+### Route Discovery
 
-    #[EventHandler(event: [UserCreated::class, UserUpdated::class])]
-    public function onUserEvent($event): void {}
+`packages/laravel-discovery/src/Router/`
 
-    #[EventHandler(deferred: true)]
-    public function onLazyEvent(SomeEvent $event): void {}
-}
-```
+- HTTP-method attributes: `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options` (all extend `Route`/implement `Routable`)
+- Decorators implementing `RouteDecorator`: `Prefix`, `Middleware`, `Domain` — applied class-level then method-level
+- Method attributes are repeatable, so one method can serve multiple URIs
 
-### Route Discovery System
+### Schedule Discovery
 
-**Files**: `/src/Router/*`
+`packages/laravel-discovery/src/Schedule/`
 
-- **HTTP Method Attributes**: `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`
-- **Route Decorators**: `Prefix`, `Middleware`, `Domain` — applied class-level then method-level
-- Routes can be repeated on a single method to register multiple URIs
+- **`#[Scheduled]`** is `IS_REPEATABLE`; its first argument is `Cron|Every|\Closure(Event): void`
+- **`Every`** enum (NOT `Frequency`) — granular cases like `Every::Second`, `Every::FiveSeconds`, `Every::Minute`, `Every::FiveMinutes`, `Every::Hour`, `Every::Day`, `Every::Week`, `Every::Month`, `Every::Quarter`, `Every::Year`. Each maps to an `Interval` and then to a cron expression; sub-minute cases also call `$event->repeatEvery($seconds)`
+- **`Cron`** value object: `new Cron('*/5 * * * *')` — pass any cron expression verbatim
+- **Per-schedule options** on `#[Scheduled]`: `between: new BetweenTime('09:00', '17:00')`, `unlessBetween`, `name`, `withoutOverlapping`, `onOneServer`, `timezone`
+- **Decorators** (implement `ScheduleDecorator`, apply class-level or method-level to set defaults on every `#[Scheduled]` in scope): `BetweenTime`, `OnOneServer`, `Timezone`, `WithoutOverlapping`
+- `DiscoveredSchedule` stores `className`/`methodName`/`attributeIndex` so closure-based schedules survive caching: closures are stripped in `discover()` and re-read via reflection in `apply()`
 
 ```php
-#[Prefix('/api')]
-#[Middleware(['auth:api'])]
-class UserController
-{
-    #[Get('/users')]
-    public function index(): void {}
-
-    #[Get('/users/{id}')]
-    #[Get('/v2/users/{id}')]
-    public function show(int $id): void {}
-}
-```
-
-### Schedule Discovery System
-
-**Files**: `/src/Schedule/*`
-
-- **`Scheduled` Attribute**: Repeatable, targets methods; takes a single `$schedule` parameter that is `string|Frequency|\Closure`
-- **`Frequency` Enum**: Backed string enum covering common intervals (`Frequency::Daily`, `Frequency::Hourly`, etc.)
-- The `DiscoveredSchedule` DTO stores only `className`/`methodName` (no closures) so it can be cached; attributes are re-read from reflection in `apply()`
-- Multiple `#[Scheduled]` on one method registers multiple events; auto-generated names get a `#N` suffix when names would collide
-
-```php
+#[Timezone('Europe/Amsterdam')]
 class Tasks
 {
-    #[Scheduled('15 minutes')]
+    #[Scheduled(Every::FiveMinutes)]
     public function syncData(): void {}
 
-    #[Scheduled(Frequency::Daily)]
-    public function generateReport(): void {}
+    #[Scheduled(new Cron('0 9 * * 1-5'), withoutOverlapping: true)]
+    public function workdayReport(): void {}
 
     #[Scheduled(static function (Event $event) {
         $event->hourly()->withoutOverlapping()->onOneServer();
     })]
-    #[Scheduled('5 minutes', name: 'quick-sync')]
+    #[Scheduled(Every::FiveMinutes, name: 'quick-sync')]
     public function flexibleTask(): void {}
 }
 ```
 
-**Frequency string vocabulary**: `'minute'`, `'N minutes'`, `'hour'`/`'hourly'`, `'N hours'`, `'day'`/`'daily'`, `'week'`/`'weekly'`, `'month'`/`'monthly'`, `'quarter'`/`'quarterly'`, `'year'`/`'yearly'`.
+Note: `apply()` is a no-op when not running in console (`$this->app->runningInConsole()` guard), so web requests don't pay for schedule registration.
+
+### GraphQL Discovery (Rebing)
+
+`packages/laravel-discovery-graphql/src/RebingGraphQL/`
+
+Two registration modes coexist:
+
+1. **Class-based** — classes extending Rebing's `Type`, `Query`, or `Mutation` are auto-registered in `config('graphql.schemas')` (default schema). `QueryField`/`MutationField` are excluded since they are the dynamic wrappers for mode 2.
+2. **Action-based** (preferred for new code) — methods annotated with `#[Query]` or `#[Mutation]` are registered as discovered `Field` instances (`QueryField`/`MutationField` via the `AsActionField` trait):
+   - Return type is inferred from the method's PHP return type hint when scalar (or `void` → `NullType`); otherwise `type:` must be specified on the attribute
+   - Each parameter becomes a GraphQL arg. Scalar PHP types map directly; non-scalar parameters require `#[Arg(type: 'GraphQLTypeName')]`
+   - `#[Arg]` also accepts `name`, `description`, and `rules` (array or `Closure` for lazy validation)
+   - `#[Schema('name')]` (a `ActionDecorator`) targets the action at a non-default schema (currently still writes to `default` — see `GraphQLDiscovery::apply()`)
+   - The discovered action is bound as a singleton at `discovery.rebing_graphql.<sha256-of-item>`; the schema config is only written when `configurationIsCached()` is false (so cached config wins in production)
+
+```php
+class BookQueries
+{
+    #[Query(type: 'Book', list: true)]
+    public function books(
+        #[Arg(rules: ['nullable', 'string'])] ?string $title = null,
+    ): array { /* ... */ }
+
+    #[Query] // return-type inferred as `string`, non-null
+    public function greet(string $name): string
+    {
+        return "Hello, {$name}!";
+    }
+
+    #[Mutation] // void → Null scalar, nullable
+    public function clearCache(): void {}
+}
+```
+
+`GraphQLDiscovery` short-circuits cleanly if `Rebing\GraphQL\GraphQL` isn't loaded, so the package is safe to install even without the GraphQL package present (though the composer dependency makes that unlikely in practice).
 
 ## Testing Architecture
 
-**Test Framework**: Pest (with PHPUnit as base)
+**Framework**: Pest 4 (with PHPUnit base), Orchestra Testbench 11, configured via `testbench.yaml` and `phpunit.xml`.
 
-**Workbench**: `/workbench/` — a minimal Laravel app for integration testing; configured via `testbench.yaml`.
+**Workbench** (`workbench/`): a real Laravel app used for integration tests. `WorkbenchServiceProvider` and `GraphQLServiceProvider` are registered alongside `DiscoveryServiceProvider` in `tests/TestCase.php`.
 
-**`TestCase::defineEnvironment()`** does two things that are critical for tests to work:
-1. Sets `discovery.autoload` to `dirname(__DIR__)` (project root with `composer.json`) so `DiscoveryDiscovery` can find the package's own discovery classes
-2. Appends `Workbench\App\` → `workbench/app/` as a `DiscoveryLocation` so workbench fixtures are scanned
+**Test helpers** (defined per-feature file): `discoverCommands()`, `discoverRoutes()`, `registerRoutes()`, `discoverSchedule()`, `discoverGraphQL()` — each builds a fresh discoverer, runs `discover()` over specific fixture classes, then calls `apply()`. This avoids cross-test pollution from singletons.
 
-**Test helpers**: `discoverCommands()`, `discoverRoutes()`, `registerRoutes()`, `discoverSchedule()` — each creates a fresh discoverer, runs `discover()` on specific fixture classes, then calls `apply()`.
+**Singleton isolation**: Discoverers marked `#[Singleton]` (e.g. `ScheduleDiscovery`) are resolved once during boot. Feature tests that exercise such a discoverer in isolation must reset both the discoverer and any Laravel singleton it wraps in `beforeEach`:
 
-**Singleton isolation**: Discoverers marked `#[Singleton]` are resolved once during boot. Feature tests that exercise a discoverer in isolation must reset both the discoverer and any Laravel singleton it wraps in `beforeEach`:
 ```php
 beforeEach(function () {
     app()->forgetInstance(Schedule::class);
@@ -186,37 +217,39 @@ beforeEach(function () {
 });
 ```
 
+**Writing tests**: New code paths must be covered by tests before a task is considered complete. The fixtures pattern (one folder per discovery system under `tests/Fixtures/`) is the convention — add narrow fixture classes that exercise the specific code path rather than reusing existing ones.
+
 ## Built-in Artisan Commands
 
-- **`php artisan discovery:cache`**: Generate discovery cache
-- **`php artisan discovery:clear`**: Clear discovery cache
-- **`php artisan make:discovery`**: Scaffold a new custom Discovery class
+- `php artisan discovery:cache` — generate discovery cache (also invoked by `php artisan optimize`)
+- `php artisan discovery:clear` — clear discovery cache (also invoked by `php artisan optimize:clear`)
+- `php artisan make:discovery` — scaffold a new custom `Discovery` class from `stubs/`
 
 ## Key Files
 
 | File | Purpose |
 |---|---|
-| `/src/DiscoveryServiceProvider.php` | Boots discovery, registers `DiscoveryConfig` and `DiscoveryCache` singletons |
-| `/src/Command/CommandDiscovery.php` | Discovers console commands via `#[ConsoleCommand]`; registers via `Artisan::starting()` |
-| `/src/Event/EventDiscovery.php` | Discovers event listeners via `#[EventHandler]` |
-| `/src/Router/RouteDiscovery.php` | Discovers routes via HTTP method attributes |
-| `/src/Schedule/ScheduleDiscovery.php` | Discovers scheduled tasks via `#[Scheduled]` |
-| `/src/Schedule/Scheduled.php` | `IS_REPEATABLE` attribute; `string\|Frequency\|\Closure` schedule parameter |
-| `/src/Schedule/Frequency.php` | Backed enum of common schedule frequencies |
-| `/src/Command/Command.php` | Wraps discovered methods as Laravel commands; runs middleware pipeline |
-| `/src/Command/CommandArgumentsDefinition.php` | Parses method parameters into Symfony input definitions |
-| `/config/discovery.php` | Package configuration |
-| `/tests/TestCase.php` | Base test class; configures discovery locations for the test environment |
+| `packages/laravel-discovery/src/DiscoveryServiceProvider.php` | Registers `DiscoveryConfig`/`DiscoveryCache` singletons; wires `optimize` |
+| `packages/laravel-discovery/src/Command/CommandDiscovery.php` | Discovers `#[ConsoleCommand]`; registers via `Artisan::starting()` |
+| `packages/laravel-discovery/src/Command/Command.php` | Method-as-command wrapper; runs middleware pipeline |
+| `packages/laravel-discovery/src/Event/EventDiscovery.php` | Discovers `#[EventHandler]`; infers event from parameter type |
+| `packages/laravel-discovery/src/Router/RouteDiscovery.php` | Discovers HTTP-method attributes; applies decorators |
+| `packages/laravel-discovery/src/Schedule/ScheduleDiscovery.php` | `#[Singleton]`; registers via `Schedule::call()` |
+| `packages/laravel-discovery/src/Schedule/Scheduled.php` | Repeatable attribute; `Cron\|Every\|\Closure` schedule |
+| `packages/laravel-discovery/src/Schedule/Every.php` | Backed enum of intervals (Second…Year) |
+| `packages/laravel-discovery-graphql/src/RebingGraphQL/GraphQLDiscovery.php` | Discovers GraphQL types/queries/mutations and `#[Query]`/`#[Mutation]` actions |
+| `packages/laravel-discovery-graphql/src/RebingGraphQL/AsActionField.php` | Trait that adapts a `DiscoveredAction` into a Rebing `Field` |
+| `packages/laravel-discovery/config/discovery.php` | Package configuration |
+| `tests/TestCase.php` | Base test class; registers package + GraphQL + Workbench providers |
 
 ## Code Style & Standards
 
-- PHP 8.5+ (closures-as-attribute-arguments are used in `#[Scheduled]`)
-- Linter: Laravel Pint (`composer lint`)
+- PHP 8.5+ (uses closures-as-attribute-arguments in `#[Scheduled]` and asymmetric visibility / property hooks in `Action` / `Scheduled`)
+- Linter: Laravel Pint (`composer lint`) — config in `pint.json`
 - All files: `declare(strict_types=1);`
-- Namespacing: PSR-4 via `NielsJanssen\Laravel\Discovery\*`
+- Namespaces: PSR-4 under `NielsJanssen\Laravel\Discovery\*` and `NielsJanssen\Laravel\Discovery\RebingGraphQL\*`
 
 ## CI/CD
 
-**GitHub Actions** (`.github/workflows/ci.yml`): lint → test → audit → dependency review
-
-**Release** (`.github/workflows/release.yml`): auto-changelog via `git-cliff`, semantic versioning via git tags
+- **`.github/workflows/ci.yml`**: lint (Pint) → test (Pest on PHP 8.5) → `composer audit` → dependency review (PRs only)
+- **`.github/workflows/release.yml`**: manual `workflow_dispatch` with a `version` input; validates semver, regenerates `CHANGELOG.md` via `git-cliff` (`cliff.toml`), tags, creates a GitHub release, and propagates tags to split repos
