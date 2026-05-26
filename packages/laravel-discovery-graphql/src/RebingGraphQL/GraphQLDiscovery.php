@@ -101,6 +101,8 @@ class GraphQLDiscovery implements Discovery
                 ...$method->getAttributes(Authorize::class),
             ];
 
+            $typeBuilder = $this->resolveTypeBuilder($class, $method);
+
             $this->discoveryItems->add($location, new DiscoveredAction(
                 $action,
                 $class->getName(),
@@ -110,6 +112,7 @@ class GraphQLDiscovery implements Discovery
                 $middleware,
                 $this->resolveDeprecationReason($method->getAttribute(\Deprecated::class)),
                 $authorizations,
+                $typeBuilder,
             ));
         }
     }
@@ -145,6 +148,36 @@ class GraphQLDiscovery implements Discovery
                 $schemas,
             ));
         }
+    }
+
+    private function resolveTypeBuilder(ClassReflector $class, MethodReflector $method): ?ActionTypeBuilder
+    {
+        $methodBuilders = $method->getAttributes(ActionTypeBuilder::class);
+
+        if (count($methodBuilders) > 1) {
+            throw new \RuntimeException(sprintf(
+                'Method %s::%s has multiple ActionTypeBuilder attributes (%s). At most one is allowed per method.',
+                $class->getName(),
+                $method->getName(),
+                implode(', ', array_map(fn($b) => $b::class, $methodBuilders)),
+            ));
+        }
+
+        if (! empty($methodBuilders)) {
+            return $methodBuilders[0];
+        }
+
+        $classBuilders = $class->getAttributes(ActionTypeBuilder::class);
+
+        if (count($classBuilders) > 1) {
+            throw new \RuntimeException(sprintf(
+                'Class %s has multiple ActionTypeBuilder attributes (%s). At most one is allowed per class.',
+                $class->getName(),
+                implode(', ', array_map(fn($b) => $b::class, $classBuilders)),
+            ));
+        }
+
+        return $classBuilders[0] ?? null;
     }
 
     /**
