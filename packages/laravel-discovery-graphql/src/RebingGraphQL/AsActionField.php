@@ -124,6 +124,10 @@ trait AsActionField
             };
         }
 
+        foreach ($this->discoveredAction->containerInjections as $paramName => $fqcn) {
+            $mappedArgs[$paramName] = $this->app->make($fqcn);
+        }
+
         return $this->app->make($this->discoveredAction->class)
             ->{$this->discoveredAction->method}(...$mappedArgs);
     }

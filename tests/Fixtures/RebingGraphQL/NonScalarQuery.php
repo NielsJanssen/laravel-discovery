@@ -9,7 +9,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
 class NonScalarQuery
 {
     #[Query(type: 'Book', list: true)]
-    public function resolve(\stdClass $missingArg): array
+    public function resolve(array $missingArg): array
     {
         return [];
     }
