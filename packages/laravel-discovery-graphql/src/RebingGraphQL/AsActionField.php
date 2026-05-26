@@ -84,6 +84,11 @@ trait AsActionField
     public function type(): GraphQLType
     {
         $action = $this->discoveredAction->action;
+
+        if ($this->discoveredAction->typeBuilder !== null) {
+            return $this->discoveredAction->typeBuilder->buildType($action);
+        }
+
         $innerType = match ($action->type) {
             'string' => GraphQLType::string(),
             'int' => GraphQLType::int(),
