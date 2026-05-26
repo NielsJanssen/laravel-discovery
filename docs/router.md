@@ -30,7 +30,7 @@ One attribute per HTTP verb, all in the `NielsJanssen\Laravel\Discovery\Router` 
 | `#[Head('/path')]`    | `HEAD`      |
 | `#[Options('/path')]` | `OPTIONS`   |
 
-All of them target methods only and are **repeatable**, so a single handler can answer multiple URIs:
+All of them are **repeatable** and can be placed on a method or directly on a class. Placing the attribute on a class registers the class itself as a single-action (invokable) controller; see [Single-action controllers](#single-action-controllers) below. Placing it on a method is the standard form for multi-action controllers, and a single method can answer multiple URIs:
 
 ```php
 #[Get('/users/{id}')]
@@ -220,20 +220,55 @@ php artisan route:cache
 php artisan discovery:cache   # for the rest of the discovery surface
 ```
 
-## Controllers without a base class
+## Single-action controllers
 
-Discovered controllers don't need to extend `Illuminate\Routing\Controller`. The framework resolves them through the
-container the same way it would any other class:
+For classes that handle only one route, place the attribute on the class itself. The class must define `__invoke`; Laravel
+resolves it as an invokable controller and the action registered is the class name, with no `@method` suffix.
 
 ```php
-class Ping
+use NielsJanssen\Laravel\Discovery\Router\Post;
+
+#[Post('/orders')]
+class CreateOrder
 {
-    #[Get('/ping')]
-    public function __invoke(): string
+    public function __invoke(Request $request): JsonResponse
     {
-        return 'pong';
+        // ...
     }
 }
 ```
 
-Pair `__invoke` with the method attribute, and you get an invokable controller without any boilerplate.
+Class-level decorators apply to the class-level route as they would to any method route:
+
+```php
+#[Prefix('/api')]
+#[Middleware(['auth:api'])]
+#[Post('/orders')]
+class CreateOrder
+{
+    public function __invoke(Request $request): JsonResponse
+    {
+        // ...
+    }
+}
+```
+
+Alternatively, place the attribute on `__invoke` directly. Both register the same route:
+
+```php
+class CreateOrder
+{
+    #[Post('/orders')]
+    public function __invoke(Request $request): JsonResponse
+    {
+        // ...
+    }
+}
+```
+
+The class-level form is more concise for controllers that expose a single endpoint. Either works fine.
+
+## Controllers without a base class
+
+Discovered controllers don't need to extend `Illuminate\Routing\Controller`. The framework resolves them through the
+container the same way it would any other class.
