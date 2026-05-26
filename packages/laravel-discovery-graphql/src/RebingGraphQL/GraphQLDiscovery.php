@@ -77,12 +77,18 @@ class GraphQLDiscovery implements Discovery
 
             $args = [];
             $injections = [];
+            $containerInjections = [];
 
             foreach ($method->getParameters() as $param) {
                 $kind = $this->detectInjectionKind($param);
 
                 if ($kind !== null) {
                     $injections[$param->getName()] = $kind;
+                    continue;
+                }
+
+                if ($this->shouldContainerResolve($param)) {
+                    $containerInjections[$param->getName()] = $param->getType()->getName();
                     continue;
                 }
 
@@ -113,6 +119,7 @@ class GraphQLDiscovery implements Discovery
                 $this->resolveDeprecationReason($method->getAttribute(\Deprecated::class)),
                 $authorizations,
                 $typeBuilder,
+                $containerInjections,
             ));
         }
     }
@@ -178,6 +185,23 @@ class GraphQLDiscovery implements Discovery
         }
 
         return $classBuilders[0] ?? null;
+    }
+
+    private function shouldContainerResolve(ParameterReflector $param): bool
+    {
+        if ($param->getAttribute(Arg::class) !== null) {
+            return false;
+        }
+
+        $type = $param->getType();
+
+        if ($type === null || $type->isScalar()) {
+            return false;
+        }
+
+        $typeName = $type->getName();
+
+        return class_exists($typeName) || interface_exists($typeName);
     }
 
     /**
