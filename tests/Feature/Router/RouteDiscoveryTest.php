@@ -27,6 +27,7 @@ use Tests\Fixtures\Router\RouteLog;
 use Tests\Fixtures\Router\RouteName;
 use Tests\Fixtures\Router\MultiMethodController;
 use Tests\Fixtures\Router\SimpleGetController;
+use Tests\Fixtures\Router\InvokableRouteController;
 use Tests\Fixtures\Router\TrackingMiddleware;
 
 function discoverRoutes(string ...$classes): RouteDiscovery
@@ -118,6 +119,28 @@ describe('discovery', function () {
         $routes = [...discoverRoutes(NoRouteController::class)->getItems()];
 
         expect($routes)->toHaveCount(0);
+    });
+});
+
+describe('class routes', function () {
+    it('discovers a route attribute placed on the class itself', function () {
+        $routes = [...discoverRoutes(InvokableRouteController::class)->getItems()];
+
+        expect($routes)->toHaveCount(1);
+        expect($routes[0]->methods)->toBe([Method::Get]);
+        expect($routes[0]->uri)->toBe('/invokable');
+    });
+
+    it('sets the action to the class name without a method suffix', function () {
+        $routes = [...discoverRoutes(InvokableRouteController::class)->getItems()];
+
+        expect($routes[0]->action)->toBe(InvokableRouteController::class);
+    });
+
+    it('handles an HTTP request to a class-level discovered route', function () {
+        discoverRoutes(InvokableRouteController::class);
+
+        $this->get('/invokable')->assertOk();
     });
 });
 

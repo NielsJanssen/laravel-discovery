@@ -24,7 +24,15 @@ class RouteDiscovery implements Discovery
 
     public function discover(DiscoveryLocation $location, ClassReflector $class): void
     {
+        if (!$class->isInstantiable()) {
+            return;
+        }
+
         $classDecorators = $class->getAttributes(RouteDecorator::class);
+
+        if ($route = $class->getAttribute(Routable::class)) {
+            $this->discoveryItems->add($location, DiscoveredRoute::from($route, $classDecorators, $class));
+        }
 
         foreach ($class->getPublicMethods() as $method) {
             foreach ($method->getAttributes(Routable::class) as $route) {
