@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
-use Attribute;
-
-#[Attribute(Attribute::TARGET_PARAMETER)]
-class Root {}
+interface ComposedFromArgs
+{
+    public static function fromArgs(array $args): static;
+}
