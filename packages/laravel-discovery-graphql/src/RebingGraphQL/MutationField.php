@@ -6,7 +6,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Rebing\GraphQL\Support\Mutation as GraphQLMutation;
 
-class MutationField extends GraphQLMutation
+final class MutationField extends GraphQLMutation
 {
     use AsActionField;
 }

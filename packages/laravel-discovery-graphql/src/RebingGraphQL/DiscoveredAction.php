@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
+use Exception;
 use Illuminate\Foundation\Application;
 use Rebing\GraphQL\Support\Field;
 use Rebing\GraphQL\Support\Middleware as RebingMiddleware;
@@ -26,6 +27,10 @@ class DiscoveredAction
         public ?ActionTypeBuilder $typeBuilder = null,
         /** @var array<string, class-string> keyed by paramName */
         public array $containerInjections = [],
+        /** @var list<ActionArgProvider> */
+        public array $argProviders = [],
+        /** @var array<string, class-string<ComposedFromArgs>> keyed by paramName */
+        public array $argCompositions = [],
     ) {}
 
     public function createType(Application $app): Field
@@ -33,7 +38,7 @@ class DiscoveredAction
         return match ($this->action::class) {
             Query::class => new QueryField($app, $this),
             Mutation::class => new MutationField($app, $this),
-            default => throw new \Exception('Unexpected action type'),
+            default => throw new Exception('Unexpected action type'),
         };
     }
 
@@ -41,7 +46,7 @@ class DiscoveredAction
         get => match ($this->action::class) {
             Query::class => 'query',
             Mutation::class => 'mutation',
-            default => throw new \Exception('Unexpected action type'),
+            default => throw new Exception('Unexpected action type'),
         };
     }
 }

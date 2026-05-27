@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
+use Closure;
 use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Type\Definition\Type as GraphQLType;
 use Illuminate\Foundation\Application;
 use Rebing\GraphQL\Support\Facades\GraphQL;
 use Rebing\GraphQL\Support\Field;
+use ReflectionMethod;
+use RuntimeException;
 
 /**
  * @phpstan-require-extends Field
@@ -78,6 +81,12 @@ trait AsActionField
             $args[$arg->name] = $entry;
         }
 
+        foreach ($this->discoveredAction->argProviders as $provider) {
+            foreach ($provider->provideArgs() as $name => $def) {
+                $args[$name] = $def;
+            }
+        }
+
         return $args;
     }
 
@@ -124,12 +133,13 @@ trait AsActionField
             };
         }
 
-        foreach ($this->discoveredAction->containerInjections as $paramName => $fqcn) {
-            $mappedArgs[$paramName] = $this->app->make($fqcn);
+        foreach ($this->discoveredAction->argCompositions as $paramName => $valueObjectClass) {
+            $mappedArgs[$paramName] = $valueObjectClass::fromArgs($args);
         }
 
-        return $this->app->make($this->discoveredAction->class)
-            ->{$this->discoveredAction->method}(...$mappedArgs);
+        $instance = $this->app->make($this->discoveredAction->class);
+
+        return $this->app->call([$instance, $this->discoveredAction->method], $mappedArgs);
     }
 
     protected function getMiddleware(): array
@@ -159,12 +169,12 @@ trait AsActionField
         return $this->failedAuthorize?->message ?? parent::getAuthorizationMessage();
     }
 
-    private function resolveRules(string $paramName): array|\Closure
+    private function resolveRules(string $paramName): array|Closure
     {
         $class = $this->discoveredAction->class;
         $method = $this->discoveredAction->method;
 
-        $this->reflectionParameters ??= new \ReflectionMethod($class, $method)->getParameters();
+        $this->reflectionParameters ??= new ReflectionMethod($class, $method)->getParameters();
 
         foreach ($this->reflectionParameters as $param) {
             if ($param->getName() === $paramName) {
@@ -176,6 +186,6 @@ trait AsActionField
             }
         }
 
-        throw new \RuntimeException("Could not find #[Arg] on parameter \${$paramName} in {$class}::{$method}.");
+        throw new RuntimeException("Could not find #[Arg] on parameter \$$paramName in $class::$method.");
     }
 }

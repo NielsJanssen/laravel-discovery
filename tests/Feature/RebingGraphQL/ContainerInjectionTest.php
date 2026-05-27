@@ -12,6 +12,7 @@ use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\RebingGraphQL\ContainerInjectionQuery;
 use Tests\Fixtures\RebingGraphQL\ContainerService;
 use Tests\Fixtures\RebingGraphQL\NonScalarQuery;
+use Workbench\App\Models\User;
 
 function discoverInjectionFixture(string ...$classes): GraphQLDiscovery
 {
@@ -61,5 +62,26 @@ describe('container injection of resolve parameters', function () {
         // scalar nor a resolvable class — the original "use #[Arg(type:)]" guard must fire.
         expect(fn() => discoverInjectionFixture(NonScalarQuery::class))
             ->toThrow(\RuntimeException::class, '#[Arg(type:');
+    });
+});
+
+describe('Laravel ContextualAttribute injection via $container->call()', function () {
+    it('injects the authenticated user into a #[CurrentUser] parameter end-to-end', function () {
+        $user = new User(['email' => 'niels@example.com']);
+
+        $this->actingAs($user);
+
+        $this->postJson('/graphql', ['query' => '{ currentUser }'])
+            ->assertOk()
+            ->assertJsonPath('data.currentUser', config('app.name') . ':niels@example.com');
+    });
+
+    it('falls back to null on #[CurrentUser] when no user is authenticated and still injects #[Config] values', function () {
+        auth()->logout();
+        config()->set('app.name', 'TestApp');
+
+        $this->postJson('/graphql', ['query' => '{ currentUser }'])
+            ->assertOk()
+            ->assertJsonPath('data.currentUser', 'TestApp:guest');
     });
 });

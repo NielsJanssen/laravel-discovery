@@ -61,7 +61,7 @@ describe('ActionTypeBuilder hook', function () {
 
     it('resolves a #[Paginated] query end-to-end through Rebing\'s pagination wrapper', function () {
         $this->postJson('/graphql', [
-            'query' => '{ paginatedBooks(page: 1, perPage: 2) { data { id title } total per_page current_page last_page } }',
+            'query' => '{ paginatedBooks(page: 1, limit: 2) { data { id title } total per_page current_page last_page } }',
         ])
             ->assertOk()
             ->assertJsonPath('data.paginatedBooks.total', 3)

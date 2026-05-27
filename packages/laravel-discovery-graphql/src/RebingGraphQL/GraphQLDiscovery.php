@@ -4,20 +4,24 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
+use Deprecated;
 use GraphQL\Type\Definition\ResolveInfo;
+use Illuminate\Contracts\Container\ContextualAttribute;
 use Illuminate\Foundation\Application;
 use Rebing\GraphQL\GraphQL;
 use Rebing\GraphQL\Support\Mutation as RebingMutation;
 use Rebing\GraphQL\Support\Query as RebingQuery;
 use Rebing\GraphQL\Support\Type as RebingType;
+use RuntimeException;
 use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
 use Tempest\Reflection\ParameterReflector;
+use Tempest\Reflection\TypeReflector;
 
-class GraphQLDiscovery implements Discovery
+final class GraphQLDiscovery implements Discovery
 {
     use IsDiscovery;
 
@@ -75,11 +79,29 @@ class GraphQLDiscovery implements Discovery
                 $decorator->decorate($action);
             }
 
+            $argProviders = [
+                ...$method->getAttributes(ActionArgProvider::class),
+                ...$class->getAttributes(ActionArgProvider::class),
+            ];
+
+            $valueObjectClasses = $this->collectValueObjectClasses($argProviders, $class, $method);
+
             $args = [];
             $injections = [];
             $containerInjections = [];
+            $argCompositions = [];
 
             foreach ($method->getParameters() as $param) {
+                // Parameters carrying a Laravel ContextualAttribute (e.g. #[CurrentUser], #[Config])
+                // are left untouched at discovery so that $container->call() can resolve them via
+                // the attribute's resolve() hook. Pre-filling $mappedArgs would override the attribute.
+                if ($param->getAttribute(ContextualAttribute::class) !== null) {
+                    continue;
+                }
+
+                /** @var Arg|null $argAttr */
+                $argAttr = $param->getAttribute(Arg::class);
+
                 $kind = $this->detectInjectionKind($param);
 
                 if ($kind !== null) {
@@ -87,12 +109,21 @@ class GraphQLDiscovery implements Discovery
                     continue;
                 }
 
-                if ($this->shouldContainerResolve($param)) {
-                    $containerInjections[$param->getName()] = $param->getType()->getName();
-                    continue;
+                $type = $param->getType();
+
+                if (!$argAttr && !$type->isScalar()) {
+                    if ($this->shouldComposeFromArgs($type, $valueObjectClasses)) {
+                        $argCompositions[$param->getName()] = $param->getType()->getName();
+                        continue;
+                    }
+
+                    if ($this->shouldContainerResolve($type)) {
+                        $containerInjections[$param->getName()] = $param->getType()->getName();
+                        continue;
+                    }
                 }
 
-                $args[] = $this->discoverActionParameter($param, $class, $method);
+                $args[] = $this->discoverActionParameter($argAttr, $param, $class, $method);
             }
 
             $middleware = [
@@ -116,10 +147,12 @@ class GraphQLDiscovery implements Discovery
                 $args,
                 $injections,
                 $middleware,
-                $this->resolveDeprecationReason($method->getAttribute(\Deprecated::class)),
+                $this->resolveDeprecationReason($method->getAttribute(Deprecated::class)),
                 $authorizations,
                 $typeBuilder,
                 $containerInjections,
+                $argProviders,
+                $argCompositions,
             ));
         }
     }
@@ -162,11 +195,11 @@ class GraphQLDiscovery implements Discovery
         $methodBuilders = $method->getAttributes(ActionTypeBuilder::class);
 
         if (count($methodBuilders) > 1) {
-            throw new \RuntimeException(sprintf(
+            throw new RuntimeException(sprintf(
                 'Method %s::%s has multiple ActionTypeBuilder attributes (%s). At most one is allowed per method.',
                 $class->getName(),
                 $method->getName(),
-                implode(', ', array_map(fn($b) => $b::class, $methodBuilders)),
+                implode(', ', array_map(static fn($b) => $b::class, $methodBuilders)),
             ));
         }
 
@@ -177,28 +210,62 @@ class GraphQLDiscovery implements Discovery
         $classBuilders = $class->getAttributes(ActionTypeBuilder::class);
 
         if (count($classBuilders) > 1) {
-            throw new \RuntimeException(sprintf(
+            throw new RuntimeException(sprintf(
                 'Class %s has multiple ActionTypeBuilder attributes (%s). At most one is allowed per class.',
                 $class->getName(),
-                implode(', ', array_map(fn($b) => $b::class, $classBuilders)),
+                implode(', ', array_map(static fn($b) => $b::class, $classBuilders)),
             ));
         }
 
         return $classBuilders[0] ?? null;
     }
 
-    private function shouldContainerResolve(ParameterReflector $param): bool
+    /**
+     * @param  list<ActionArgProvider>  $argProviders
+     * @return array<class-string<ComposedFromArgs>, true>
+     */
+    private function collectValueObjectClasses(array $argProviders, ClassReflector $class, MethodReflector $method): array
     {
-        if ($param->getAttribute(Arg::class) !== null) {
-            return false;
+        $seen = [];
+
+        foreach ($argProviders as $provider) {
+            foreach (array_keys($provider->provideArgs()) as $name) {
+                if (isset($seen[$name])) {
+                    throw new RuntimeException(sprintf(
+                        'Method %s::%s has multiple ActionArgProvider attributes declaring the same arg "%s".',
+                        $class->getName(),
+                        $method->getName(),
+                        $name,
+                    ));
+                }
+                $seen[$name] = true;
+            }
         }
 
-        $type = $param->getType();
+        $valueObjectClasses = [];
 
-        if ($type === null || $type->isScalar()) {
-            return false;
+        foreach ($argProviders as $provider) {
+            foreach ($provider->provideValueObjects() as $valueObject) {
+                $valueObjectClasses[$valueObject] = true;
+            }
         }
 
+        return $valueObjectClasses;
+    }
+
+    /**
+     * @param array<class-string<ComposedFromArgs>, true> $valueObjectClasses
+     */
+    private function shouldComposeFromArgs(TypeReflector $type, array $valueObjectClasses): bool
+    {
+        $typeName = $type->getName();
+
+        return isset($valueObjectClasses[$typeName])
+            && is_a($typeName, ComposedFromArgs::class, true);
+    }
+
+    private function shouldContainerResolve(TypeReflector $type): bool
+    {
         $typeName = $type->getName();
 
         return class_exists($typeName) || interface_exists($typeName);
@@ -219,14 +286,14 @@ class GraphQLDiscovery implements Discovery
 
         $type = $param->getType();
 
-        if ($type !== null && ! $type->isScalar() && is_a($type->getName(), ResolveInfo::class, true)) {
+        if (! $type->isScalar() && is_a($type->getName(), ResolveInfo::class, true)) {
             return 'info';
         }
 
         return null;
     }
 
-    private function resolveDeprecationReason(?\Deprecated $deprecated): ?string
+    private function resolveDeprecationReason(?Deprecated $deprecated): ?string
     {
         if ($deprecated === null) {
             return null;
@@ -236,9 +303,9 @@ class GraphQLDiscovery implements Discovery
         $since = $deprecated->since;
 
         return match (true) {
-            $message !== null && $since !== null => "{$message} (since {$since})",
+            $message !== null && $since !== null => "$message (since $since)",
             $message !== null => $message,
-            $since !== null => "Deprecated since {$since}",
+            $since !== null => "Deprecated since $since",
             default => 'Deprecated',
         };
     }
@@ -259,7 +326,7 @@ class GraphQLDiscovery implements Discovery
             return [$phpType, $returnType->isNullable()];
         }
 
-        throw new \RuntimeException(sprintf(
+        throw new RuntimeException(sprintf(
             'Method %s::%s has no scalar return type. Specify type: in #[%s], or use a scalar or void return type hint.',
             $class->getName(),
             $method->getName(),
@@ -267,19 +334,16 @@ class GraphQLDiscovery implements Discovery
         ));
     }
 
-    private function discoverActionParameter(ParameterReflector $param, ClassReflector $class, MethodReflector $method): DiscoveredArg
+    private function discoverActionParameter(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method): DiscoveredArg
     {
         $typeReflector = $param->getType();
-
-        /** @var Arg|null $argAttr */
-        $argAttr = $param->getAttribute(Arg::class);
 
         if ($argAttr?->type !== null) {
             $typeName = $argAttr->type;
         } elseif ($typeReflector->isScalar()) {
             $typeName = $typeReflector->getName();
         } else {
-            throw new \RuntimeException(sprintf(
+            throw new RuntimeException(sprintf(
                 'Parameter $%s in %s::%s is not a scalar type. Use #[Arg(type: \'GraphQLTypeName\')] to specify the GraphQL type.',
                 $param->getName(),
                 $class->getName(),

@@ -6,7 +6,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Rebing\GraphQL\Support\Query as GraphQLQuery;
 
-class QueryField extends GraphQLQuery
+final class QueryField extends GraphQLQuery
 {
     use AsActionField;
 }
