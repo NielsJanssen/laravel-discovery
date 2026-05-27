@@ -1,6 +1,32 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [1.0.0-beta.4] - 2026-05-27
+
+### Features
+
+- Implement GraphQL Schema attribute, and correct default schema fallback
+- Implement deprecation and description for GraphQL actions and args
+- Allow injection of default GraphQL arguments using #[Context] #[Root] or ResolveInfo as type
+- Add support for GraphQL execution middleware on queries and mutations
+- Implement #[Authorize] trait for user authentication and permission checking
+- Support single action controllers, like Livewire components
+- Implemented extensible GraphQL return type builders, with default #[Paginated] attribute
+- Dependency injection for additional parameters in Query/Mutation resolve
+- Implemented #[Paginated] & #[Sort] decorators for GQL queries and mutations
+
+### Miscellaneous Tasks
+
+- Update CLAUDE.md after mono-repo switch
+
+### Refactoring
+
+- Reorganize GraphQLDiscovery for readability
+
+### Testing
+
+- Cover more GraphQL test cases
+
 ## [1.0.0-beta.3] - 2026-05-25
 
 ### Documentation
