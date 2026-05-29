@@ -268,6 +268,34 @@ class CreateOrder
 
 The class-level form is more concise for controllers that expose a single endpoint. Either works fine.
 
+## Livewire components
+
+A full-page Livewire component is an invokable class: Livewire's base `Component` defines `__invoke`, which renders the
+component as a full page. Route it the same way as any other [single-action controller](#single-action-controllers), by
+placing an HTTP method attribute on the component class.
+
+```php
+use Illuminate\Contracts\View\View;
+use Livewire\Component;
+use NielsJanssen\Laravel\Discovery\Router\Get;
+
+#[Get('/orders', middleware: ['web'])]
+class OrdersOverview extends Component
+{
+    public function render(): View
+    {
+        return view('livewire.orders-overview');
+    }
+}
+```
+
+Full-page Livewire routes belong in the `web` middleware group, where the session and CSRF token are available; set that
+on the attribute as shown. Class-level decorators apply here as well: `#[Prefix]`, `#[Middleware]`, and `#[Domain]`
+decorate the component route exactly as they do a single-action controller.
+
+There is no dedicated Livewire attribute. The standard HTTP method attributes already cover the case, since a full-page
+component is an invokable controller.
+
 ## Controllers without a base class
 
 Discovered controllers don't need to extend `Illuminate\Routing\Controller`. The framework resolves them through the
