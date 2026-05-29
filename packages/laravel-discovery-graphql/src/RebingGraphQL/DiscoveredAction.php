@@ -11,6 +11,8 @@ use Rebing\GraphQL\Support\Middleware as RebingMiddleware;
 
 class DiscoveredAction
 {
+    public private(set) ?string $bindName = null;
+
     public function __construct(
         public Action $action,
         public string $class,
@@ -48,5 +50,12 @@ class DiscoveredAction
             Mutation::class => 'mutation',
             default => throw new Exception('Unexpected action type'),
         };
+    }
+
+    public function withBindName(): static
+    {
+        return clone($this, [
+            'bindName' => 'discovery.rebing_graphql.' . hash('sha256', serialize($this)),
+        ]);
     }
 }

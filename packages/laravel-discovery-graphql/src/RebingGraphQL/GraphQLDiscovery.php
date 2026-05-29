@@ -153,41 +153,40 @@ final class GraphQLDiscovery implements Discovery
                 $containerInjections,
                 $argProviders,
                 $argCompositions,
-            ));
+            )->withBindName());
         }
     }
 
     public function apply(): void
     {
-        $buildConfig = !$this->app->configurationIsCached();
+        if ($this->app->configurationIsCached()) {
+            foreach ($this->discoveryItems as $item) {
+                if ($item instanceof DiscoveredAction) {
+                    $this->app->singleton($item->bindName, $item->createType(...));
+                }
+            }
+
+            return;
+        }
 
         $config = $this->app->make('config');
+        $defaultSchema = $config->get('graphql.default_schema', 'default');
 
         $schemas = [];
 
         foreach ($this->discoveryItems as $item) {
-            $defaultSchema = $config->get('graphql.default_schema', 'default');
-
             if ($item instanceof DiscoveredAction) {
-                $schema = $item->action->schema ?? $defaultSchema;
-                $bindName = 'discovery.rebing_graphql.' . hash('sha256', serialize($item));
-
-                $this->app->singleton($bindName, $item->createType(...));
-
-                if ($buildConfig) {
-                    $schemas[$schema][$item->fieldType][$item->action->name] = $bindName;
-                }
-            } elseif ($item instanceof DiscoveredField && $buildConfig) {
+                $this->app->singleton($item->bindName, $item->createType(...));
+                $schemas[$item->action->schema ?? $defaultSchema][$item->fieldType][$item->action->name] = $item->bindName;
+            } elseif ($item instanceof DiscoveredField) {
                 $schemas[$item->schema ?? $defaultSchema][$item->fieldType][$item->getName()] = $item->class;
             }
         }
 
-        if ($buildConfig && !empty($schemas)) {
-            $config->set('graphql.schemas', array_merge_recursive(
-                $config->get('graphql.schemas', []),
-                $schemas,
-            ));
-        }
+        $config->set('graphql.schemas', array_merge_recursive(
+            $config->get('graphql.schemas', []),
+            $schemas,
+        ));
     }
 
     private function resolveTypeBuilder(ClassReflector $class, MethodReflector $method): ?ActionTypeBuilder
