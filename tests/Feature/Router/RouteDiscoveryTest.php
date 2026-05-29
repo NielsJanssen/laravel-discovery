@@ -12,6 +12,7 @@ use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\Router\AllMethodsController;
 use Tests\Fixtures\Router\DomainController;
+use Tests\Fixtures\Router\ProfilePage;
 use Tests\Fixtures\Router\EnumDomainController;
 use Tests\Fixtures\Router\EnumNamedRouteController;
 use Tests\Fixtures\Router\MethodPrefixController;
@@ -141,6 +142,27 @@ describe('class routes', function () {
         discoverRoutes(InvokableRouteController::class);
 
         $this->get('/invokable')->assertOk();
+    });
+});
+
+describe('livewire integration', function () {
+    it('registers the component as an invokable route on the Laravel router', function () {
+        discoverRoutes(ProfilePage::class);
+
+        $route = collect(app(Router::class)->getRoutes())->first(
+            fn($route) => $route->uri() === 'profile',
+        );
+
+        expect($route)->not->toBeNull();
+        expect($route->getAction('uses'))->toBe(ProfilePage::class . '@__invoke');
+    });
+
+    it('renders the discovered Livewire component over HTTP', function () {
+        discoverRoutes(ProfilePage::class);
+
+        $this->get('/profile')
+            ->assertOk()
+            ->assertSee('Discovered Livewire profile page');
     });
 });
 

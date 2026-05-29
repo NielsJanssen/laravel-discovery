@@ -18,7 +18,8 @@
         "orchestra/testbench": "^11.1",
         "pestphp/pest": "4.6.*",
         "pestphp/pest-plugin-laravel": "^4.1",
-        "laravel/pao": "^1.0"
+        "laravel/pao": "^1.0",
+        "livewire/livewire": "^4.3"
     },
     "autoload": {
         "psr-4": {
