@@ -8,11 +8,11 @@ use Illuminate\Console\Application as Artisan;
 use Illuminate\Console\Command as LaravelCommand;
 use Illuminate\Container\Attributes\Singleton;
 use Illuminate\Foundation\Application;
+use NielsJanssen\Laravel\Discovery\Command\Exception\InvalidCommandRegistrationException;
 use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
 use Tempest\Reflection\ClassReflector;
-use NielsJanssen\Laravel\Discovery\Command\Exception\InvalidCommandRegistrationException;
 
 #[Singleton]
 final class CommandDiscovery implements Discovery
@@ -60,7 +60,9 @@ final class CommandDiscovery implements Discovery
                 $artisan->resolve(
                     $command->definition
                         ? new Command($this->app, $command)
-                        : (is_subclass_of($commandClass = $command->reflector->getName(), LaravelCommand::class) ? $commandClass : $this->app->make($commandClass)),
+                        : (is_subclass_of($commandClass = $command->reflector->getName(), LaravelCommand::class)
+                            ? $commandClass
+                            : $this->app->make($commandClass)),
                 );
             }
         });

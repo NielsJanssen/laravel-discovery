@@ -10,7 +10,9 @@ use Tempest\Discovery\DiscoveryItems;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\Schedule\BasicScheduledTask;
+use Tests\Fixtures\Schedule\ClassScheduledNonCommand;
 use Tests\Fixtures\Schedule\ClosureConfiguredTask;
+use Tests\Fixtures\Schedule\ScheduledCommand;
 use Tests\Fixtures\Schedule\FrequencyEnumTask;
 use Tests\Fixtures\Schedule\HourlyTask;
 use Tests\Fixtures\Schedule\MultipleScheduledTask;
@@ -26,6 +28,7 @@ use Tests\Fixtures\Schedule\UnattributedTask;
 use Tests\Fixtures\Schedule\UnlessBetweenTask;
 use Tests\Fixtures\Schedule\WithoutOverlappingExpiryTask;
 use Tests\Fixtures\Schedule\WithoutOverlappingTask;
+use Illuminate\Console\Command;
 
 function discoverSchedule(string ...$classes): Schedule
 {
@@ -191,3 +194,21 @@ it('applies class-level decorators to every method', function () {
         expect($event->onOneServer)->toBeTrue();
     }
 });
+
+it('schedules a traditional Laravel command via a class-level Scheduled attribute', function () {
+    $schedule = discoverSchedule(ScheduledCommand::class);
+
+    expect($schedule->events())->toHaveCount(1);
+
+    $event = $schedule->events()[0];
+
+    expect($event->expression)->toBe('0 0 * * *');
+    expect($event->command)->toContain('fixture:scheduled');
+});
+
+it('throws when a class-level Scheduled attribute is used on a non-command class', function () {
+    discoverSchedule(ClassScheduledNonCommand::class);
+})->throws(
+    \LogicException::class,
+    'Only commands extending ' . Command::class . ' can be scheduled on the class level',
+);

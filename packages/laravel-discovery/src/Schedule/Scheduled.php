@@ -7,7 +7,7 @@ namespace NielsJanssen\Laravel\Discovery\Schedule;
 use Attribute;
 use Illuminate\Console\Scheduling\Event;
 
-#[Attribute(Attribute::IS_REPEATABLE | Attribute::TARGET_METHOD)]
+#[Attribute(Attribute::IS_REPEATABLE | Attribute::TARGET_CLASS | Attribute::TARGET_METHOD)]
 final class Scheduled
 {
     /**
@@ -31,5 +31,16 @@ final class Scheduled
         if ($this->schedule instanceof \Closure) {
             unset($this->schedule);
         }
+    }
+
+    public function withDecorators(array $decorators): static
+    {
+        $self = clone $this;
+
+        foreach ($decorators as $decorator) {
+            $decorator->decorate($self);
+        }
+
+        return $self;
     }
 }
