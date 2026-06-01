@@ -1,6 +1,26 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [1.0.0-beta.5] - 2026-06-01
+
+### Documentation
+
+- Add Livewire component section to documentation
+
+### Features
+
+- Schedule traditional Laravel commands using #[Scheduled] attribute
+- Schedule Jobs using #[Scheduled] attribute
+
+### Performance
+
+- Calculate unique bindName during discovery + restructure apply for clarity
+- Only instantiate commands if necessary
+
+### Testing
+
+- Add Livewire route integration tests
+
 ## [1.0.0-beta.4] - 2026-05-27
 
 ### Features
