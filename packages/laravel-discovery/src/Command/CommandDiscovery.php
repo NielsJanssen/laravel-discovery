@@ -57,10 +57,10 @@ final class CommandDiscovery implements Discovery
 
         Artisan::starting(function (Artisan $artisan) {
             foreach ($this->discoveryItems as $command) {
-                $artisan->addCommand(
+                $artisan->resolve(
                     $command->definition
                         ? new Command($this->app, $command)
-                        : $this->app->make($command->reflector->getName()),
+                        : (is_subclass_of($commandClass = $command->reflector->getName(), LaravelCommand::class) ? $commandClass : $this->app->make($commandClass)),
                 );
             }
         });
