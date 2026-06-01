@@ -25,7 +25,7 @@ final class DiscoveredSchedule
         return new self(
             className: $class->getName(),
             methodName: $method?->getName(),
-            name: $scheduled->name ?? ($class->getName() . ($method ? '@' . $method->getName() . '#' . $index : '')),
+            name: $scheduled->name ?? ($class->getName() . ($method ? '@' . $method->getName() : '') . '#' . $index),
             schedule: $scheduled,
             attributeIndex: $index,
             target: $target,
