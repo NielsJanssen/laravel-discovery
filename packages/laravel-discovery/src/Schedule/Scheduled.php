@@ -21,6 +21,7 @@ final class Scheduled
         public bool $withoutOverlapping = false,
         public bool $onOneServer = false,
         public ?string $timezone = null,
+        public array $parameters = [],
     ) {}
 
     public int $withoutOverlappingExpiry = 1440;

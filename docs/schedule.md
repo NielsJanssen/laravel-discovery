@@ -20,17 +20,21 @@ The task appears in `php artisan schedule:list` and fires every night at midnigh
 
 ## The `#[Scheduled]` attribute
 
-| Parameter            | Type                                          | Default  | Purpose                                              |
-|----------------------|-----------------------------------------------|----------|------------------------------------------------------|
-| `schedule`           | `Cron\|Every\|\Closure(Event): void`          | required | The schedule. See below.                             |
-| `between`            | `?BetweenTime`                                | `null`   | Only run within this time window.                    |
-| `unlessBetween`      | `?BetweenTime`                                | `null`   | Skip runs that fall within this time window.         |
-| `withoutOverlapping` | `bool`                                        | `false`  | Prevent a new run while a previous one is still running. |
-| `onOneServer`        | `bool`                                        | `false`  | Limit execution to a single server in a multi-server setup. |
-| `timezone`           | `?string`                                     | `null`   | Run the task in this timezone.                       |
-| `name`               | `?string`                                     | `null`   | Display name. Defaults to `Class@method`.            |
+| Parameter            | Type                                 | Default  | Purpose                                                                                     |
+|----------------------|--------------------------------------|----------|---------------------------------------------------------------------------------------------|
+| `schedule`           | `Cron\|Every\|\Closure(Event): void` | required | The schedule. See below.                                                                    |
+| `between`            | `?BetweenTime`                       | `null`   | Only run within this time window.                                                           |
+| `unlessBetween`      | `?BetweenTime`                       | `null`   | Skip runs that fall within this time window.                                                |
+| `withoutOverlapping` | `bool`                               | `false`  | Prevent a new run while a previous one is still running.                                    |
+| `onOneServer`        | `bool`                               | `false`  | Limit execution to a single server in a multi-server setup.                                 |
+| `timezone`           | `?string`                            | `null`   | Run the task in this timezone.                                                              |
+| `name`               | `?string`                            | `null`   | Display name. Defaults to `Class@method`.                                                   |
+| `parameters`         | `array`                              | `[]`     | Arguments for a scheduled command or method. See [Passing parameters](#passing-parameters). |
 
-The attribute is **repeatable** and targets methods, command classes, and job classes. Stack multiple `#[Scheduled]` attributes on a single method to register it on several schedules at once. Applied to an Artisan command or a queued job, a single `#[Scheduled]` schedules that class; see [Scheduling a command](#scheduling-a-command) and [Scheduling a job](#scheduling-a-job).
+The attribute is **repeatable** and targets methods, command classes, and job classes. Stack multiple `#[Scheduled]`
+attributes on a single method to register it on several schedules at once. Applied to an Artisan command or a queued
+job, a single `#[Scheduled]` schedules that class; see [Scheduling a command](#scheduling-a-command)
+and [Scheduling a job](#scheduling-a-job).
 
 ## Three ways to schedule
 
@@ -129,7 +133,9 @@ public function generateReport(): void
 }
 ```
 
-The closure receives the `Event` instance Laravel created for the task. Timezone, overlap prevention, and server constraints do not need a closure; use the `#[Scheduled]` parameters or the [schedule decorators](#schedule-decorators) instead.
+The closure receives the `Event` instance Laravel created for the task. Timezone, overlap prevention, and server
+constraints do not need a closure; use the `#[Scheduled]` parameters or the [schedule decorators](#schedule-decorators)
+instead.
 
 ## Scheduling a command
 
@@ -156,7 +162,9 @@ class PruneStaleReservations extends Command
 
 ## Scheduling a job
 
-Apply `#[Scheduled]` to a queued job (a class implementing `Illuminate\Contracts\Queue\ShouldQueue`) to dispatch it on a schedule. The job is pushed onto its queue at each interval, the same as a `$schedule->job(ReconcileOrders::class)` call:
+Apply `#[Scheduled]` to a queued job (a class implementing `Illuminate\Contracts\Queue\ShouldQueue`) to dispatch it on a
+schedule. The job is pushed onto its queue at each interval, the same as a `$schedule->job(ReconcileOrders::class)`
+call:
 
 ```php
 use Illuminate\Bus\Queueable;
@@ -182,7 +190,9 @@ class ReconcileOrders implements ShouldQueue
 
 ## Time windows
 
-`between` and `unlessBetween` accept a `BetweenTime` instance and restrict when the task is allowed to run. The underlying cron still fires at the configured interval; the time window just determines whether each execution is skipped.
+`between` and `unlessBetween` accept a `BetweenTime` instance and restrict when the task is allowed to run. The
+underlying cron still fires at the configured interval; the time window just determines whether each execution is
+skipped.
 
 ```php
 use NielsJanssen\Laravel\Discovery\Schedule\BetweenTime;
@@ -204,7 +214,9 @@ For dynamic conditions, use a closure instead.
 
 ## Schedule decorators
 
-The `#[Timezone]`, `#[WithoutOverlapping]`, and `#[OnOneServer]` attributes are schedule decorators. Applied to a class, they set a default for every `#[Scheduled]` method in that class. Applied to a method, they override any class-level default for that method alone.
+The `#[Timezone]`, `#[WithoutOverlapping]`, and `#[OnOneServer]` attributes are schedule decorators. Applied to a class,
+they set a default for every `#[Scheduled]` method in that class. Applied to a method, they override any class-level
+default for that method alone.
 
 ```php
 use NielsJanssen\Laravel\Discovery\Schedule\Every;
@@ -226,7 +238,8 @@ class Maintenance
 }
 ```
 
-Both methods inherit the class-level timezone, overlap prevention, and single-server constraint. A method-level decorator overrides the class-level one for that method only.
+Both methods inherit the class-level timezone, overlap prevention, and single-server constraint. A method-level
+decorator overrides the class-level one for that method only.
 
 The same decorators are also valid on individual methods when there is no class-level default:
 
@@ -240,10 +253,10 @@ public function processOrders(): void { /* ... */ }
 
 `#[WithoutOverlapping]` maps to Laravel's `Event::withoutOverlapping()`. It exposes both parameters:
 
-| Parameter                    | Type   | Default | Purpose                                          |
-|------------------------------|--------|---------|--------------------------------------------------|
-| `expiresAt`                  | `int`  | `1440`  | Lock expiry in minutes.                          |
-| `releaseOnTerminationSignals`| `bool` | `true`  | Release the lock when the process receives a termination signal. |
+| Parameter                     | Type   | Default | Purpose                                                          |
+|-------------------------------|--------|---------|------------------------------------------------------------------|
+| `expiresAt`                   | `int`  | `1440`  | Lock expiry in minutes.                                          |
+| `releaseOnTerminationSignals` | `bool` | `true`  | Release the lock when the process receives a termination signal. |
 
 ```php
 #[WithoutOverlapping(expiresAt: 60, releaseOnTerminationSignals: false)]
@@ -254,7 +267,8 @@ class HeavyJobs
 }
 ```
 
-When `withoutOverlapping: true` is set directly on `#[Scheduled]`, the expiry defaults to 1440 minutes and `releaseOnTerminationSignals` defaults to `true`. Use the `#[WithoutOverlapping]` decorator to control either value.
+When `withoutOverlapping: true` is set directly on `#[Scheduled]`, the expiry defaults to 1440 minutes and
+`releaseOnTerminationSignals` defaults to `true`. Use the `#[WithoutOverlapping]` decorator to control either value.
 
 ## Multiple schedules per method
 
@@ -290,7 +304,8 @@ public function check(): void {}
 #[Scheduled(Every::Hour, name: 'order-reconciliation')]
 ```
 
-Names show up in `php artisan schedule:list` and are used by `withoutOverlapping` and `onOneServer` to track running tasks. Pick a stable, descriptive name if those features matter to you.
+Names show up in `php artisan schedule:list` and are used by `withoutOverlapping` and `onOneServer` to track running
+tasks. Pick a stable, descriptive name if those features matter to you.
 
 If you omit the name, the default is `Class@method` (with a `#N` suffix when stacked).
 
@@ -307,6 +322,37 @@ public function reconcile(OrderRepository $orders, Notifier $notifier): void
 ```
 
 The class itself is also resolved from the container, so constructor injection works the same way.
+
+## Passing parameters
+
+The `parameters` array supplies arguments to a scheduled method or command.
+
+For a method, the values are matched to the method's parameters by name. They sit alongside dependency injection:
+type-hinted services come from the container, while `parameters` fills in the remaining values.
+
+```php
+use App\Repositories\OrderRepository;
+
+#[Scheduled(Every::Hour, parameters: ['region' => 'eu-west', 'limit' => 100])]
+public function syncOrders(string $region, int $limit, OrderRepository $orders): void
+{
+    // $region is 'eu-west', $limit is 100, $orders is resolved from the container
+}
+```
+
+For commands, this works similarly and lets you pass options and/or arguments:
+
+```php
+#[Scheduled(Every::Day, parameters: ['warehouse', '--queue' => 'maintenance'])]
+class RebuildInventory extends Command
+{
+    protected $signature = 'inventory:rebuild {warehouse} {--queue=}';
+
+    // ...
+}
+```
+
+Scheduled jobs take no parameters; the value is ignored for a class-level `#[Scheduled]` on a queued job.
 
 ## Putting it all together
 

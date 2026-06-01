@@ -90,10 +90,10 @@ final class ScheduleDiscovery implements Discovery
         /** @var DiscoveredSchedule $item */
         foreach ($this->discoveryItems as $item) {
             $event = match ($item->target) {
-                ScheduleTarget::Command => $this->schedule->command($item->className),
+                ScheduleTarget::Command => $this->schedule->command($item->className, $item->schedule->parameters),
                 ScheduleTarget::Job => $this->schedule->job($item->className),
                 ScheduleTarget::Method => $this->schedule->call(function () use ($item) {
-                    $this->app->call([$this->app->make($item->className), $item->methodName]);
+                    $this->app->call([$this->app->make($item->className), $item->methodName], $item->schedule->parameters);
                 }),
             };
 

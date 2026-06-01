@@ -25,6 +25,8 @@ use Tests\Fixtures\Schedule\InlineModifiersTask;
 use Tests\Fixtures\Schedule\MultipleScheduledTask;
 use Tests\Fixtures\Schedule\NamedTask;
 use Tests\Fixtures\Schedule\OnOneServerTask;
+use Tests\Fixtures\Schedule\ParameterizedCallbackTask;
+use Tests\Fixtures\Schedule\ParameterizedScheduledCommand;
 use Tests\Fixtures\Schedule\ProcessOrdersJob;
 use Tests\Fixtures\Schedule\ReleaseOnTerminationTask;
 use Tests\Fixtures\Schedule\ScheduledCommand;
@@ -249,3 +251,28 @@ it('throws when a class-level Scheduled attribute is used on a class that is nei
     \LogicException::class,
     'Scheduled class ' . ClassScheduledNonCommand::class . ' must either be a command extending ' . Command::class . ' or a job implementing ' . ShouldQueue::class,
 );
+
+it('passes parameters to a scheduled callback', function () {
+    ParameterizedCallbackTask::$received = [];
+
+    $schedule = discoverSchedule(ParameterizedCallbackTask::class);
+
+    $schedule->events()[0]->run(app());
+
+    expect(ParameterizedCallbackTask::$received)->toBe([
+        'city'  => 'Amsterdam',
+        'limit' => 5,
+    ]);
+});
+
+it('passes parameters to a scheduled command', function () {
+    $schedule = discoverSchedule(ParameterizedScheduledCommand::class);
+
+    expect($schedule->events())->toHaveCount(1);
+
+    $event = $schedule->events()[0];
+
+    expect($event->command)->toContain('inventory:rebuild');
+    expect($event->command)->toContain('--queue=');
+    expect($event->command)->toContain('orders');
+});
