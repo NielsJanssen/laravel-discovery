@@ -22,6 +22,8 @@ use Tests\Fixtures\Schedule\CronExpressionTask;
 use Tests\Fixtures\Schedule\FrequencyEnumTask;
 use Tests\Fixtures\Schedule\HourlyTask;
 use Tests\Fixtures\Schedule\InlineModifiersTask;
+use Tests\Fixtures\Schedule\MultipleScheduledCommand;
+use Tests\Fixtures\Schedule\MultipleScheduledJob;
 use Tests\Fixtures\Schedule\MultipleScheduledTask;
 use Tests\Fixtures\Schedule\NamedTask;
 use Tests\Fixtures\Schedule\OnOneServerTask;
@@ -220,7 +222,7 @@ it('schedules a queued job via a class-level Scheduled attribute', function () {
     $event = $schedule->events()[0];
 
     expect($event->expression)->toBe('0 * * * *');
-    expect($event->description)->toBe(ProcessOrdersJob::class);
+    expect($event->description)->toBe(ProcessOrdersJob::class . '#0');
     expect($event->command)->toBeNull();
 });
 
@@ -275,4 +277,38 @@ it('passes parameters to a scheduled command', function () {
     expect($event->command)->toContain('inventory:rebuild');
     expect($event->command)->toContain('--queue=');
     expect($event->command)->toContain('orders');
+});
+
+it('registers one event per Scheduled attribute on a command class', function () {
+    $schedule = discoverSchedule(MultipleScheduledCommand::class);
+
+    expect($schedule->events())->toHaveCount(2);
+
+    $expressions = array_column($schedule->events(), 'expression');
+    expect($expressions)->toContain('0 * * * *');   // Every::Hour
+    expect($expressions)->toContain('0 9 * * 1');   // Cron: Mondays at 09:00
+
+    foreach ($schedule->events() as $event) {
+        expect($event->command)->toContain('reports:dispatch');
+    }
+});
+
+it('registers one event per Scheduled attribute on a job class, resolving each closure by index', function () {
+    $schedule = discoverSchedule(MultipleScheduledJob::class);
+
+    expect($schedule->events())->toHaveCount(2);
+
+    $hourly = collect($schedule->events())->firstWhere('expression', '0 * * * *');
+    $daily  = collect($schedule->events())->firstWhere('expression', '0 0 * * *');
+
+    expect($hourly)->not->toBeNull();
+    expect($daily)->not->toBeNull();
+
+    // Each DiscoveredSchedule re-reads its own attribute via attributeIndex.
+    expect($hourly->onOneServer)->toBeTrue();
+    expect($daily->withoutOverlapping)->toBeTrue();
+
+    // CallbackEvents (jobs), not command events.
+    expect($hourly->command)->toBeNull();
+    expect($daily->command)->toBeNull();
 });

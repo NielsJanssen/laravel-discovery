@@ -34,10 +34,10 @@ final class ScheduleDiscovery implements Discovery
 
         $classDecorators = $class->getAttributes(ScheduleDecorator::class);
 
-        /** @var Scheduled|null $classAttr */
-        $classAttr = $class->getAttribute(Scheduled::class);
+        /** @var list<Scheduled> $classAttrs */
+        $classAttrs = $class->getAttributes(Scheduled::class);
 
-        if ($classAttr) {
+        foreach ($classAttrs as $index => $classAttr) {
             $target = match (true) {
                 is_subclass_of($class->getName(), LaravelCommand::class) => ScheduleTarget::Command,
                 is_subclass_of($class->getName(), ShouldQueue::class) => ScheduleTarget::Job,
@@ -52,9 +52,13 @@ final class ScheduleDiscovery implements Discovery
                 $classAttr->withDecorators($classDecorators),
                 $class,
                 null,
+                index: $index,
                 target: $target,
             ));
 
+        }
+
+        if (!empty($classAttrs)) {
             return;
         }
 
