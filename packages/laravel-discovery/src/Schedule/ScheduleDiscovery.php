@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\Schedule;
 
+use Illuminate\Console\Command as LaravelCommand;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Container\Attributes\Singleton;
 use Illuminate\Foundation\Application;
@@ -31,6 +32,23 @@ final class ScheduleDiscovery implements Discovery
 
         $classDecorators = $class->getAttributes(ScheduleDecorator::class);
 
+        /** @var Scheduled|null $classAttr */
+        $classAttr = $class->getAttribute(Scheduled::class);
+
+        if ($classAttr) {
+            if (!is_subclass_of($class->getName(), LaravelCommand::class)) {
+                throw new \LogicException("Only commands extending " . LaravelCommand::class . " can be scheduled on the class level, but {$class->getName()} does not.");
+            }
+
+            $this->discoveryItems->add($location, DiscoveredSchedule::from(
+                $classAttr->withDecorators($classDecorators),
+                $class,
+                null,
+            ));
+
+            return;
+        }
+
         foreach ($class->getPublicMethods() as $method) {
             $attrs = $method->getAttributes(Scheduled::class);
 
@@ -38,27 +56,17 @@ final class ScheduleDiscovery implements Discovery
                 continue;
             }
 
-            $multiple    = count($attrs) > 1;
-            $defaultName = $class->getName() . '@' . $method->getName();
-
             $decorators = [
                 ...$classDecorators,
                 ...$method->getAttributes(ScheduleDecorator::class),
             ];
 
             foreach ($attrs as $index => $scheduled) {
-                $scheduled->clearClosure();
-
-                foreach ($decorators as $decorator) {
-                    $decorator->decorate($scheduled);
-                }
-
-                $this->discoveryItems->add($location, new DiscoveredSchedule(
-                    className: $class->getName(),
-                    methodName: $method->getName(),
-                    name: $scheduled->name ?? ($multiple ? $defaultName . '#' . $index : $defaultName),
-                    schedule: $scheduled,
-                    attributeIndex: $index,
+                $this->discoveryItems->add($location, DiscoveredSchedule::from(
+                    $scheduled->withDecorators($decorators),
+                    $class,
+                    $method,
+                    $index,
                 ));
             }
         }
@@ -72,9 +80,11 @@ final class ScheduleDiscovery implements Discovery
 
         /** @var DiscoveredSchedule $item */
         foreach ($this->discoveryItems as $item) {
-            $event = $this->schedule->call(function () use ($item) {
-                $this->app->call([$this->app->make($item->className), $item->methodName]);
-            });
+            $event = $item->methodName
+                ? $this->schedule->call(function () use ($item) {
+                    $this->app->call([$this->app->make($item->className), $item->methodName]);
+                })
+                : $this->schedule->command($item->className);
 
             $event->name($item->name);
 

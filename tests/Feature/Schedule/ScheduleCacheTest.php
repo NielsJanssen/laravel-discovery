@@ -73,6 +73,6 @@ it('all schedule item types survive a cache round-trip and apply correctly', fun
     expect($names)->toContain(MultipleScheduledTask::class . '@run#1');
 
     // Closure-configured task: closure re-read from reflection after round-trip
-    $closureEvent = collect($events)->firstWhere('description', ClosureConfiguredTask::class . '@run');
+    $closureEvent = collect($events)->firstWhere('description', ClosureConfiguredTask::class . '@run#0');
     expect($closureEvent->withoutOverlapping)->toBeTrue();
 });

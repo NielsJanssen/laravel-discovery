@@ -30,7 +30,7 @@ The task appears in `php artisan schedule:list` and fires every night at midnigh
 | `timezone`           | `?string`                                     | `null`   | Run the task in this timezone.                       |
 | `name`               | `?string`                                     | `null`   | Display name. Defaults to `Class@method`.            |
 
-The attribute is **repeatable** and **target-method only**. You can stack multiple `#[Scheduled]` attributes on a single method to register it on multiple schedules at once.
+The attribute is **repeatable** and targets both methods and command classes. Stack multiple `#[Scheduled]` attributes on a single method to register it on several schedules at once. Applied to an Artisan command class, a single `#[Scheduled]` schedules the command itself; see [Scheduling a command](#scheduling-a-command).
 
 ## Three ways to schedule
 
@@ -130,6 +130,29 @@ public function generateReport(): void
 ```
 
 The closure receives the `Event` instance Laravel created for the task. Timezone, overlap prevention, and server constraints do not need a closure; use the `#[Scheduled]` parameters or the [schedule decorators](#schedule-decorators) instead.
+
+## Scheduling a command
+
+Apply `#[Scheduled]` to a class that extends `Illuminate\Console\Command` to schedule the Artisan command itself:
+
+```php
+use Illuminate\Console\Command;
+use NielsJanssen\Laravel\Discovery\Schedule\Every;
+use NielsJanssen\Laravel\Discovery\Schedule\Scheduled;
+
+#[Scheduled(Every::Day)]
+class PruneStaleReservations extends Command
+{
+    protected $signature = 'inventory:prune-reservations';
+
+    protected $description = 'Release inventory reservations that were never checked out.';
+
+    public function handle(): void
+    {
+        // ...
+    }
+}
+```
 
 ## Time windows
 
