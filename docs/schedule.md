@@ -30,7 +30,7 @@ The task appears in `php artisan schedule:list` and fires every night at midnigh
 | `timezone`           | `?string`                                     | `null`   | Run the task in this timezone.                       |
 | `name`               | `?string`                                     | `null`   | Display name. Defaults to `Class@method`.            |
 
-The attribute is **repeatable** and targets both methods and command classes. Stack multiple `#[Scheduled]` attributes on a single method to register it on several schedules at once. Applied to an Artisan command class, a single `#[Scheduled]` schedules the command itself; see [Scheduling a command](#scheduling-a-command).
+The attribute is **repeatable** and targets methods, command classes, and job classes. Stack multiple `#[Scheduled]` attributes on a single method to register it on several schedules at once. Applied to an Artisan command or a queued job, a single `#[Scheduled]` schedules that class; see [Scheduling a command](#scheduling-a-command) and [Scheduling a job](#scheduling-a-job).
 
 ## Three ways to schedule
 
@@ -146,6 +146,32 @@ class PruneStaleReservations extends Command
     protected $signature = 'inventory:prune-reservations';
 
     protected $description = 'Release inventory reservations that were never checked out.';
+
+    public function handle(): void
+    {
+        // ...
+    }
+}
+```
+
+## Scheduling a job
+
+Apply `#[Scheduled]` to a queued job (a class implementing `Illuminate\Contracts\Queue\ShouldQueue`) to dispatch it on a schedule. The job is pushed onto its queue at each interval, the same as a `$schedule->job(ReconcileOrders::class)` call:
+
+```php
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use NielsJanssen\Laravel\Discovery\Schedule\Every;
+use NielsJanssen\Laravel\Discovery\Schedule\Scheduled;
+
+#[Scheduled(Every::Hour)]
+class ReconcileOrders implements ShouldQueue
+{
+    use Dispatchable;
+    use InteractsWithQueue;
+    use Queueable;
 
     public function handle(): void
     {

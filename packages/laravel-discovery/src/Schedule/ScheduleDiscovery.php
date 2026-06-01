@@ -7,7 +7,9 @@ namespace NielsJanssen\Laravel\Discovery\Schedule;
 use Illuminate\Console\Command as LaravelCommand;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Container\Attributes\Singleton;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Application;
+use ReflectionClass;
 use ReflectionMethod;
 use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
@@ -36,14 +38,21 @@ final class ScheduleDiscovery implements Discovery
         $classAttr = $class->getAttribute(Scheduled::class);
 
         if ($classAttr) {
-            if (!is_subclass_of($class->getName(), LaravelCommand::class)) {
-                throw new \LogicException("Only commands extending " . LaravelCommand::class . " can be scheduled on the class level, but {$class->getName()} does not.");
-            }
+            $target = match (true) {
+                is_subclass_of($class->getName(), LaravelCommand::class) => ScheduleTarget::Command,
+                is_subclass_of($class->getName(), ShouldQueue::class) => ScheduleTarget::Job,
+                default => throw new \LogicException(
+                    "Scheduled class {$class->getName()} must either "
+                    . 'be a command extending ' . LaravelCommand::class
+                    . ' or a job implementing ' . ShouldQueue::class,
+                ),
+            };
 
             $this->discoveryItems->add($location, DiscoveredSchedule::from(
                 $classAttr->withDecorators($classDecorators),
                 $class,
                 null,
+                target: $target,
             ));
 
             return;
@@ -80,18 +89,24 @@ final class ScheduleDiscovery implements Discovery
 
         /** @var DiscoveredSchedule $item */
         foreach ($this->discoveryItems as $item) {
-            $event = $item->methodName
-                ? $this->schedule->call(function () use ($item) {
+            $event = match ($item->target) {
+                ScheduleTarget::Command => $this->schedule->command($item->className),
+                ScheduleTarget::Job => $this->schedule->job($item->className),
+                ScheduleTarget::Method => $this->schedule->call(function () use ($item) {
                     $this->app->call([$this->app->make($item->className), $item->methodName]);
-                })
-                : $this->schedule->command($item->className);
+                }),
+            };
 
             $event->name($item->name);
 
             $scheduled = $item->schedule;
 
             if (!isset($scheduled->schedule)) {
-                $scheduledWithClosure = new ReflectionMethod($item->className, $item->methodName)
+                $reflector = $item->methodName
+                    ? new ReflectionMethod($item->className, $item->methodName)
+                    : new ReflectionClass($item->className);
+
+                $scheduledWithClosure = $reflector
                     ->getAttributes(Scheduled::class)[$item->attributeIndex]
                     ->newInstance();
 
