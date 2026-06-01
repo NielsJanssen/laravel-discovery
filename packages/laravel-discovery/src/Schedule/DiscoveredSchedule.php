@@ -15,9 +15,10 @@ final class DiscoveredSchedule
         public readonly string $name,
         public readonly ?Scheduled $schedule,
         public readonly int $attributeIndex,
+        public readonly ScheduleTarget $target = ScheduleTarget::Method,
     ) {}
 
-    public static function from(Scheduled $scheduled, ClassReflector $class, ?MethodReflector $method, int $index = 0): self
+    public static function from(Scheduled $scheduled, ClassReflector $class, ?MethodReflector $method, int $index = 0, ScheduleTarget $target = ScheduleTarget::Method): self
     {
         $scheduled->clearClosure();
 
@@ -27,6 +28,7 @@ final class DiscoveredSchedule
             name: $scheduled->name ?? ($class->getName() . ($method ? '@' . $method->getName() . '#' . $index : '')),
             schedule: $scheduled,
             attributeIndex: $index,
+            target: $target,
         );
     }
 }

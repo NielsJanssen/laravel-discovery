@@ -4,31 +4,35 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use Illuminate\Console\Command;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Bus;
 use NielsJanssen\Laravel\Discovery\Schedule\ScheduleDiscovery;
 use Tempest\Discovery\DiscoveryItems;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\Schedule\BasicScheduledTask;
-use Tests\Fixtures\Schedule\ClassScheduledNonCommand;
-use Tests\Fixtures\Schedule\ClosureConfiguredTask;
-use Tests\Fixtures\Schedule\ScheduledCommand;
-use Tests\Fixtures\Schedule\FrequencyEnumTask;
-use Tests\Fixtures\Schedule\HourlyTask;
-use Tests\Fixtures\Schedule\MultipleScheduledTask;
-use Tests\Fixtures\Schedule\NamedTask;
 use Tests\Fixtures\Schedule\BetweenTask;
 use Tests\Fixtures\Schedule\ClassDecoratorTask;
+use Tests\Fixtures\Schedule\ClassScheduledNonCommand;
+use Tests\Fixtures\Schedule\ClosureConfiguredTask;
+use Tests\Fixtures\Schedule\ClosureScheduledJob;
 use Tests\Fixtures\Schedule\CronExpressionTask;
+use Tests\Fixtures\Schedule\FrequencyEnumTask;
+use Tests\Fixtures\Schedule\HourlyTask;
 use Tests\Fixtures\Schedule\InlineModifiersTask;
+use Tests\Fixtures\Schedule\MultipleScheduledTask;
+use Tests\Fixtures\Schedule\NamedTask;
 use Tests\Fixtures\Schedule\OnOneServerTask;
+use Tests\Fixtures\Schedule\ProcessOrdersJob;
 use Tests\Fixtures\Schedule\ReleaseOnTerminationTask;
+use Tests\Fixtures\Schedule\ScheduledCommand;
 use Tests\Fixtures\Schedule\TimezoneTask;
 use Tests\Fixtures\Schedule\UnattributedTask;
 use Tests\Fixtures\Schedule\UnlessBetweenTask;
 use Tests\Fixtures\Schedule\WithoutOverlappingExpiryTask;
 use Tests\Fixtures\Schedule\WithoutOverlappingTask;
-use Illuminate\Console\Command;
 
 function discoverSchedule(string ...$classes): Schedule
 {
@@ -206,9 +210,42 @@ it('schedules a traditional Laravel command via a class-level Scheduled attribut
     expect($event->command)->toContain('fixture:scheduled');
 });
 
-it('throws when a class-level Scheduled attribute is used on a non-command class', function () {
+it('schedules a queued job via a class-level Scheduled attribute', function () {
+    $schedule = discoverSchedule(ProcessOrdersJob::class);
+
+    expect($schedule->events())->toHaveCount(1);
+
+    $event = $schedule->events()[0];
+
+    expect($event->expression)->toBe('0 * * * *');
+    expect($event->description)->toBe(ProcessOrdersJob::class);
+    expect($event->command)->toBeNull();
+});
+
+it('dispatches the scheduled job when its event runs', function () {
+    Bus::fake();
+
+    $schedule = discoverSchedule(ProcessOrdersJob::class);
+
+    $schedule->events()[0]->run(app());
+
+    Bus::assertDispatched(ProcessOrdersJob::class);
+});
+
+it('configures a class-level scheduled job through a closure', function () {
+    $schedule = discoverSchedule(ClosureScheduledJob::class);
+
+    expect($schedule->events())->toHaveCount(1);
+
+    $event = $schedule->events()[0];
+
+    expect($event->expression)->toBe('* * * * *');
+    expect($event->onOneServer)->toBeTrue();
+});
+
+it('throws when a class-level Scheduled attribute is used on a class that is neither a command nor a job', function () {
     discoverSchedule(ClassScheduledNonCommand::class);
 })->throws(
     \LogicException::class,
-    'Only commands extending ' . Command::class . ' can be scheduled on the class level',
+    'Scheduled class ' . ClassScheduledNonCommand::class . ' must either be a command extending ' . Command::class . ' or a job implementing ' . ShouldQueue::class,
 );
