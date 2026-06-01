@@ -1,6 +1,13 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [1.0.0-beta.6] - 2026-06-01
+
+### Features
+
+- Set scheduled command & method parameters with #[Scheduled(parameters: [])]
+- Support multiple class level #[Scheduled] attributes
+
 ## [1.0.0-beta.5] - 2026-06-01
 
 ### Documentation
