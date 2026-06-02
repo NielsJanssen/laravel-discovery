@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\Router;
 
+use BackedEnum;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
 
@@ -13,10 +14,10 @@ class DiscoveredRoute
         public array $methods,
         public string $uri,
         public string $action,
-        public string|\BackedEnum|null $domain = null,
+        public string|BackedEnum|null $domain = null,
         public array $middleware = [],
         public array $withoutMiddleware = [],
-        public string|\BackedEnum|null $name = null,
+        public string|BackedEnum|null $name = null,
     ) {}
 
     /**
