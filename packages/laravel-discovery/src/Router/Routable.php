@@ -15,9 +15,9 @@ interface Routable
 
     public string|\BackedEnum|null $name { get; set; }
 
-    /** @var class-string<class-string|string>[]  */
+    /** @var list<class-string|string>  */
     public array $middleware { get; set; }
 
-    /** @var class-string<class-string|string>[]  */
+    /** @var list<class-string|string>  */
     public array $withoutMiddleware { get; set; }
 }

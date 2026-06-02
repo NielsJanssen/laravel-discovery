@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\Router;
 
-#[\Attribute(\Attribute::TARGET_CLASS | \Attribute::TARGET_METHOD)]
+use Attribute;
+
+#[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_METHOD)]
 class Prefix implements RouteDecorator
 {
     public function __construct(
