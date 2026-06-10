@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use Illuminate\Support\Facades\Artisan;
 use NielsJanssen\Laravel\Discovery\Command\CommandDiscovery;
 use Tempest\Discovery\DiscoveryItems;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
 use Tests\Fixtures\Command\AbstractCommand;
+use Tests\Fixtures\Command\CapturingCommand;
 use Tests\Fixtures\Command\LaravelStyleCommand;
 use Tests\Fixtures\Command\MethodCommand;
 
@@ -68,4 +70,33 @@ it('skips abstract classes', function () {
 
     expect($commandClasses)->not->toContain(AbstractCommand::class);
     expect($commands)->toBeEmpty();
+});
+
+it('registers discovered commands even when not running in console', function () {
+    $app = app();
+
+    // Force runningInConsole() to report false, simulating a web request,
+    // before apply() registers the Artisan::starting bootstrapper.
+    $setConsoleFlag = function (?bool $value) use ($app): void {
+        (fn() => $this->isRunningInConsole = $value)->call($app);
+    };
+
+    $setConsoleFlag(false);
+
+    try {
+        expect($app->runningInConsole())->toBeFalse();
+
+        discoverCommands(CapturingCommand::class);
+
+        CapturingCommand::$capturedName = '';
+
+        // Artisan::call builds the console application lazily, which runs the
+        // bootstrapper registered by apply(). Before the fix, apply() bailed
+        // out entirely outside the console, making this call fail.
+        Artisan::call('fixture:capturing', ['name' => 'Niels']);
+
+        expect(CapturingCommand::$capturedName)->toBe('Niels');
+    } finally {
+        $setConsoleFlag(null);
+    }
 });

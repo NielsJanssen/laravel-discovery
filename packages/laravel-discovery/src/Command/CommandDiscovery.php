@@ -51,10 +51,6 @@ final class CommandDiscovery implements Discovery
 
     public function apply(): void
     {
-        if (!$this->app->runningInConsole()) {
-            return;
-        }
-
         Artisan::starting(function (Artisan $artisan) {
             foreach ($this->discoveryItems as $command) {
                 $artisan->resolve(
