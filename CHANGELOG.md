@@ -1,6 +1,20 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [1.0.0-beta.7] - 2026-06-10
+
+### Bug Fixes
+
+- Always register command bootstrap to use Artisan:call in other app code
+
+### Documentation
+
+- Fix middleware docblocks of routable attributes
+
+### Miscellaneous Tasks
+
+- Remove unused stub file
+
 ## [1.0.0-beta.6] - 2026-06-01
 
 ### Features
