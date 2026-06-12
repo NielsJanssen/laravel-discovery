@@ -16,7 +16,7 @@
         "laravel/pint": "^1.29",
         "laravel/framework": "^13.11",
         "orchestra/testbench": "^11.1",
-        "pestphp/pest": "4.6.*",
+        "pestphp/pest": "4.7.*",
         "pestphp/pest-plugin-laravel": "^4.1",
         "laravel/pao": "^1.0",
         "livewire/livewire": "^4.3"
