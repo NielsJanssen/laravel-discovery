@@ -1,70 +1,70 @@
 {
-    "name": "nielsjanssen/laravel-discovery-monorepo",
-    "description": "Monorepo for nielsjanssen/laravel-discovery and nielsjanssen/laravel-discovery-graphql",
-    "type": "project",
-    "license": "MIT",
-    "replace": {
-        "nielsjanssen/laravel-discovery": "self.version",
-        "nielsjanssen/laravel-discovery-graphql": "self.version"
-    },
-    "require": {
-        "php": "^8.5",
-        "tempest/discovery": "^3.10",
-        "rebing/graphql-laravel": "10.x-dev"
-    },
-    "require-dev": {
-        "laravel/pint": "^1.29",
-        "laravel/framework": "^13.11",
-        "orchestra/testbench": "^11.1",
-        "pestphp/pest": "4.6.*",
-        "pestphp/pest-plugin-laravel": "^4.1",
-        "laravel/pao": "^1.0",
-        "livewire/livewire": "^4.3"
-    },
-    "autoload": {
-        "psr-4": {
-            "NielsJanssen\\Laravel\\Discovery\\": "packages/laravel-discovery/src/",
-            "NielsJanssen\\Laravel\\Discovery\\RebingGraphQL\\": "packages/laravel-discovery-graphql/src/RebingGraphQL/"
-        }
-    },
-    "autoload-dev": {
-        "psr-4": {
-            "Tests\\": "tests/",
-            "Workbench\\App\\": "workbench/app/",
-            "Workbench\\Database\\Factories\\": "workbench/database/factories/",
-            "Workbench\\Database\\Seeders\\": "workbench/database/seeders/"
-        }
-    },
-    "scripts": {
-        "post-autoload-dump": [
-            "@clear",
-            "@prepare"
-        ],
-        "clear": "@php vendor/bin/testbench package:purge-skeleton --ansi",
-        "prepare": "@php vendor/bin/testbench package:discover --ansi",
-        "build": "@php vendor/bin/testbench workbench:build --ansi",
-        "serve": [
-            "Composer\\Config::disableProcessTimeout",
-            "@build",
-            "@php vendor/bin/testbench serve --ansi"
-        ],
-        "lint": [
-            "@php vendor/bin/pint --ansi"
-        ],
-        "test": "@php vendor/bin/pest"
-    },
-    "config": {
-        "allow-plugins": {
-            "pestphp/pest-plugin": true
-        }
-    },
-    "extra": {
-        "laravel": {
-            "providers": [
-                "NielsJanssen\\Laravel\\Discovery\\DiscoveryServiceProvider"
-            ]
-        }
-    },
-    "minimum-stability": "dev",
-    "prefer-stable": true
+  "name": "nielsjanssen/laravel-discovery-monorepo",
+  "description": "Monorepo for nielsjanssen/laravel-discovery and nielsjanssen/laravel-discovery-graphql",
+  "type": "project",
+  "license": "MIT",
+  "replace": {
+    "nielsjanssen/laravel-discovery": "self.version",
+    "nielsjanssen/laravel-discovery-graphql": "self.version"
+  },
+  "require": {
+    "php": "^8.5",
+    "tempest/discovery": "^3.10",
+    "rebing/graphql-laravel": "10.x-dev"
+  },
+  "require-dev": {
+    "laravel/pint": "^1.29",
+    "laravel/framework": "^13.15",
+    "orchestra/testbench": "^11.1",
+    "pestphp/pest": "^4.7",
+    "pestphp/pest-plugin-laravel": "^4.1",
+    "laravel/pao": "^1.1",
+    "livewire/livewire": "^4.3"
+  },
+  "autoload": {
+    "psr-4": {
+      "NielsJanssen\\Laravel\\Discovery\\": "packages/laravel-discovery/src/",
+      "NielsJanssen\\Laravel\\Discovery\\RebingGraphQL\\": "packages/laravel-discovery-graphql/src/RebingGraphQL/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "tests/",
+      "Workbench\\App\\": "workbench/app/",
+      "Workbench\\Database\\Factories\\": "workbench/database/factories/",
+      "Workbench\\Database\\Seeders\\": "workbench/database/seeders/"
+    }
+  },
+  "scripts": {
+    "post-autoload-dump": [
+      "@clear",
+      "@prepare"
+    ],
+    "clear": "@php vendor/bin/testbench package:purge-skeleton --ansi",
+    "prepare": "@php vendor/bin/testbench package:discover --ansi",
+    "build": "@php vendor/bin/testbench workbench:build --ansi",
+    "serve": [
+      "Composer\\Config::disableProcessTimeout",
+      "@build",
+      "@php vendor/bin/testbench serve --ansi"
+    ],
+    "lint": [
+      "@php vendor/bin/pint --ansi"
+    ],
+    "test": "@php vendor/bin/pest"
+  },
+  "config": {
+    "allow-plugins": {
+      "pestphp/pest-plugin": true
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "NielsJanssen\\Laravel\\Discovery\\DiscoveryServiceProvider"
+      ]
+    }
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true
 }
