@@ -32,6 +32,9 @@
       "NielsJanssen\\Laravel\\Discovery\\RebingGraphQL\\": "src/RebingGraphQL/"
     }
   },
+  "branch-alias": {
+    "dev-main": "1.x-dev"
+  },
   "minimum-stability": "stable",
   "prefer-stable": true
 }

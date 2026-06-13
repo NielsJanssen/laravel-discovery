@@ -37,8 +37,7 @@
       ]
     },
     "branch-alias": {
-      "dev-main": "1.x-dev",
-      "dev-feat/graphql-laravel-discovery": "1.x-dev"
+      "dev-main": "1.x-dev"
     }
   },
   "minimum-stability": "stable",
