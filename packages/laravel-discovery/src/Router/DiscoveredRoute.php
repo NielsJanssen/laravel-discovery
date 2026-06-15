@@ -10,6 +10,11 @@ use Tempest\Reflection\MethodReflector;
 
 class DiscoveredRoute
 {
+    /**
+     * @param list<Method> $methods
+     * @param list<class-string|string> $middleware
+     * @param list<class-string|string> $withoutMiddleware
+     */
     public function __construct(
         public array $methods,
         public string $uri,
@@ -22,6 +27,7 @@ class DiscoveredRoute
 
     /**
      * @param list<RouteDecorator> $decorators
+     * @param ClassReflector<object>|MethodReflector $reflector
      */
     public static function from(Routable $route, array $decorators, ClassReflector|MethodReflector $reflector): self
     {

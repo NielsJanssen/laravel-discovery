@@ -6,16 +6,19 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Illuminate\Contracts\Database\Eloquent\Builder;
 
-readonly class Sort implements ComposedFromArgs
+final readonly class Sort implements ComposedFromArgs
 {
     public function __construct(
         public ?string $field = null,
         public string  $direction = 'asc',
     ) {}
 
+    /**
+     * @param array{order?: string, sortBy?: string, sortDirection?: string} $args
+     */
     public static function fromArgs(array $args): static
     {
-        if (isset($args['order']) && is_string($args['order']) && str_contains($args['order'], ':')) {
+        if (isset($args['order']) && str_contains($args['order'], ':')) {
             [$field, $direction] = explode(':', $args['order'], 2);
 
             return new self($field, $direction);
@@ -29,6 +32,10 @@ readonly class Sort implements ComposedFromArgs
 
     public function __invoke(Builder $query): Builder
     {
-        return $this->field !== null ? $query->orderBy($this->field, $this->direction) : $query;
+        if ($this->field === null) {
+            return $query;
+        }
+
+        return $query->orderBy($this->field, $this->direction === 'desc' ? 'desc' : 'asc');
     }
 }

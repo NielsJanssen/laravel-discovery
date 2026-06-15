@@ -9,7 +9,7 @@ use GraphQL\Type\Definition\ScalarType;
 use GraphQL\Type\Definition\Type;
 use Rebing\GraphQL\Support\Contracts\TypeConvertible;
 
-class NullType extends ScalarType implements TypeConvertible
+final class NullType extends ScalarType implements TypeConvertible
 {
     public string $name = 'Null';
 

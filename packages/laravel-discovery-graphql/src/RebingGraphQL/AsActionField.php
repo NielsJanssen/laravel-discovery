@@ -104,6 +104,7 @@ trait AsActionField
             'float' => GraphQLType::float(),
             'bool' => GraphQLType::boolean(),
             'void' => new NullType(),
+            null => throw new RuntimeException('Action type was not resolved during discovery.'),
             default => GraphQL::type($action->type),
         };
 
@@ -116,6 +117,9 @@ trait AsActionField
         return $action->nullable ? $type : GraphQLType::nonNull($type);
     }
 
+    /**
+     * @param array<string, mixed> $args
+     */
     public function resolve(mixed $root, array $args, mixed $context, ?ResolveInfo $info): mixed
     {
         $mappedArgs = [];
@@ -137,9 +141,10 @@ trait AsActionField
             $mappedArgs[$paramName] = $valueObjectClass::fromArgs($args);
         }
 
-        $instance = $this->app->make($this->discoveredAction->class);
-
-        return $this->app->call([$instance, $this->discoveredAction->method], $mappedArgs);
+        return $this->app->call(
+            $this->discoveredAction->class . '@' . $this->discoveredAction->method,
+            $mappedArgs,
+        );
     }
 
     protected function getMiddleware(): array
@@ -150,9 +155,14 @@ trait AsActionField
     public function authorize(mixed $root, array $args, mixed $context, ?ResolveInfo $resolveInfo = null): bool
     {
         foreach ($this->discoveredAction->authorizations as $auth) {
-            $passed = $auth->gate !== null
-                ? $this->app->make($auth->gate)->check($root, $args, $context, $resolveInfo)
-                : auth()->check();
+            if ($auth->gate) {
+                /** @var AuthorizationGate $gate */
+                $gate = $this->app->make($auth->gate);
+
+                $passed = $gate->check($root, $args, $context, $resolveInfo);
+            } else {
+                $passed = auth()->check();
+            }
 
             if (! $passed) {
                 $this->failedAuthorize = $auth;
@@ -166,9 +176,12 @@ trait AsActionField
 
     public function getAuthorizationMessage(): string
     {
-        return $this->failedAuthorize?->message ?? parent::getAuthorizationMessage();
+        return $this->failedAuthorize->message ?? parent::getAuthorizationMessage();
     }
 
+    /**
+     * @return array<int|string, mixed>|Closure
+     */
     private function resolveRules(string $paramName): array|Closure
     {
         $class = $this->discoveredAction->class;
@@ -180,8 +193,8 @@ trait AsActionField
             if ($param->getName() === $paramName) {
                 $attrs = $param->getAttributes(Arg::class);
 
-                if (! empty($attrs)) {
-                    return $attrs[0]->newInstance()->rules;
+                if (!empty($attrs) && $rules = $attrs[0]->newInstance()->rules) {
+                    return $rules;
                 }
             }
         }

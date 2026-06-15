@@ -26,6 +26,9 @@ final class ScheduleDiscovery implements Discovery
         private readonly Schedule $schedule,
     ) {}
 
+    /**
+     * @param ClassReflector<object> $class
+     */
     public function discover(DiscoveryLocation $location, ClassReflector $class): void
     {
         if (! $class->isInstantiable()) {
@@ -97,7 +100,10 @@ final class ScheduleDiscovery implements Discovery
                 ScheduleTarget::Command => $this->schedule->command($item->className, $item->schedule->parameters),
                 ScheduleTarget::Job => $this->schedule->job($item->className),
                 ScheduleTarget::Method => $this->schedule->call(function () use ($item) {
-                    $this->app->call([$this->app->make($item->className), $item->methodName], $item->schedule->parameters);
+                    $method = $item->methodName
+                        ?? throw new \LogicException('A method schedule target requires a method name.');
+
+                    $this->app->call($item->className . '@' . $method, $item->schedule->parameters);
                 }),
             };
 
@@ -110,19 +116,33 @@ final class ScheduleDiscovery implements Discovery
                     ? new ReflectionMethod($item->className, $item->methodName)
                     : new ReflectionClass($item->className);
 
-                $scheduledWithClosure = $reflector
+                $closure = $reflector
                     ->getAttributes(Scheduled::class)[$item->attributeIndex]
-                    ->newInstance();
+                    ->newInstance()
+                    ->schedule;
 
-                ($scheduledWithClosure->schedule)($event);
+                if ($closure instanceof \Closure) {
+                    $closure($event);
+                }
             } elseif ($scheduled->schedule instanceof Cron) {
                 $event->cron($scheduled->schedule->expression);
             } elseif ($scheduled->schedule instanceof Every) {
                 $interval = $scheduled->schedule->asInterval();
                 $event->cron($interval->toCronExpression());
 
-                if ($interval->seconds) {
-                    $event->repeatEvery($interval->seconds);
+                if ($interval->seconds !== null) {
+                    match ($interval->seconds) {
+                        1 => $event->everySecond(),
+                        2 => $event->everyTwoSeconds(),
+                        5 => $event->everyFiveSeconds(),
+                        10 => $event->everyTenSeconds(),
+                        15 => $event->everyFifteenSeconds(),
+                        20 => $event->everyTwentySeconds(),
+                        30 => $event->everyThirtySeconds(),
+                        default => throw new \InvalidArgumentException(
+                            "Unsupported sub-minute interval: {$interval->seconds} seconds.",
+                        ),
+                    };
                 }
             }
 

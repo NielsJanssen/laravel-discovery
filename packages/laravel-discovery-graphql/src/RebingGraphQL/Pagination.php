@@ -6,22 +6,29 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Model;
 
-readonly class Pagination implements ComposedFromArgs
+final readonly class Pagination implements ComposedFromArgs
 {
     public function __construct(
         public int $page = 1,
         public int $limit = 20,
     ) {}
 
+    /**
+     * @param array{limit?: int, page?: int} $args
+     */
     public static function fromArgs(array $args): static
     {
-        return new self(
+        return new static(
             page: $args['page'] ?? 1,
             limit: $args['limit'] ?? 20,
         );
     }
 
+    /**
+     * @return LengthAwarePaginator<int, Model>
+     */
     public function __invoke(Builder $query): LengthAwarePaginator
     {
         return $query->paginate($this->limit, ['*'], 'page', $this->page);

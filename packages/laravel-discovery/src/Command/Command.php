@@ -11,29 +11,39 @@ use Symfony\Component\Console\Input\InputOption;
 use Tempest\Discovery\SkipDiscovery;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
+use Tempest\Reflection\Reflector;
 
 #[SkipDiscovery]
 final class Command extends LaravelCommand
 {
+    /** @var class-string */
     private string $commandClass;
 
     private CommandArgumentsDefinition $commandArgumentsDefinition;
 
     private MethodReflector $commandMethodReflector;
 
+    private readonly ConsoleCommand $consoleCommand;
+
     /** @var list<CommandMiddleware> */
     private array $resolvedMiddleware = [];
 
+    /**
+     * @param DiscoveredCommand<Reflector> $definition
+     */
     public function __construct(
         private readonly Container         $container,
         private readonly DiscoveredCommand $definition,
     ) {
-        $this->name = $definition->definition->name;
+        $this->consoleCommand = $definition->definition
+            ?? throw new \LogicException('Command requires a ConsoleCommand definition.');
+
+        $this->name = $this->consoleCommand->name;
 
         parent::__construct();
 
-        $this->setAliases($definition->definition->aliases);
-        $this->setDescription($definition->definition->description ?? '');
+        $this->setAliases($this->consoleCommand->aliases);
+        $this->setDescription($this->consoleCommand->description ?? '');
 
         $reflector = $this->definition->reflector;
 
@@ -52,6 +62,7 @@ final class Command extends LaravelCommand
 
     public function __invoke(): mixed
     {
+        /** @var object $instance */
         $instance = $this->container->make($this->commandClass, $io = [
             'input'  => $this->input,
             'output' => $this->output,
@@ -82,10 +93,18 @@ final class Command extends LaravelCommand
             $this->getDefinition(),
         );
 
-        foreach ($this->definition->definition->middleware as $middleware) {
+        foreach ($this->consoleCommand->middleware as $middleware) {
             $resolved = is_string($middleware)
                 ? $this->container->make($middleware)
                 : $middleware;
+
+            if (!$resolved instanceof CommandMiddleware) {
+                throw new \LogicException(sprintf(
+                    'Middleware must implement %s, got %s',
+                    CommandMiddleware::class,
+                    is_object($resolved) ? get_class($resolved) : gettype($resolved),
+                ));
+            }
 
             $this->resolvedMiddleware[] = $resolved;
 

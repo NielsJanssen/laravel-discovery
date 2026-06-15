@@ -12,6 +12,7 @@ final class Scheduled
 {
     /**
      * @param Cron|Every|\Closure(Event): void $schedule
+     * @param array<string, mixed> $parameters
      */
     public function __construct(
         private(set) Cron|Every|\Closure $schedule,
@@ -34,6 +35,9 @@ final class Scheduled
         }
     }
 
+    /**
+     * @param array<ScheduleDecorator> $decorators
+     */
     public function withDecorators(array $decorators): static
     {
         $self = clone $this;

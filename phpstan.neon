@@ -1,0 +1,11 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 10
+
+    paths:
+        - packages/laravel-discovery/src
+        - packages/laravel-discovery-graphql/src
+
+    reportIgnoresWithoutComments: true

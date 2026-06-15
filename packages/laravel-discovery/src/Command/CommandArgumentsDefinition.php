@@ -22,10 +22,10 @@ readonly class CommandArgumentsDefinition
     public static function from(MethodReflector $method): self
     {
         return new self(
-            arguments: array_filter(array_map(
+            arguments: array_values(array_filter(array_map(
                 static::parseParameter(...),
                 iterator_to_array($method->getParameters()),
-            )),
+            ))),
         );
     }
 
@@ -65,6 +65,9 @@ readonly class CommandArgumentsDefinition
         );
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     public function resolveInput(InputInterface $input): array
     {
         $inputArguments = $input->getArguments();

@@ -12,8 +12,11 @@ readonly class Middleware
     /** @var list<class-string<\Rebing\GraphQL\Support\Middleware>> */
     public array $middleware;
 
+    /**
+     * @param class-string<\Rebing\GraphQL\Support\Middleware>|list<class-string<\Rebing\GraphQL\Support\Middleware>> $middleware
+     */
     public function __construct(string|array $middleware)
     {
-        $this->middleware = is_array($middleware) ? array_values($middleware) : [$middleware];
+        $this->middleware = is_array($middleware) ? $middleware : [$middleware];
     }
 }

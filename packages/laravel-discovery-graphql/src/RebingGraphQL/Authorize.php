@@ -8,7 +8,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 class Authorize
 {
     public function __construct(
-        /** @var class-string<AuthorizationGate>|null */
+        /** @var class-string<AuthorizationGate>|null $gate */
         public readonly ?string $gate = null,
         public readonly ?string $message = null,
     ) {}

@@ -8,6 +8,9 @@ use ReflectionClass;
 
 readonly class DiscoveredField
 {
+    /**
+     * @param class-string $class
+     */
     public function __construct(
         public string $fieldType,
         public string $class,
@@ -18,6 +21,10 @@ readonly class DiscoveredField
     {
         $defaults = new ReflectionClass($this->class)->getDefaultProperties();
 
-        return $defaults['attributes']['name'] ?? null;
+        if (isset($defaults['attributes']) && is_array($defaults['attributes']) && isset($defaults['attributes']['name']) && is_string($defaults['attributes']['name'])) {
+            return $defaults['attributes']['name'];
+        }
+
+        return null;
     }
 }

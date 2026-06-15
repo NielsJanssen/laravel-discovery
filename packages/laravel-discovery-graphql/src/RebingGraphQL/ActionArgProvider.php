@@ -12,6 +12,8 @@ interface ActionArgProvider
      *
      * Called at field-init time (after cache rehydration), so GraphQLType instances are
      * safe to construct here.
+     *
+     * @return array<string, array<string, mixed>>
      */
     public function provideArgs(): array;
 

@@ -8,5 +8,8 @@ use GraphQL\Type\Definition\ResolveInfo;
 
 interface AuthorizationGate
 {
+    /**
+     * @param array<string, mixed> $args
+     */
     public function check(mixed $root, array $args, mixed $context, ?ResolveInfo $info): bool;
 }

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\Event;
 
-use Illuminate\Events\Dispatcher;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Foundation\Application;
 use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
@@ -22,6 +22,9 @@ final class EventDiscovery implements Discovery
         private readonly Dispatcher $eventDispatcher,
     ) {}
 
+    /**
+     * @param ClassReflector<object> $class
+     */
     public function discover(DiscoveryLocation $location, ClassReflector $class): void
     {
         foreach ($class->getPublicMethods() as $method) {
@@ -31,33 +34,41 @@ final class EventDiscovery implements Discovery
                 continue;
             }
 
-            $eventName = $eventHandler->event ?? $this->resolveEventName($method);
+            $eventName = $eventHandler->event ?: $this->resolveEventName($method);
 
             if ($eventName) {
-                $this->discoveryItems->add($location, [$eventName, $eventHandler, $method, $eventHandler->deferred]);
+                $this->discoveryItems->add($location, new DiscoveredEvent(
+                    $eventName,
+                    $eventHandler,
+                    $method->getDeclaringClass()->getName(),
+                    $method->getName(),
+                    $eventHandler->deferred ?? false,
+                ));
             }
         }
     }
 
     public function apply(): void
     {
-        foreach ($this->discoveryItems as [$eventName, $eventHandler, $method, $deferred]) {
-            $class = $method->getDeclaringClass()->getName();
-
+        /** @var DiscoveredEvent $event */
+        foreach ($this->discoveryItems as $event) {
             $register = fn() => $this->eventDispatcher->listen(
-                events: $eventName,
-                listener: $method->getDeclaringClass()->getName() . '@' . $method->getName(),
+                events: $event->name,
+                listener: $event->class . '@' . $event->method,
             );
 
-            if (!$deferred || $this->app->resolved($class)) {
+            if (!$event->deferred || $this->app->resolved($event->class)) {
                 $register();
                 continue;
             }
 
-            $this->app->afterResolving($class, $register);
+            $this->app->afterResolving($event->class, $register);
         }
     }
 
+    /**
+     * @return list<string>|null
+     */
     private function resolveEventName(MethodReflector $method): ?array
     {
         $parameters = iterator_to_array($method->getParameters());

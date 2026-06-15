@@ -22,13 +22,16 @@ class RouteDiscovery implements Discovery
         private readonly Router $route,
     ) {}
 
+    /**
+     * @param ClassReflector<object> $class
+     */
     public function discover(DiscoveryLocation $location, ClassReflector $class): void
     {
         if (!$class->isInstantiable()) {
             return;
         }
 
-        $classDecorators = $class->getAttributes(RouteDecorator::class);
+        $classDecorators = array_values($class->getAttributes(RouteDecorator::class));
 
         if ($route = $class->getAttribute(Routable::class)) {
             $this->discoveryItems->add($location, DiscoveredRoute::from($route, $classDecorators, $class));
@@ -36,10 +39,10 @@ class RouteDiscovery implements Discovery
 
         foreach ($class->getPublicMethods() as $method) {
             foreach ($method->getAttributes(Routable::class) as $route) {
-                $decorators = [
+                $decorators = array_values([
                     ...$classDecorators,
                     ...$method->getAttributes(RouteDecorator::class),
-                ];
+                ]);
 
                 $this->discoveryItems->add($location, DiscoveredRoute::from($route, $decorators, $method));
             }
@@ -54,6 +57,7 @@ class RouteDiscovery implements Discovery
 
         $named = false;
 
+        /** @var DiscoveredRoute $discoveredRoute */
         foreach ($this->discoveryItems as $discoveredRoute) {
             $route = $this->route->addRoute(
                 methods: array_map(
@@ -62,9 +66,10 @@ class RouteDiscovery implements Discovery
                 ),
                 uri: $discoveredRoute->uri,
                 action: $discoveredRoute->action,
-            )
-                ->middleware($discoveredRoute->middleware)
-                ->withoutMiddleware($discoveredRoute->withoutMiddleware);
+            );
+
+            $route->middleware($discoveredRoute->middleware);
+            $route->withoutMiddleware($discoveredRoute->withoutMiddleware);
 
             if ($discoveredRoute->domain !== null) {
                 $route->domain($discoveredRoute->domain);

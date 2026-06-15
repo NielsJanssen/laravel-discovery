@@ -19,7 +19,6 @@ use Tempest\Discovery\IsDiscovery;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
 use Tempest\Reflection\ParameterReflector;
-use Tempest\Reflection\TypeReflector;
 
 final class GraphQLDiscovery implements Discovery
 {
@@ -29,6 +28,9 @@ final class GraphQLDiscovery implements Discovery
         private readonly Application $app,
     ) {}
 
+    /**
+     * @param ClassReflector<object> $class
+     */
     public function discover(DiscoveryLocation $location, ClassReflector $class): void
     {
         if (!class_exists(GraphQL::class) || ! $class->isInstantiable()) {
@@ -79,10 +81,10 @@ final class GraphQLDiscovery implements Discovery
                 $decorator->decorate($action);
             }
 
-            $argProviders = [
+            $argProviders = array_values([
                 ...$method->getAttributes(ActionArgProvider::class),
                 ...$class->getAttributes(ActionArgProvider::class),
-            ];
+            ]);
 
             $valueObjectClasses = $this->collectValueObjectClasses($argProviders, $class, $method);
 
@@ -112,13 +114,15 @@ final class GraphQLDiscovery implements Discovery
                 $type = $param->getType();
 
                 if (!$argAttr && !$type->isScalar()) {
-                    if ($this->shouldComposeFromArgs($type, $valueObjectClasses)) {
-                        $argCompositions[$param->getName()] = $param->getType()->getName();
+                    $typeName = $type->getName();
+
+                    if (isset($valueObjectClasses[$typeName]) && is_a($typeName, ComposedFromArgs::class, true)) {
+                        $argCompositions[$param->getName()] = $typeName;
                         continue;
                     }
 
-                    if ($this->shouldContainerResolve($type)) {
-                        $containerInjections[$param->getName()] = $param->getType()->getName();
+                    if (class_exists($typeName) || interface_exists($typeName)) {
+                        $containerInjections[$param->getName()] = $typeName;
                         continue;
                     }
                 }
@@ -133,10 +137,10 @@ final class GraphQLDiscovery implements Discovery
                     ->all(),
             ];
 
-            $authorizations = [
+            $authorizations = array_values([
                 ...$classAuthorizations,
                 ...$method->getAttributes(Authorize::class),
-            ];
+            ]);
 
             $typeBuilder = $this->resolveTypeBuilder($class, $method);
 
@@ -161,7 +165,7 @@ final class GraphQLDiscovery implements Discovery
     {
         if ($this->app->configurationIsCached()) {
             foreach ($this->discoveryItems as $item) {
-                if ($item instanceof DiscoveredAction) {
+                if ($item instanceof DiscoveredAction && $item->bindName !== null) {
                     $this->app->singleton($item->bindName, $item->createType(...));
                 }
             }
@@ -170,25 +174,29 @@ final class GraphQLDiscovery implements Discovery
         }
 
         $config = $this->app->make('config');
-        $defaultSchema = $config->get('graphql.default_schema', 'default');
+        $defaultSchema = $config->string('graphql.default_schema', 'default');
 
         $schemas = [];
 
         foreach ($this->discoveryItems as $item) {
-            if ($item instanceof DiscoveredAction) {
+            if ($item instanceof DiscoveredAction && $item->bindName !== null) {
                 $this->app->singleton($item->bindName, $item->createType(...));
-                $schemas[$item->action->schema ?? $defaultSchema][$item->fieldType][$item->action->name] = $item->bindName;
-            } elseif ($item instanceof DiscoveredField) {
-                $schemas[$item->schema ?? $defaultSchema][$item->fieldType][$item->getName()] = $item->class;
+                $fieldName = $item->action->name ?? $item->method;
+                $schemas[$item->action->schema ?? $defaultSchema][$item->fieldType][$fieldName] = $item->bindName;
+            } elseif ($item instanceof DiscoveredField && ($fieldName = $item->getName()) !== null) {
+                $schemas[$item->schema][$item->fieldType][$fieldName] = $item->class;
             }
         }
 
         $config->set('graphql.schemas', array_merge_recursive(
-            $config->get('graphql.schemas', []),
+            $config->array('graphql.schemas', []),
             $schemas,
         ));
     }
 
+    /**
+     * @param ClassReflector<object> $class
+     */
     private function resolveTypeBuilder(ClassReflector $class, MethodReflector $method): ?ActionTypeBuilder
     {
         $methodBuilders = $method->getAttributes(ActionTypeBuilder::class);
@@ -221,6 +229,7 @@ final class GraphQLDiscovery implements Discovery
 
     /**
      * @param  list<ActionArgProvider>  $argProviders
+     * @param  ClassReflector<object>  $class
      * @return array<class-string<ComposedFromArgs>, true>
      */
     private function collectValueObjectClasses(array $argProviders, ClassReflector $class, MethodReflector $method): array
@@ -250,24 +259,6 @@ final class GraphQLDiscovery implements Discovery
         }
 
         return $valueObjectClasses;
-    }
-
-    /**
-     * @param array<class-string<ComposedFromArgs>, true> $valueObjectClasses
-     */
-    private function shouldComposeFromArgs(TypeReflector $type, array $valueObjectClasses): bool
-    {
-        $typeName = $type->getName();
-
-        return isset($valueObjectClasses[$typeName])
-            && is_a($typeName, ComposedFromArgs::class, true);
-    }
-
-    private function shouldContainerResolve(TypeReflector $type): bool
-    {
-        $typeName = $type->getName();
-
-        return class_exists($typeName) || interface_exists($typeName);
     }
 
     /**
@@ -310,19 +301,19 @@ final class GraphQLDiscovery implements Discovery
     }
 
     /**
+     * @param  ClassReflector<object>  $class
      * @return array{0: string, 1: bool} [type, nullable]
      */
     private function discoverActionReturnType(Action $action, ClassReflector $class, MethodReflector $method): array
     {
         $returnType = $method->getReturnType();
-        $phpType = $returnType?->getName();
 
-        if ($phpType === 'void') {
+        if ($returnType?->getName() === 'void') {
             return ['void', true];
         }
 
         if ($returnType !== null && $returnType->isScalar()) {
-            return [$phpType, $returnType->isNullable()];
+            return [$returnType->getName(), $returnType->isNullable()];
         }
 
         throw new RuntimeException(sprintf(
@@ -333,11 +324,14 @@ final class GraphQLDiscovery implements Discovery
         ));
     }
 
+    /**
+     * @param ClassReflector<object> $class
+     */
     private function discoverActionParameter(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method): DiscoveredArg
     {
         $typeReflector = $param->getType();
 
-        if ($argAttr?->type !== null) {
+        if ($argAttr !== null && $argAttr->type !== null) {
             $typeName = $argAttr->type;
         } elseif ($typeReflector->isScalar()) {
             $typeName = $typeReflector->getName();
@@ -350,11 +344,11 @@ final class GraphQLDiscovery implements Discovery
             ));
         }
 
-        $hasRules = !empty($argAttr?->rules);
+        $hasRules = $argAttr !== null && ! empty($argAttr->rules);
         $hasDefault = $param->hasDefaultValue();
 
         return new DiscoveredArg(
-            name: $argAttr?->name ?? $param->getName(),
+            name: $argAttr !== null && $argAttr->name !== null ? $argAttr->name : $param->getName(),
             paramName: $param->getName(),
             type: $typeName,
             nullable: $typeReflector->isNullable() || $hasDefault,

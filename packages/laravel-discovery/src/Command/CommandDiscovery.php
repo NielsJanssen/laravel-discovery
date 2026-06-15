@@ -13,6 +13,7 @@ use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
 use Tempest\Reflection\ClassReflector;
+use Tempest\Reflection\Reflector;
 
 #[Singleton]
 final class CommandDiscovery implements Discovery
@@ -24,6 +25,8 @@ final class CommandDiscovery implements Discovery
     ) {}
 
     /**
+     * @param ClassReflector<object> $class
+     *
      * @throws InvalidCommandRegistrationException
      */
     public function discover(DiscoveryLocation $location, ClassReflector $class): void
@@ -52,14 +55,25 @@ final class CommandDiscovery implements Discovery
     public function apply(): void
     {
         Artisan::starting(function (Artisan $artisan) {
+            /** @var DiscoveredCommand<Reflector> $command */
             foreach ($this->discoveryItems as $command) {
-                $artisan->resolve(
-                    $command->definition
-                        ? new Command($this->app, $command)
-                        : (is_subclass_of($commandClass = $command->reflector->getName(), LaravelCommand::class)
-                            ? $commandClass
-                            : $this->app->make($commandClass)),
-                );
+                /** @var Command|string $resolvedCommand */
+                $resolvedCommand = $command->definition
+                    ? new Command($this->app, $command)
+                    : (is_subclass_of($commandClass = $command->reflector->getName(), LaravelCommand::class)
+                        ? $commandClass
+                        : $this->app->make($commandClass));
+
+                if (! is_subclass_of($resolvedCommand, LaravelCommand::class)) {
+                    throw new InvalidCommandRegistrationException(
+                        sprintf(
+                            'Discovered command "%s" is not a valid Laravel command.',
+                            $command->reflector->getName(),
+                        ),
+                    );
+                }
+
+                $artisan->resolve($resolvedCommand);
             }
         });
     }

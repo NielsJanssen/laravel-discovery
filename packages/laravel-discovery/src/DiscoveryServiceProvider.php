@@ -24,18 +24,32 @@ class DiscoveryServiceProvider extends ServiceProvider
         $this->app->singleton(DiscoveryConfig::class, function () {
             $config = $this->app->make('config');
 
-            return DiscoveryConfig::autoload($config->get('discovery.autoload'))
-                ->skipClasses(...$config->get('discovery.skip_classes') ?? [])
-                ->skipPaths(...$config->get('discovery.skip_paths') ?? []);
+            /** @var list<string> $skipClasses */
+            $skipClasses = $config->collection('discovery.skip_classes', [])
+                ->values()
+                ->ensure('string') // @phpstan-ignore argument.type (PhpStan does not understand that 'string' is a valid argument)
+                ->all();
+
+            /** @var list<string> $skipPaths */
+            $skipPaths = $config->collection('discovery.skip_paths', [])
+                ->values()
+                ->ensure('string') // @phpstan-ignore argument.type (PhpStan does not understand that 'string' is a valid argument)
+                ->all();
+
+            return DiscoveryConfig::autoload($config->string('discovery.autoload'))
+                ->skipClasses(...$skipClasses)
+                ->skipPaths(...$skipPaths);
         });
 
         $this->app->singleton(DiscoveryCache::class, function () {
+            $config = $this->app->make('config');
+
             return new DiscoveryCache(
-                strategy: $this->app->environment(config('discovery.cache_environments', ['production']))
+                strategy: $this->app->environment($config->array('discovery.cache_environments', ['production']))
                     ? DiscoveryCacheStrategy::FULL
                     : DiscoveryCacheStrategy::NONE,
                 pool: new PhpFilesAdapter(
-                    directory: storage_path(config('discovery.cache_path', 'framework/cache/discovery')),
+                    directory: storage_path($config->string('discovery.cache_path', 'framework/cache/discovery')),
                 ),
             );
         });
@@ -49,6 +63,7 @@ class DiscoveryServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        /** @var Discovery[] $discoveries */
         $discoveries = $this->app->call(BootDiscovery::class);
 
         $this->app->make('config')->set(

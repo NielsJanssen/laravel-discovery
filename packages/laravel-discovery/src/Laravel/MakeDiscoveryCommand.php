@@ -34,11 +34,6 @@ final class MakeDiscoveryCommand extends GeneratorCommand
         return $class;
     }
 
-    /**
-     * Get the console command options.
-     *
-     * @return array
-     */
     protected function getOptions(): array
     {
         return [

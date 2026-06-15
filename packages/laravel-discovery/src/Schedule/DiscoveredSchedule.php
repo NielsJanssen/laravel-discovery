@@ -9,15 +9,21 @@ use Tempest\Reflection\MethodReflector;
 
 final class DiscoveredSchedule
 {
+    /**
+     * @param class-string $className
+     */
     public function __construct(
         public readonly string $className,
         public readonly ?string $methodName,
         public readonly string $name,
-        public readonly ?Scheduled $schedule,
+        public readonly Scheduled $schedule,
         public readonly int $attributeIndex,
         public readonly ScheduleTarget $target = ScheduleTarget::Method,
     ) {}
 
+    /**
+     * @param ClassReflector<object> $class
+     */
     public static function from(Scheduled $scheduled, ClassReflector $class, ?MethodReflector $method, int $index = 0, ScheduleTarget $target = ScheduleTarget::Method): self
     {
         $scheduled->clearClosure();

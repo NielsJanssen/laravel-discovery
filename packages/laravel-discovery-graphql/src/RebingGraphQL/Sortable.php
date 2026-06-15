@@ -10,6 +10,9 @@ use GraphQL\Type\Definition\Type as GraphQLType;
 #[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS)]
 readonly class Sortable implements ActionArgProvider
 {
+    /**
+     * @param list<string> $fields
+     */
     public function __construct(
         public array  $fields,
         public bool   $unified = false,
