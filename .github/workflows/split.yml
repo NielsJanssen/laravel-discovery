@@ -24,7 +24,7 @@ jobs:
             split_repository: laravel-discovery-graphql
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
