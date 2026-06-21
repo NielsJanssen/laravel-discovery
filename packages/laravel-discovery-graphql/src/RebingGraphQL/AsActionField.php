@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Closure;
+use GraphQL\Type\Definition\NonNull;
+use GraphQL\Type\Definition\NullableType;
 use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Type\Definition\Type as GraphQLType;
 use Illuminate\Foundation\Application;
+use Illuminate\Validation\Rule;
 use Rebing\GraphQL\Support\Facades\GraphQL;
 use Rebing\GraphQL\Support\Field;
 use ReflectionMethod;
@@ -52,13 +55,7 @@ trait AsActionField
         $args = [];
 
         foreach ($this->discoveredAction->args as $arg) {
-            $graphqlType = match ($arg->type) {
-                'string' => GraphQLType::string(),
-                'int' => GraphQLType::int(),
-                'float' => GraphQLType::float(),
-                'bool' => GraphQLType::boolean(),
-                default => GraphQL::type($arg->type),
-            };
+            $graphqlType = $this->scalarType($arg->type);
 
             if (! $arg->nullable) {
                 $graphqlType = GraphQLType::nonNull($graphqlType);
@@ -81,6 +78,26 @@ trait AsActionField
             $args[$arg->name] = $entry;
         }
 
+        foreach ($this->discoveredAction->modelBindings as $binding) {
+            $graphqlType = $binding->type === null
+                ? GraphQLType::id()
+                : $this->scalarType($binding->type);
+
+            if (! $binding->nullable) {
+                $graphqlType = GraphQLType::nonNull($graphqlType);
+            }
+
+            $entry = ['type' => $graphqlType];
+
+            $rules = $this->resolveModelBindingRules($binding);
+
+            if ($rules instanceof Closure || $rules !== []) {
+                $entry['rules'] = $rules;
+            }
+
+            $args[$binding->argName] = $entry;
+        }
+
         foreach ($this->discoveredAction->argProviders as $provider) {
             foreach ($provider->provideArgs() as $name => $def) {
                 $args[$name] = $def;
@@ -99,13 +116,9 @@ trait AsActionField
         }
 
         $innerType = match ($action->type) {
-            'string' => GraphQLType::string(),
-            'int' => GraphQLType::int(),
-            'float' => GraphQLType::float(),
-            'bool' => GraphQLType::boolean(),
             'void' => new NullType(),
             null => throw new RuntimeException('Action type was not resolved during discovery.'),
-            default => GraphQL::type($action->type),
+            default => $this->scalarType($action->type),
         };
 
         if ($action->list) {
@@ -139,6 +152,24 @@ trait AsActionField
 
         foreach ($this->discoveredAction->argCompositions as $paramName => $valueObjectClass) {
             $mappedArgs[$paramName] = $valueObjectClass::fromArgs($args);
+        }
+
+        foreach ($this->discoveredAction->modelBindings as $binding) {
+            $value = $args[$binding->argName] ?? null;
+
+            if ($value === null) {
+                $mappedArgs[$binding->paramName] = null;
+
+                continue;
+            }
+
+            $modelClass = $binding->modelClass;
+            $key = new $modelClass()->getRouteKeyName();
+            $query = $modelClass::query()->where($key, $value);
+
+            $mappedArgs[$binding->paramName] = $binding->nullable
+                ? $query->first()
+                : $query->firstOrFail();
         }
 
         return $this->app->call(
@@ -180,6 +211,23 @@ trait AsActionField
     }
 
     /**
+     * Map a scalar type name to its GraphQL type, falling back to the Rebing
+     * type registry for anything non-scalar.
+     *
+     * @return (NullableType&GraphQLType)|NonNull
+     */
+    private function scalarType(string $type): GraphQLType
+    {
+        return match ($type) {
+            'string' => GraphQLType::string(),
+            'int' => GraphQLType::int(),
+            'float' => GraphQLType::float(),
+            'bool' => GraphQLType::boolean(),
+            default => GraphQL::type($type),
+        };
+    }
+
+    /**
      * @return array<int|string, mixed>|Closure
      */
     private function resolveRules(string $paramName): array|Closure
@@ -200,5 +248,33 @@ trait AsActionField
         }
 
         throw new RuntimeException("Could not find #[Arg] on parameter \$$paramName in $class::$method.");
+    }
+
+    /**
+     * Build the validation rules for a model binding: an auto `exists` rule for
+     * non-nullable bindings, merged with any user-supplied #[Arg(rules:)].
+     *
+     * @return array<int|string, mixed>|Closure
+     */
+    private function resolveModelBindingRules(DiscoveredModelBinding $binding): array|Closure
+    {
+        $rules = [];
+
+        if (! $binding->nullable) {
+            $model = new $binding->modelClass();
+            $rules[] = Rule::exists($model->getTable(), $model->getRouteKeyName());
+        }
+
+        if (! $binding->hasUserRules) {
+            return $rules;
+        }
+
+        $userRules = $this->resolveRules($binding->paramName);
+
+        if ($userRules instanceof Closure) {
+            return $userRules;
+        }
+
+        return array_merge($rules, $userRules);
     }
 }

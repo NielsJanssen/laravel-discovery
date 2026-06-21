@@ -33,6 +33,8 @@ class DiscoveredAction
         public array $argProviders = [],
         /** @var array<string, class-string<ComposedFromArgs>> keyed by paramName */
         public array $argCompositions = [],
+        /** @var list<DiscoveredModelBinding> */
+        public array $modelBindings = [],
     ) {}
 
     public function createType(Application $app): Field

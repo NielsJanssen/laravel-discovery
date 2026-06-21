@@ -187,6 +187,22 @@ Two registration modes coexist:
 
 Internally these become entries in `DiscoveredAction::$injections` keyed by `paramName`, and `AsActionField::resolve()` fills them in alongside the real GraphQL args before calling the user's method.
 
+**Model binding.** A parameter typed as an Eloquent `Model` is **not** treated as a GraphQL arg or a container injection — instead the schema exposes a scalar **`ID` arg** (named via `#[Arg]` or the param name) and `AsActionField::resolve()` fetches the model from that value (`where(getRouteKeyName(), $value)`) and injects the instance into the method (so resolvers can run policy checks against a real model). The trigger is the model *type alone* — no attribute required; `#[Arg]` only renames the arg, adds rules, or overrides the type.
+
+- Lookup is always by the model's **route key** (`getRouteKeyName()`).
+- Non-nullable bindings auto-add a `Rule::exists(table, routeKey)` validation rule; nullable bindings (`?User $user` / a default) add no `exists` rule and resolve to `null` for a missing/absent value. Any `#[Arg(rules:)]` are merged with the auto `exists` rule.
+- Default GraphQL arg type is `ID`; override with `#[Arg(type: '...')]`. The resolver's *return* type is unaffected — a `: User` return still needs `#[Query(type: 'User')]` (or a registered GraphQL type).
+- Carried on `DiscoveredAction::$modelBindings` (a list of serialize-safe `DiscoveredModelBinding` DTOs, so discovery caching is unaffected). Note `#[CurrentUser]`/`#[Root]`/`#[Context]` on a model param still win, since those are classified first.
+
+```php
+#[Query(type: 'User')]
+public function user(#[Arg('id')] User $user): User
+{
+    Gate::authorize('view', $user);   // $user is the resolved Eloquent model
+    return $user;
+}
+```
+
 **Deprecation.** Use PHP 8.4's native `#[\Deprecated(message:, since:)]` attribute on the method (the field), or `#[Arg(deprecationReason: '...')]` on a parameter — PHP's native `Deprecated` cannot target parameters, hence the `Arg`-level field. Both surface as GraphQL's `deprecationReason`. Method-level `message` + `since` are concatenated as `"{message} (since {since})"`.
 
 **Decorators (`ActionDecorator` interface).** Class-level and method-level attributes implementing `ActionDecorator` are collected generically by `GraphQLDiscovery::discover()` and applied to each `Action` via `decorate()` — method-level first, then class-level, so method-level wins for decorators that use first-wins semantics (`if ($action->X === null) ...`). Adding a new decorator only needs the attribute class + `implements ActionDecorator`; no edit to the discovery flow.

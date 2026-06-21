@@ -7,6 +7,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 use Deprecated;
 use GraphQL\Type\Definition\ResolveInfo;
 use Illuminate\Contracts\Container\ContextualAttribute;
+use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Foundation\Application;
 use Rebing\GraphQL\GraphQL;
 use Rebing\GraphQL\Support\Mutation as RebingMutation;
@@ -92,6 +93,7 @@ final class GraphQLDiscovery implements Discovery
             $injections = [];
             $containerInjections = [];
             $argCompositions = [];
+            $modelBindings = [];
 
             foreach ($method->getParameters() as $param) {
                 // Parameters carrying a Laravel ContextualAttribute (e.g. #[CurrentUser], #[Config])
@@ -112,6 +114,19 @@ final class GraphQLDiscovery implements Discovery
                 }
 
                 $type = $param->getType();
+
+                if (!$type->isScalar() && is_a($type->getName(), EloquentModel::class, true)) {
+                    $modelBindings[] = new DiscoveredModelBinding(
+                        paramName: $param->getName(),
+                        argName: $argAttr !== null && $argAttr->name !== null ? $argAttr->name : $param->getName(),
+                        modelClass: $type->getName(),
+                        nullable: $type->isNullable() || $param->hasDefaultValue(),
+                        type: $argAttr?->type,
+                        hasUserRules: $argAttr !== null && ! empty($argAttr->rules),
+                    );
+
+                    continue;
+                }
 
                 if (!$argAttr && !$type->isScalar()) {
                     $typeName = $type->getName();
@@ -157,6 +172,7 @@ final class GraphQLDiscovery implements Discovery
                 $containerInjections,
                 $argProviders,
                 $argCompositions,
+                $modelBindings,
             )->withBindName());
         }
     }
