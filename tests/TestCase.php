@@ -6,6 +6,7 @@ namespace Tests;
 
 use Livewire\LivewireServiceProvider;
 use NielsJanssen\Laravel\Discovery\DiscoveryServiceProvider;
+use NielsJanssen\Laravel\Validation\ValidationServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 use Rebing\GraphQL\GraphQLServiceProvider;
 use Workbench\App\Providers\WorkbenchServiceProvider;
@@ -16,6 +17,7 @@ abstract class TestCase extends BaseTestCase
     {
         return [
             DiscoveryServiceProvider::class,
+            ValidationServiceProvider::class,
             GraphQLServiceProvider::class,
             LivewireServiceProvider::class,
             WorkbenchServiceProvider::class,

@@ -7,5 +7,6 @@ parameters:
     paths:
         - packages/laravel-discovery/src
         - packages/laravel-discovery-graphql/src
+        - packages/laravel-validation/src
 
     reportIgnoresWithoutComments: true

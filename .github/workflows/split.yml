@@ -23,6 +23,9 @@ jobs:
           - local_path: laravel-discovery-graphql
             split_repository: laravel-discovery-graphql
 
+          - local_path: laravel-validation
+            split_repository: laravel-validation
+
     steps:
       - uses: actions/checkout@v7
         with:
