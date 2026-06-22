@@ -1,0 +1,47 @@
+{
+  "name": "nielsjanssen/laravel-validation",
+  "description": "Attribute-based validation for Laravel: declare rules on object properties and validate the object directly",
+  "keywords": [
+    "laravel",
+    "validation",
+    "attributes",
+    "rules"
+  ],
+  "homepage": "https://github.com/NielsJanssen/laravel-validation",
+  "type": "library",
+  "license": "MIT",
+  "support": {
+    "issues": "https://github.com/NielsJanssen/laravel-validation/issues",
+    "source": "https://github.com/NielsJanssen/laravel-validation"
+  },
+  "authors": [
+    {
+      "name": "Niels Janssen",
+      "email": "git@nielsjanssen.eu"
+    }
+  ],
+  "require": {
+    "php": "^8.5",
+    "illuminate/support": "^13.15",
+    "illuminate/validation": "^13.15",
+    "tempest/discovery": "^3.10",
+    "tempest/reflection": "^3.10"
+  },
+  "autoload": {
+    "psr-4": {
+      "NielsJanssen\\Laravel\\Validation\\": "src/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "NielsJanssen\\Laravel\\Validation\\ValidationServiceProvider"
+      ]
+    },
+    "branch-alias": {
+      "dev-main": "1.x-dev"
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

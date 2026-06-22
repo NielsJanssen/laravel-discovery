@@ -12,6 +12,7 @@
         <include>
             <directory>packages/laravel-discovery/src</directory>
             <directory>packages/laravel-discovery-graphql/src</directory>
+            <directory>packages/laravel-validation/src</directory>
         </include>
     </source>
 </phpunit>
