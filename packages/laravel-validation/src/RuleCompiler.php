@@ -6,6 +6,7 @@ namespace NielsJanssen\Laravel\Validation;
 
 use ReflectionProperty;
 use Tempest\Reflection\ClassReflector;
+use Tempest\Reflection\MethodReflector;
 
 /**
  * Marries a cached RuleSet to actual values, producing the data/rules/messages arrays Laravel's
@@ -35,6 +36,22 @@ final class RuleCompiler
         $set = $this->finder->find(new ClassReflector($class)->getMethod($method));
 
         return $this->compile(is_object($target) ? $target : null, $set, $arguments, '');
+    }
+
+    /**
+     * Build rules for a class's properties or a method's parameters, taking the values from a plain
+     * array instead of an object. This is what a boundary that only ever sees an input array needs —
+     * an HTTP payload, or a GraphQL field's arguments.
+     *
+     * There is no owning object, so a contextual closure sees `$context->root === null`; use
+     * forObject()/forMethod() when a rule needs to read siblings off a real instance.
+     *
+     * @param  ClassReflector<object>|MethodReflector|class-string  $source
+     * @param  array<string, mixed>  $values  keyed by property or parameter name
+     */
+    public function forValues(ClassReflector|MethodReflector|string $source, array $values): CompiledRules
+    {
+        return $this->compile(null, $this->finder->find($source), $values, '');
     }
 
     /**

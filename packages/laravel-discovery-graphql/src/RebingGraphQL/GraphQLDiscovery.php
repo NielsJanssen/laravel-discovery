@@ -27,6 +27,7 @@ final class GraphQLDiscovery implements Discovery
 
     public function __construct(
         private readonly Application $app,
+        private readonly ArgumentHydrators $hydrators,
     ) {}
 
     /**
@@ -131,7 +132,7 @@ final class GraphQLDiscovery implements Discovery
                 if (!$argAttr && !$type->isScalar()) {
                     $typeName = $type->getName();
 
-                    if (isset($valueObjectClasses[$typeName]) && is_a($typeName, ComposedFromArgs::class, true)) {
+                    if (class_exists($typeName) && isset($valueObjectClasses[$typeName]) && $this->hydrators->hydrates($typeName)) {
                         $argCompositions[$param->getName()] = $typeName;
                         continue;
                     }

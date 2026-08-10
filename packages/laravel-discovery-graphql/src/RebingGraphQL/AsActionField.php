@@ -142,6 +142,8 @@ trait AsActionField
             $mappedArgs[$discovered->paramName] = $value ?? $discovered->defaultValue;
         }
 
+        $hydrators = $this->app->make(ArgumentHydrators::class);
+
         foreach ($this->discoveredAction->injections as $paramName => $kind) {
             $mappedArgs[$paramName] = match ($kind) {
                 'root' => $root,
@@ -151,7 +153,7 @@ trait AsActionField
         }
 
         foreach ($this->discoveredAction->argCompositions as $paramName => $valueObjectClass) {
-            $mappedArgs[$paramName] = $valueObjectClass::fromArgs($args);
+            $mappedArgs[$paramName] = $hydrators->hydrate($valueObjectClass, $args);
         }
 
         foreach ($this->discoveredAction->modelBindings as $binding) {
@@ -181,6 +183,51 @@ trait AsActionField
     protected function getMiddleware(): array
     {
         return $this->discoveredAction->middleware;
+    }
+
+    /**
+     * Merge the registered ArgumentRules providers on top of Rebing's own arg-level rules.
+     *
+     * Appending after parent::getRules() rather than overriding rules() is deliberate: Field's
+     * getRules() does array_merge($argsRules, $rules), so anything returned from rules() would
+     * *replace* the entry for the same arg — silently dropping #[Arg(rules:)] and the model-binding
+     * `exists` rule. This way the parent has already resolved arg-level Closures and applied its
+     * RulesPrefixer pass, and we add to the result.
+     *
+     * @param  array<string, mixed>  $arguments
+     * @return array<string, mixed>
+     */
+    public function getRules(array $arguments = []): array
+    {
+        $rules = parent::getRules($arguments);
+
+        foreach ($this->argumentRules($arguments)->rules as $path => $contributed) {
+            $existing = $rules[$path] ?? [];
+
+            $rules[$path] = [
+                ...is_array($existing) ? $existing : [$existing],
+                ...is_array($contributed) ? $contributed : [$contributed],
+            ];
+        }
+
+        return $rules;
+    }
+
+    /**
+     * @param  array<string, mixed>  $args
+     * @return array<string, string>
+     */
+    public function validationErrorMessages(array $args = []): array
+    {
+        return [...parent::validationErrorMessages($args), ...$this->argumentRules($args)->messages];
+    }
+
+    /**
+     * @param  array<string, mixed>  $args
+     */
+    private function argumentRules(array $args): ArgumentRuleSet
+    {
+        return $this->app->make(ArgumentRuleProviders::class)->rulesFor($this->discoveredAction, $args);
     }
 
     public function authorize(mixed $root, array $args, mixed $context, ?ResolveInfo $resolveInfo = null): bool
