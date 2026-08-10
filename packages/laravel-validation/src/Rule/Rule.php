@@ -7,7 +7,9 @@ namespace NielsJanssen\Laravel\Validation\Rule;
 use Attribute;
 use Closure;
 use NielsJanssen\Laravel\Validation\MessageValidationRule;
+use NielsJanssen\Laravel\Validation\StringRule;
 use NielsJanssen\Laravel\Validation\ValidationContext;
+use NielsJanssen\Laravel\Validation\ValidationRule;
 
 /**
  * The escape hatch: any rule Laravel accepts, with no dedicated attribute needed.
@@ -36,16 +38,33 @@ final class Rule implements MessageValidationRule
             ? ($this->rule)($context)
             : $this->rule;
 
-        return is_array($rule) ? array_values($rule) : [$rule];
+        $rules = [];
+
+        foreach (is_array($rule) ? $rule : [$rule] as $one) {
+            // A wrapped attribute — #[Rule(new Min(5), message: '…')] — contributes its own rules,
+            // which is how a named attribute gets a custom message. Anything else, including
+            // Laravel's own rule objects, passes through untouched.
+            $rules = [
+                ...$rules,
+                ...$one instanceof ValidationRule ? $one->rules($context) : [$one],
+            ];
+        }
+
+        return $rules;
     }
 
     /**
-     * The suffix Laravel keys this rule's message under ('min' for 'min:5'), or null when the
-     * rule is an object or a factory — those message keys hang off the field path instead.
+     * The suffix Laravel keys this rule's message under ('min' for 'min:5', or for a wrapped
+     * #[Min(5)]), or null when the rule is a foreign object or a factory — those message keys hang
+     * off the field path instead.
      */
     public ?string $messageKey {
         get {
             $rule = is_array($this->rule) ? ($this->rule[0] ?? null) : $this->rule;
+
+            if ($rule instanceof StringRule) {
+                return $rule->name;
+            }
 
             return is_string($rule) ? explode(':', $rule, 2)[0] : null;
         }

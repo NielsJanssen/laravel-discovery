@@ -249,16 +249,89 @@ Every `rules()` call and every factory closure receives a `ValidationContext`:
 
 ## Custom error messages
 
-`message` on `#[Rule]` sets a custom message. For a string rule it is keyed to the rule, so it
-overrides only that failure:
+`message` on `#[Rule]` sets a custom message, keyed to the rule so it overrides only that failure:
 
 ```php
 #[Rule('min:18', message: 'You must be at least 18 to open an account.')]
 public int $age = 0;
 ```
 
-For a rule object or a factory the message is keyed on the field path instead, and the rule
-usually supplies its own text through `$fail` anyway.
+### Giving a named attribute a message
+
+The named attributes take no `message` parameter of their own — their constructors are variadic, so
+there is no room for one. Wrap the attribute in `#[Rule]` instead, and it keeps working exactly as
+before while gaining a message:
+
+```php
+#[Rule(new Min(5), message: 'Give it at least five.')]
+public string $name = '';
+```
+
+That produces `min:5` and keys the message at `name.min`, so only the `min` failure is overridden.
+It works for any of the named attributes, including the type rules, and takes a list too:
+
+```php
+#[Rule([new Min(2), new Max(4)], message: 'Between two and four, please.')]
+public string $code = '';
+```
+
+With a list the message is keyed to the **first** rule, so the others keep Laravel's defaults. Stack
+separate `#[Rule]`s when each needs its own text.
+
+### From your own attribute
+
+Implement `MessageValidationRule` and the message comes along with the rules, no wrapping needed:
+
+```php
+use NielsJanssen\Laravel\Validation\{MessageValidationRule, ValidationContext};
+
+#[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
+final class Postcode implements MessageValidationRule
+{
+    public ?string $message { get => 'That is not a valid postcode.'; }
+
+    public ?string $messageKey { get => 'regex'; }   // null keys on the field path instead
+
+    public function rules(ValidationContext $context): array
+    {
+        return ['regex:/^[0-9]{4}\s?[A-Z]{2}$/'];
+    }
+}
+```
+
+### On `#[Each]` elements
+
+An element rule's message is keyed per element, matching how the rules themselves are built:
+
+```php
+#[Each(new Rule('email', message: 'That is not an email.'))]
+public array $recipients = [];
+```
+
+```php
+$recipients = ['a@example.com', 'nope'];
+
+$validator->errors()->keys();                       // ['recipients.1']
+$validator->errors()->first('recipients.1');        // 'That is not an email.'
+```
+
+Wrapping a named attribute works here too — `#[Each(new Rule(new Min(3), message: '…'))]` keys at
+`aliases.0.min` — and it composes with `#[ListOf]`, where the element message applies to the element
+itself while the nested object's own rules keep their own messages.
+
+### From the caller, or from lang files
+
+All four entry points take a `$messages` array that is merged *over* the attribute-derived ones:
+
+```php
+Validator::makeFromObject($profile, [], ['name.min' => 'Far too short.']);
+```
+
+And Laravel's ordinary `lang/validation.php` — including the `attributes` key for `:attribute`
+replacements — applies underneath all of this, unchanged.
+
+For a rule object or a factory the message is keyed on the field path rather than a rule suffix,
+since there is no rule name to key to; those usually supply their own text through `$fail` anyway.
 
 ## Conditional rules
 

@@ -25,7 +25,7 @@ abstract class StringRule implements ValidationRule
     }
 
     /** The Laravel rule name. Override to derive it differently; see Rule\Type. */
-    protected string $name {
+    public string $name {
         get => Str::snake(class_basename(static::class));
     }
 
