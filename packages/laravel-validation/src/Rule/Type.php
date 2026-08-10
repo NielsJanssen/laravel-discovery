@@ -15,7 +15,7 @@ use function class_basename;
  */
 abstract class Type extends StringRule
 {
-    protected string $name {
+    public string $name {
         get => Str::snake(Str::replaceEnd('Type', '', class_basename(static::class)));
     }
 }

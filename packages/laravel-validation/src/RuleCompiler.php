@@ -144,9 +144,12 @@ final class RuleCompiler
             $itemPath = "{$path}.{$key}";
 
             // #[Each]: rules on the element itself, whether or not it is also a #[ListOf] object.
-            $elementRules = $member->elementRules === []
-                ? []
-                : $this->flatten($member->elementRules, $root, $itemPath, $item);
+            if ($member->elementRules === []) {
+                $elementRules = [];
+            } else {
+                $elementRules = $this->flatten($member->elementRules, $root, $itemPath, $item);
+                $messages = [...$messages, ...$this->elementMessages($member->elementRules, $itemPath)];
+            }
 
             // #[Each] alone: no classes named, so nothing to descend into.
             if ($member->allowed === []) {
@@ -180,6 +183,29 @@ final class RuleCompiler
         }
 
         return new CompiledRules($items, $rules, $messages);
+    }
+
+    /**
+     * #[Each]'s rules apply to each element in its own right, so their messages are keyed per
+     * element too: `notify.0.min`, `notify.1.min`, … A rule with no suffix to key to — an object or
+     * a factory — keys on the element path itself.
+     *
+     * @param  list<ValidationRule>  $elementRules
+     * @return array<string, string>
+     */
+    private function elementMessages(array $elementRules, string $itemPath): array
+    {
+        $messages = [];
+
+        foreach ($elementRules as $rule) {
+            if (! $rule instanceof MessageValidationRule || $rule->message === null) {
+                continue;
+            }
+
+            $messages[$rule->messageKey === null ? $itemPath : "{$itemPath}.{$rule->messageKey}"] = $rule->message;
+        }
+
+        return $messages;
     }
 
     /**
