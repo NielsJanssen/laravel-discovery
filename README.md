@@ -116,6 +116,7 @@ registered handlers.
 - [Events](docs/event.md): `#[EventHandler]`, inferred event types, deferred listeners.
 - [Routes](docs/router.md): HTTP attributes and class-level decorators.
 - [Schedule](docs/schedule.md): `#[Scheduled]`, the `Every` enum, `Cron`, time windows, overlap constraints.
+- [GraphQL arguments](docs/graphql-arguments.md): validating and hydrating `#[Query]`/`#[Mutation]` parameters, and the hooks for wiring in your own library.
 - [Discovery internals](docs/discovery.md): how Tempest Discovery is wired into Laravel, and how to write your own.
 
 ## Contributing

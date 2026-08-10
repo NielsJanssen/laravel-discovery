@@ -15,6 +15,7 @@ class DiscoveredAction
 
     public function __construct(
         public Action $action,
+        /** @var class-string */
         public string $class,
         public string $method,
         /** @var DiscoveredArg[] */
@@ -31,7 +32,7 @@ class DiscoveredAction
         public array $containerInjections = [],
         /** @var list<ActionArgProvider> */
         public array $argProviders = [],
-        /** @var array<string, class-string<ComposedFromArgs>> keyed by paramName */
+        /** @var array<string, class-string> keyed by paramName; hydrated by an ArgumentHydrator */
         public array $argCompositions = [],
         /** @var list<DiscoveredModelBinding> */
         public array $modelBindings = [],
@@ -59,5 +60,49 @@ class DiscoveredAction
         return clone($this, [
             'bindName' => 'discovery.rebing_graphql.' . hash('sha256', serialize($this)),
         ]);
+    }
+
+    /**
+     * Re-key request arguments by PHP parameter name, since #[Arg(name: 'id')] lets the two differ.
+     * Arguments with no matching parameter (an ActionArgProvider's, say) are kept under their own
+     * name, so a value object built from them still finds them.
+     *
+     * @param  array<string, mixed>  $args  keyed by GraphQL arg name
+     * @return array<string, mixed>  keyed by parameter name
+     */
+    public function toParameters(array $args): array
+    {
+        $parameters = $args;
+
+        foreach ($this->args as $arg) {
+            if ($arg->name === $arg->paramName) {
+                continue;
+            }
+
+            unset($parameters[$arg->name]);
+
+            if (array_key_exists($arg->name, $args)) {
+                $parameters[$arg->paramName] = $args[$arg->name];
+            }
+        }
+
+        return $parameters;
+    }
+
+    /**
+     * Translate a parameter path back to the GraphQL arg path a validator should report against,
+     * keeping any trailing segments: `notify.0` becomes `recipients.0` when the arg was renamed.
+     */
+    public function toArgPath(string $paramPath): string
+    {
+        [$head, $rest] = array_pad(explode('.', $paramPath, 2), 2, null);
+
+        foreach ($this->args as $arg) {
+            if ($arg->paramName === $head) {
+                return $rest === null ? $arg->name : "{$arg->name}.{$rest}";
+            }
+        }
+
+        return $paramPath;
     }
 }

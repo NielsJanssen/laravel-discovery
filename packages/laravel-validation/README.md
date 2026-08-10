@@ -85,7 +85,10 @@ available: `validate()`, `validated()`, `passes()`, `fails()`, `errors()`.
 
 ### Method parameters
 
-The same attributes work on parameters, which is handy for action classes and command handlers:
+The same attributes work on parameters, which is handy for action classes and command handlers — and
+it is what drives argument validation in
+[`nielsjanssen/laravel-discovery-graphql`](https://github.com/NielsJanssen/laravel-discovery-graphql),
+where `#[Query]`/`#[Mutation]` parameters are validated by this package through a hook it exposes:
 
 ```php
 final class PlaceOrder
