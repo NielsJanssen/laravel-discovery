@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProvider;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\LaravelValidationRules;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgsHydrator;
 use Illuminate\Support\ServiceProvider;
 use NielsJanssen\Laravel\Validation\RuleCompiler;
 use RuntimeException;
@@ -13,8 +19,8 @@ use RuntimeException;
  *
  * Tag your own to join them:
  *
- *     $this->app->tag([MyRules::class], ArgumentRules::TAG);
- *     $this->app->tag([MyHydrator::class], ArgumentHydrator::TAG);
+ *     $this->app->tag([MyRules::class], RuleProvider::TAG);
+ *     $this->app->tag([MyHydrator::class], Hydrator::TAG);
  *
  * Tagging happens in register(), so it is in place before DiscoveryServiceProvider::boot() runs
  * discovery — which needs the hydrators to decide which parameters are hydrated.
@@ -23,26 +29,26 @@ final class GraphQLDiscoveryServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->tag([ComposedFromArgsHydrator::class], ArgumentHydrator::TAG);
+        $this->app->tag([ComposedFromArgsHydrator::class], Hydrator::TAG);
 
         // Our validation package is a suggestion, not a requirement: without it the hook simply has
         // one fewer provider, and #[Arg(rules:)] keeps working. Mirrors how GraphQLDiscovery
         // short-circuits when Rebing's own GraphQL class is absent.
         if (class_exists(RuleCompiler::class)) {
-            $this->app->tag([LaravelValidationRules::class], ArgumentRules::TAG);
+            $this->app->tag([LaravelValidationRules::class], RuleProvider::TAG);
         }
 
         $this->app->singleton(
-            ArgumentHydrators::class,
-            fn(): ArgumentHydrators => new ArgumentHydrators(
-                $this->tagged(ArgumentHydrator::TAG, ArgumentHydrator::class),
+            HydratorRegistry::class,
+            fn(): HydratorRegistry => new HydratorRegistry(
+                $this->tagged(Hydrator::TAG, Hydrator::class),
             ),
         );
 
         $this->app->singleton(
-            ArgumentRuleProviders::class,
-            fn(): ArgumentRuleProviders => new ArgumentRuleProviders(
-                $this->tagged(ArgumentRules::TAG, ArgumentRules::class),
+            RuleProviderRegistry::class,
+            fn(): RuleProviderRegistry => new RuleProviderRegistry(
+                $this->tagged(RuleProvider::TAG, RuleProvider::class),
             ),
         );
     }

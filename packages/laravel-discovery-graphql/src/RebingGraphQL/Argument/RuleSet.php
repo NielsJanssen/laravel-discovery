@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
+namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
 
 /**
- * What an ArgumentRules implementation contributes for one action: validation rules and their
+ * What an RuleProvider implementation contributes for one action: validation rules and their
  * messages, both keyed the way Laravel's validator expects — by GraphQL arg path, not by PHP
  * parameter name.
  */
-final readonly class ArgumentRuleSet
+final readonly class RuleSet
 {
     /**
      * @param  array<string, mixed>  $rules  keyed by arg path, e.g. 'title' or 'notify.0'

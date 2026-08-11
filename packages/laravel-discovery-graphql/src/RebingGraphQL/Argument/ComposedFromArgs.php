@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
+namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
 
 interface ComposedFromArgs
 {

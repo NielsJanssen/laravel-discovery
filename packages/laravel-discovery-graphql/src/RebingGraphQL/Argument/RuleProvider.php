@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
+namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
+
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 
 /**
  * Contributes validation rules for a discovered action's arguments.
@@ -11,18 +13,18 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
  * LaravelValidationRules, but a spatie/laravel-data adapter — or anything else — plugs in on equal
  * footing. Register an implementation by tagging it:
  *
- *     $this->app->tag([MyRules::class], ArgumentRules::TAG);
+ *     $this->app->tag([MyRules::class], RuleProvider::TAG);
  *
  * Every tagged provider is asked, and their rules merge, so several can coexist. Rules contributed
  * here are merged *on top of* Rebing's own arg-level rules (including #[Arg(rules:)] and the
  * model-binding `exists` rule) rather than replacing them.
  */
-interface ArgumentRules
+interface RuleProvider
 {
     public const string TAG = 'graphql.argument_rules';
 
     /**
      * @param  array<string, mixed>  $args  the request arguments, keyed by GraphQL arg name
      */
-    public function rulesFor(DiscoveredAction $action, array $args): ArgumentRuleSet;
+    public function rulesFor(DiscoveredAction $action, array $args): RuleSet;
 }

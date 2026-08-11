@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleSet;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use Closure;
 use GraphQL\Type\Definition\NonNull;
 use GraphQL\Type\Definition\NullableType;
@@ -142,7 +145,7 @@ trait AsActionField
             $mappedArgs[$discovered->paramName] = $value ?? $discovered->defaultValue;
         }
 
-        $hydrators = $this->app->make(ArgumentHydrators::class);
+        $hydrators = $this->app->make(HydratorRegistry::class);
 
         foreach ($this->discoveredAction->injections as $paramName => $kind) {
             $mappedArgs[$paramName] = match ($kind) {
@@ -186,7 +189,7 @@ trait AsActionField
     }
 
     /**
-     * Merge the registered ArgumentRules providers on top of Rebing's own arg-level rules.
+     * Merge the registered rule providers on top of Rebing's own arg-level rules.
      *
      * Appending after parent::getRules() rather than overriding rules() is deliberate: Field's
      * getRules() does array_merge($argsRules, $rules), so anything returned from rules() would
@@ -225,9 +228,9 @@ trait AsActionField
     /**
      * @param  array<string, mixed>  $args
      */
-    private function argumentRules(array $args): ArgumentRuleSet
+    private function argumentRules(array $args): RuleSet
     {
-        return $this->app->make(ArgumentRuleProviders::class)->rulesFor($this->discoveredAction, $args);
+        return $this->app->make(RuleProviderRegistry::class)->rulesFor($this->discoveredAction, $args);
     }
 
     public function authorize(mixed $root, array $args, mixed $context, ?ResolveInfo $resolveInfo = null): bool

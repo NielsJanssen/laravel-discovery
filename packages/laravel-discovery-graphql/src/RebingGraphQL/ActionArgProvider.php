@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgs;
+
 interface ActionArgProvider
 {
     /**

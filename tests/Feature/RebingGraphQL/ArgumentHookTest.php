@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\ArgumentHydrator;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\ArgumentHydrators;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\ArgumentRuleProviders;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\ArgumentRules;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use RuntimeException;
@@ -32,8 +32,8 @@ use Tests\Fixtures\RebingGraphQL\ValueObjectValidatedQuery;
 function tagArgumentHook(string $tag, array $implementations): void
 {
     app()->tag($implementations, $tag);
-    app()->forgetInstance(ArgumentRuleProviders::class);
-    app()->forgetInstance(ArgumentHydrators::class);
+    app()->forgetInstance(RuleProviderRegistry::class);
+    app()->forgetInstance(HydratorRegistry::class);
     app()->forgetInstance(GraphQLDiscovery::class);
 }
 
@@ -55,9 +55,9 @@ function discoveredActionFor(string $class): DiscoveredAction
     return $items[0];
 }
 
-describe('the ArgumentRules hook', function () {
+describe('the RuleProvider hook', function () {
     it('lets a third-party provider contribute rules with no change to the package', function () {
-        tagArgumentHook(ArgumentRules::TAG, [RejectEverythingRules::class]);
+        tagArgumentHook(RuleProvider::TAG, [RejectEverythingRules::class]);
 
         $field = discoveredActionFor(ValidatedNameFixtureQuery::class)->createType(app());
 
@@ -65,7 +65,7 @@ describe('the ArgumentRules hook', function () {
     });
 
     it('merges rules from several providers rather than letting one win', function () {
-        tagArgumentHook(ArgumentRules::TAG, [RejectEverythingRules::class, RequireLongNameRules::class]);
+        tagArgumentHook(RuleProvider::TAG, [RejectEverythingRules::class, RequireLongNameRules::class]);
 
         $rules = discoveredActionFor(ValidatedNameFixtureQuery::class)->createType(app())->getRules(['name' => 'Niels']);
 
@@ -74,7 +74,7 @@ describe('the ArgumentRules hook', function () {
     });
 
     it('carries a provider message through to the validator', function () {
-        tagArgumentHook(ArgumentRules::TAG, [RejectEverythingRules::class]);
+        tagArgumentHook(RuleProvider::TAG, [RejectEverythingRules::class]);
 
         $field = discoveredActionFor(ValidatedNameFixtureQuery::class)->createType(app());
 
@@ -90,9 +90,9 @@ describe('the ArgumentRules hook', function () {
     });
 });
 
-describe('the ArgumentHydrator hook', function () {
+describe('the Hydrator hook', function () {
     it('hydrates a class that does not implement ComposedFromArgs', function () {
-        tagArgumentHook(ArgumentHydrator::TAG, [PlainCursorHydrator::class]);
+        tagArgumentHook(Hydrator::TAG, [PlainCursorHydrator::class]);
 
         $action = discoveredActionFor(HydratedCursorQuery::class);
 
@@ -106,7 +106,7 @@ describe('the ArgumentHydrator hook', function () {
 
     it('leaves a class no hydrator claims as a container injection', function () {
         // PlainCursorHydrator is NOT tagged here, so nothing hydrates PlainCursor.
-        app()->forgetInstance(ArgumentHydrators::class);
+        app()->forgetInstance(HydratorRegistry::class);
         app()->forgetInstance(GraphQLDiscovery::class);
 
         $action = discoveredActionFor(HydratedCursorQuery::class);
@@ -126,27 +126,27 @@ describe('the ArgumentHydrator hook', function () {
 it('keys a hydrated value object rule onto the flat arg it is built from', function () {
     $action = discoveredActionFor(ValueObjectValidatedQuery::class);
 
-    expect(app(ArgumentRuleProviders::class)->rulesFor($action, ['offset' => 1])->rules['offset'])
+    expect(app(RuleProviderRegistry::class)->rulesFor($action, ['offset' => 1])->rules['offset'])
         ->toContain('min:1');
 
     expect($action->createType(app())->getRules(['offset' => 0])['offset'])->toContain('min:1');
 });
 
 it('degrades to nothing when no rules provider is registered', function () {
-    $providers = new ArgumentRuleProviders([]);
+    $providers = new RuleProviderRegistry([]);
     $set = $providers->rulesFor(discoveredActionFor(ValidatedNameFixtureQuery::class), []);
 
     expect($set->isEmpty())->toBeTrue();
 });
 
 it('names the class when nothing can hydrate it', function () {
-    expect(fn() => new ArgumentHydrators([])->hydrate(PlainCursor::class, []))
-        ->toThrow(RuntimeException::class, 'No ArgumentHydrator handles');
+    expect(fn() => new HydratorRegistry([])->hydrate(PlainCursor::class, []))
+        ->toThrow(RuntimeException::class, 'No Hydrator handles');
 });
 
 it('rejects a binding tagged as a hook it does not implement', function () {
-    tagArgumentHook(ArgumentRules::TAG, [PlainCursorHydrator::class]);
+    tagArgumentHook(RuleProvider::TAG, [PlainCursorHydrator::class]);
 
-    expect(fn() => app(ArgumentRuleProviders::class))
+    expect(fn() => app(RuleProviderRegistry::class))
         ->toThrow(RuntimeException::class, 'does not implement');
 });

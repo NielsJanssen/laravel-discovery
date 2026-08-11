@@ -2,15 +2,17 @@
 
 declare(strict_types=1);
 
-namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
+namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
+
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 
 /**
- * The registered ArgumentRules implementations, merged into one rule set per action.
+ * The registered RuleProvider implementations, merged into one rule set per action.
  */
-final class ArgumentRuleProviders
+final class RuleProviderRegistry
 {
     public function __construct(
-        /** @var iterable<ArgumentRules> lazy, since Container::tagged() returns a generator */
+        /** @var iterable<RuleProvider> lazy, since Container::tagged() returns a generator */
         private readonly iterable $providers = [],
     ) {}
 
@@ -20,7 +22,7 @@ final class ArgumentRuleProviders
      *
      * @param  array<string, mixed>  $args
      */
-    public function rulesFor(DiscoveredAction $action, array $args): ArgumentRuleSet
+    public function rulesFor(DiscoveredAction $action, array $args): RuleSet
     {
         $rules = [];
         $messages = [];
@@ -38,6 +40,6 @@ final class ArgumentRuleProviders
             $messages = [...$messages, ...$set->messages];
         }
 
-        return new ArgumentRuleSet($rules, $messages);
+        return new RuleSet($rules, $messages);
     }
 }

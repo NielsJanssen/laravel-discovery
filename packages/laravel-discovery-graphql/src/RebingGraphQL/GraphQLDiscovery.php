@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgs;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use Deprecated;
 use GraphQL\Type\Definition\ResolveInfo;
 use Illuminate\Contracts\Container\ContextualAttribute;
@@ -27,7 +29,7 @@ final class GraphQLDiscovery implements Discovery
 
     public function __construct(
         private readonly Application $app,
-        private readonly ArgumentHydrators $hydrators,
+        private readonly HydratorRegistry $hydrators,
     ) {}
 
     /**

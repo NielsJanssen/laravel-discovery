@@ -6,7 +6,7 @@ namespace Tests\Fixtures\RebingGraphQL;
 
 /**
  * Deliberately does NOT implement ComposedFromArgs — it stands in for a spatie/laravel-data object,
- * hydrated only because a tagged ArgumentHydrator claims it.
+ * hydrated only because a tagged Hydrator claims it.
  */
 final readonly class PlainCursor
 {

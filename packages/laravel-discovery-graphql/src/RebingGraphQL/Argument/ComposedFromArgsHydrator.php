@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
+namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
 
 /**
  * The built-in hydrator: value objects that implement ComposedFromArgs build themselves. This is
  * what backs #[Paginated]'s Pagination and #[Sortable]'s Sort, and it holds no privileged position —
  * discovery asks the hydrator registry, not this class.
  */
-final class ComposedFromArgsHydrator implements ArgumentHydrator
+final class ComposedFromArgsHydrator implements Hydrator
 {
     public function hydrates(string $class): bool
     {

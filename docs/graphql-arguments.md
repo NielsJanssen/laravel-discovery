@@ -4,8 +4,10 @@ Two hooks let you decide how a `#[Query]`/`#[Mutation]` method's parameters are 
 parameter receives a typed object built from the arguments. Both are plain interfaces registered with
 container tags, so you are not tied to any particular library — including ours.
 
-- **`ArgumentRules`** — contributes validation rules and messages for an action's arguments.
-- **`ArgumentHydrator`** — turns the arguments into an object for a parameter.
+Both live in `NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument`:
+
+- **`RuleProvider`** — contributes validation rules and messages for an action's arguments.
+- **`Hydrator`** — turns the arguments into an object for a parameter.
 
 An adapter may implement either or both.
 
@@ -13,8 +15,8 @@ An adapter may implement either or both.
 
 | Adapter | Hook | Active when |
 |---|---|---|
-| `ComposedFromArgsHydrator` | `ArgumentHydrator` | always |
-| `LaravelValidationRules` | `ArgumentRules` | `nielsjanssen/laravel-validation` is installed |
+| `ComposedFromArgsHydrator` | `Hydrator` | always |
+| `LaravelValidationRules` | `RuleProvider` | `nielsjanssen/laravel-validation` is installed |
 
 `nielsjanssen/laravel-validation` is a **suggestion, not a requirement**. Without it you simply have
 one fewer rules provider, and `#[Arg(rules: [...])]` keeps working exactly as before.
@@ -53,11 +55,12 @@ than one replacing the other.
 ## Writing your own rules provider
 
 ```php
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\{ArgumentRules, ArgumentRuleSet, DiscoveredAction};
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\{RuleProvider, RuleSet};
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 
-final class SpatieDataRules implements ArgumentRules
+final class SpatieDataRules implements RuleProvider
 {
-    public function rulesFor(DiscoveredAction $action, array $args): ArgumentRuleSet
+    public function rulesFor(DiscoveredAction $action, array $args): RuleSet
     {
         $rules = [];
 
@@ -65,7 +68,7 @@ final class SpatieDataRules implements ArgumentRules
             $rules = [...$rules, ...$dataClass::getValidationRules($args)];
         }
 
-        return new ArgumentRuleSet($rules);
+        return new RuleSet($rules);
     }
 }
 ```
@@ -73,7 +76,7 @@ final class SpatieDataRules implements ArgumentRules
 Register it in a service provider:
 
 ```php
-$this->app->tag([SpatieDataRules::class], ArgumentRules::TAG);
+$this->app->tag([SpatieDataRules::class], RuleProvider::TAG);
 ```
 
 Every tagged provider is asked, and rules for the same argument accumulate, so several can coexist.
@@ -97,10 +100,10 @@ A hydrator lets a resolver take a value object instead of a fistful of scalars. 
 built from are declared by an `ActionArgProvider`; the hydrator only has to build the object.
 
 ```php
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\ArgumentHydrator;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
 use Spatie\LaravelData\Data;
 
-final class SpatieDataHydrator implements ArgumentHydrator
+final class SpatieDataHydrator implements Hydrator
 {
     public function hydrates(string $class): bool
     {
@@ -115,7 +118,7 @@ final class SpatieDataHydrator implements ArgumentHydrator
 ```
 
 ```php
-$this->app->tag([SpatieDataHydrator::class], ArgumentHydrator::TAG);
+$this->app->tag([SpatieDataHydrator::class], Hydrator::TAG);
 ```
 
 `hydrates()` is asked at **discovery** time, so it must decide from the class name alone — it decides
@@ -123,7 +126,7 @@ whether the parameter becomes a hydrated value object or an ordinary container i
 tagged hydrator to claim a class wins, so your own registration takes precedence over the built-in
 one for a class both would handle.
 
-Our own `ComposedFromArgs` is one such hydrator and holds no privileged position:
+Our own `Argument\ComposedFromArgs` is served by one such hydrator and holds no privileged position:
 
 ```php
 final readonly class Pagination implements ComposedFromArgs
