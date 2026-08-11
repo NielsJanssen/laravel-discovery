@@ -2,21 +2,21 @@
 
 declare(strict_types=1);
 
-namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
+namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
 
 use RuntimeException;
 
 /**
- * The registered ArgumentHydrator implementations. Consulted at discovery time to decide which
+ * The registered Hydrator implementations. Consulted at discovery time to decide which
  * parameters are hydrated, and at resolve time to build them.
  */
-final class ArgumentHydrators
+final class HydratorRegistry
 {
-    /** @var array<class-string, ArgumentHydrator>|null */
+    /** @var array<class-string, Hydrator>|null */
     private ?array $resolved = null;
 
     public function __construct(
-        /** @var iterable<ArgumentHydrator> lazy, since Container::tagged() returns a generator */
+        /** @var iterable<Hydrator> lazy, since Container::tagged() returns a generator */
         private readonly iterable $hydrators = [],
     ) {}
 
@@ -38,7 +38,7 @@ final class ArgumentHydrators
 
         if ($hydrator === null) {
             throw new RuntimeException(sprintf(
-                'No ArgumentHydrator handles %s. Tag one with ArgumentHydrator::TAG, or have the '
+                'No Hydrator handles %s. Tag one with Hydrator::TAG, or have the '
                 . 'class implement ComposedFromArgs.',
                 $class,
             ));
@@ -53,7 +53,7 @@ final class ArgumentHydrators
      *
      * @param  class-string  $class
      */
-    private function hydratorFor(string $class): ?ArgumentHydrator
+    private function hydratorFor(string $class): ?Hydrator
     {
         if (isset($this->resolved[$class])) {
             return $this->resolved[$class];

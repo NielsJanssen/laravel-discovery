@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Fixtures\RebingGraphQL;
 
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\ComposedFromArgs;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgs;
 use NielsJanssen\Laravel\Validation\Rule\Min;
 
 /** A value object that hydrates itself and carries its own validation attributes. */

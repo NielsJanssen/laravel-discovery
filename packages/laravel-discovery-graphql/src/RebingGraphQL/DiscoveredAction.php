@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
 use Exception;
 use Illuminate\Foundation\Application;
 use Rebing\GraphQL\Support\Field;
@@ -32,7 +33,7 @@ class DiscoveredAction
         public array $containerInjections = [],
         /** @var list<ActionArgProvider> */
         public array $argProviders = [],
-        /** @var array<string, class-string> keyed by paramName; hydrated by an ArgumentHydrator */
+        /** @var array<string, class-string> keyed by paramName; hydrated by a Hydrator */
         public array $argCompositions = [],
         /** @var list<DiscoveredModelBinding> */
         public array $modelBindings = [],

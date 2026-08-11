@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
+namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
 
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Validation\CompiledRules;
 use NielsJanssen\Laravel\Validation\RuleCompiler;
 use Tempest\Reflection\ClassReflector;
@@ -16,15 +17,15 @@ use Tempest\Reflection\ClassReflector;
  *     public function books(#[Min(2), Max(255)] ?string $title = null): array {}
  *
  * Registered only when that package is installed; it is a suggestion, not a requirement. Swap it for
- * an adapter over any other library by tagging your own ArgumentRules implementation.
+ * an adapter over any other library by tagging your own RuleProvider implementation.
  */
-final class LaravelValidationRules implements ArgumentRules
+final class LaravelValidationRules implements RuleProvider
 {
     public function __construct(
         private readonly RuleCompiler $compiler,
     ) {}
 
-    public function rulesFor(DiscoveredAction $action, array $args): ArgumentRuleSet
+    public function rulesFor(DiscoveredAction $action, array $args): RuleSet
     {
         $rules = [];
         $messages = [];
@@ -41,7 +42,7 @@ final class LaravelValidationRules implements ArgumentRules
             $this->collect($this->compiler->forValues($valueObjectClass, $args), $action, $rules, $messages);
         }
 
-        return new ArgumentRuleSet($rules, $messages);
+        return new RuleSet($rules, $messages);
     }
 
     /**

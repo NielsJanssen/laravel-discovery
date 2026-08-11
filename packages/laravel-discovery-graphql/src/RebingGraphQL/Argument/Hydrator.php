@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
+namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
 
 /**
  * Builds a typed object for an action parameter out of the request arguments, so a resolver can take
@@ -13,12 +13,12 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
  * would be `hydrates()` → `is_a($class, Data::class, true)` and `hydrate()` → `$class::from($args)`.
  * Register one by tagging it:
  *
- *     $this->app->tag([MyHydrator::class], ArgumentHydrator::TAG);
+ *     $this->app->tag([MyHydrator::class], Hydrator::TAG);
  *
  * Parameters whose type a hydrator claims are excluded from the generated GraphQL args — the args
  * they are built from come from an ActionArgProvider instead.
  */
-interface ArgumentHydrator
+interface Hydrator
 {
     public const string TAG = 'graphql.argument_hydrators';
 

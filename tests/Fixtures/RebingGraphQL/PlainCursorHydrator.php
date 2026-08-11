@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Fixtures\RebingGraphQL;
 
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\ArgumentHydrator;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
 
-final class PlainCursorHydrator implements ArgumentHydrator
+final class PlainCursorHydrator implements Hydrator
 {
     public function hydrates(string $class): bool
     {
