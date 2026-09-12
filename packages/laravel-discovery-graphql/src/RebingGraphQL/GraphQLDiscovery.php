@@ -405,7 +405,10 @@ final class GraphQLDiscovery implements Discovery
                 ));
             }
 
-            $authorizations[] = new DiscoveredModelAuthorization($authorize->ability, $authorize->message);
+            $authorizations[] = new DiscoveredModelAuthorization(
+                $authorize->ability,
+                $authorize->message ?? DiscoveredModelAuthorization::DEFAULT_MESSAGE,
+            );
         }
 
         return $authorizations;

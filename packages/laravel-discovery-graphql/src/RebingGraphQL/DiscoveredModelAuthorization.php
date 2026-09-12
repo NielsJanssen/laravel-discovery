@@ -9,8 +9,10 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
  */
 readonly class DiscoveredModelAuthorization
 {
+    public const DEFAULT_MESSAGE = 'Forbidden';
+
     public function __construct(
         public string $ability,
-        public ?string $message = null,
+        public string $message = self::DEFAULT_MESSAGE,
     ) {}
 }

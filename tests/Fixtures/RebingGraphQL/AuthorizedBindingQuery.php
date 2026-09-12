@@ -20,7 +20,7 @@ class AuthorizedBindingQuery
     #[Query]
     public function authorizedWithMessage(
         #[Arg('id')]
-        #[Authorize('view', message: 'Forbidden.')]
+        #[Authorize('view', message: 'Not your user')]
         User $user,
     ): string {
         return $user->name;

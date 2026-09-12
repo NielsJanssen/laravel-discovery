@@ -88,14 +88,14 @@ describe('bound model authorization', function () {
         expect($field->authorize(null, ['id' => $user->id], null, null))->toBeTrue();
     });
 
-    it('denies when the gate refuses the bound model', function () {
+    it('denies when the gate refuses the bound model, defaulting the message to Forbidden', function () {
         $user = User::factory()->create(['name' => 'Grace Hopper']);
         Gate::define('view', fn(?User $actor, User $subject) => $subject->name === 'Ada Lovelace');
 
         $field = discoverAuthorizedBindings()['authorizedUser']->createType(app());
 
         expect($field->authorize(null, ['id' => $user->id], null, null))->toBeFalse()
-            ->and($field->getAuthorizationMessage())->toBe('Unauthorized');
+            ->and($field->getAuthorizationMessage())->toBe('Forbidden');
     });
 
     it('reports the message of the ability that failed', function () {
@@ -105,7 +105,7 @@ describe('bound model authorization', function () {
         $field = discoverAuthorizedBindings()['authorizedWithMessage']->createType(app());
 
         expect($field->authorize(null, ['id' => $user->id], null, null))->toBeFalse()
-            ->and($field->getAuthorizationMessage())->toBe('Forbidden.');
+            ->and($field->getAuthorizationMessage())->toBe('Not your user');
     });
 
     it('requires every ability on the parameter to pass', function () {
@@ -148,7 +148,7 @@ describe('bound model authorization end-to-end', function () {
         $this->postJson('/graphql', ['query' => "{ authorizedUser(id: {$user->id}) }"])
             ->assertOk()
             ->assertJsonPath('data.authorizedUser', null)
-            ->assertJsonPath('errors.0.message', 'Unauthorized')
+            ->assertJsonPath('errors.0.message', 'Forbidden')
             ->assertJsonPath('errors.0.extensions.category', 'authorization');
     });
 
@@ -158,7 +158,7 @@ describe('bound model authorization end-to-end', function () {
 
         $this->postJson('/graphql', ['query' => '{ authorizedUser(id: 999999) }'])
             ->assertOk()
-            ->assertJsonPath('errors.0.message', 'Unauthorized')
+            ->assertJsonPath('errors.0.message', 'Forbidden')
             ->assertJsonPath('errors.0.extensions.category', 'authorization');
     });
 

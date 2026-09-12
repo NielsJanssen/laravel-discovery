@@ -227,6 +227,8 @@ public function get(#[Arg('id')] #[Authorize('view')] Aantekening $note): ?Aante
 
 The check runs inside `Field::authorize()`, i.e. **before** validation, preserving Rebing's authorize-first ordering so an unauthorized caller cannot probe validation rules to map the API. A record that cannot be found is **denied** rather than passed through, so "not allowed" and "does not exist" answer identically — a refusal never confirms a record exists. The cost is that the model is loaded once in `authorize()` and again in `resolve()`; there is no shared per-request binding store yet.
 
+A failed parameter-level check reports **`Forbidden`** (`DiscoveredModelAuthorization::DEFAULT_MESSAGE`) rather than Rebing's `Unauthorized`, since the caller is authenticated but not allowed; `message:` overrides it. The class/method forms keep Rebing's default.
+
 Discovery rejects the shapes that can't work, rather than letting them silently pass: `#[Authorize]` with no ability on a parameter, `#[Authorize(gate:)]` on a parameter (a gate only sees raw args), `#[Authorize('ability')]` on a parameter that binds no model, and **laravel-validation's `#[Can]` on a model-bound parameter** — that one validates the raw `ID` arg, so the gate receives an id string where the policy expects a record; it is a `LogicException` at discovery pointing at `#[Authorize]`.
 
 Attributes are collected class-first then method-first; **all** must pass (AND semantics). The first failing attribute's optional `message:` surfaces via `getAuthorizationMessage()` (otherwise Rebing's default "Unauthorized"). Hooks in via overrides of `Field::authorize()` and `Field::getAuthorizationMessage()` on `AsActionField`, so Rebing's resolver pipeline blocks the request **before** validation runs.
