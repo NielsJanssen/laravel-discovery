@@ -12,6 +12,7 @@ use Tempest\Discovery\DiscoveryItems;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\RebingGraphQL\AuthorizedBindingQuery;
+use Tests\Fixtures\RebingGraphQL\CanOnBoundModelQuery;
 use Tests\Fixtures\RebingGraphQL\GateOnParameterQuery;
 use Tests\Fixtures\RebingGraphQL\ParameterAuthorizeWithoutAbilityQuery;
 use Tests\Fixtures\RebingGraphQL\ParameterAuthorizeWithoutModelQuery;
@@ -63,6 +64,13 @@ describe('#[Authorize] discovery on a model-bound parameter', function () {
     it('rejects #[Authorize(gate:)] on a parameter, since a gate class only sees raw args', function () {
         expect(fn() => discoverAuthorizedBindings(GateOnParameterQuery::class))
             ->toThrow(LogicException::class, 'receives the raw args');
+    });
+});
+
+describe('#[Can] on a model-bound parameter', function () {
+    it('is refused at discovery, because it would authorize the id instead of the record', function () {
+        expect(fn() => discoverAuthorizedBindings(CanOnBoundModelQuery::class))
+            ->toThrow(LogicException::class, 'would authorize the raw id, not the User it binds');
     });
 });
 

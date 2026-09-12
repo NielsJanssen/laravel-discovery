@@ -28,6 +28,9 @@ final class GraphQLDiscovery implements Discovery
 {
     use IsDiscovery;
 
+    /** laravel-validation's #[Can]. */
+    private const VALUE_AUTHORIZATION_RULE = 'NielsJanssen\\Laravel\\Validation\\Rule\\Can';
+
     public function __construct(
         private readonly Application $app,
         private readonly HydratorRegistry $hydrators,
@@ -120,6 +123,8 @@ final class GraphQLDiscovery implements Discovery
                 $type = $param->getType();
 
                 if (!$type->isScalar() && is_a($type->getName(), EloquentModel::class, true)) {
+                    $this->assertNoValueAuthorizationRule($param, $class, $method);
+
                     $modelBindings[] = new DiscoveredModelBinding(
                         paramName: $param->getName(),
                         argName: $argAttr !== null && $argAttr->name !== null ? $argAttr->name : $param->getName(),
@@ -349,6 +354,28 @@ final class GraphQLDiscovery implements Discovery
             $method->getName(),
             class_basename($action::class),
         ));
+    }
+
+    /**
+     * Matched by class name, so laravel-validation stays a suggestion rather than a dependency.
+     *
+     * @param ClassReflector<object> $class
+     */
+    private function assertNoValueAuthorizationRule(ParameterReflector $param, ClassReflector $class, MethodReflector $method): void
+    {
+        foreach ($param->getReflection()->getAttributes() as $attribute) {
+            if ($attribute->getName() !== self::VALUE_AUTHORIZATION_RULE) {
+                continue;
+            }
+
+            throw new LogicException(sprintf(
+                'Validation attribute #[Can] on the model-bound parameter $%s in %s::%s would authorize the raw id, not the %s it binds. Use #[Authorize(\'ability\')] on the parameter instead.',
+                $param->getName(),
+                $class->getName(),
+                $method->getName(),
+                class_basename($param->getType()->getName()),
+            ));
+        }
     }
 
     /**
