@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [1.0.0-rc.2] - 2026-09-12
+
+### Features
+
+- Infer nullability from the return type alongside an explicit type
+
 ## [1.0.0-rc.1] - 2026-09-12
 
 ### Bug Fixes
