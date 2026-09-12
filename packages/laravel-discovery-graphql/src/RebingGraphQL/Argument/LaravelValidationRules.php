@@ -7,7 +7,6 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Validation\CompiledRules;
 use NielsJanssen\Laravel\Validation\RuleCompiler;
-use Tempest\Reflection\ClassReflector;
 
 /**
  * Bridges nielsjanssen/laravel-validation into the argument-rules hook, so validation attributes
@@ -25,15 +24,14 @@ final class LaravelValidationRules implements RuleProvider
         private readonly RuleCompiler $compiler,
     ) {}
 
-    public function rulesFor(DiscoveredAction $action, array $args): RuleSet
+    public function rulesFor(DiscoveredAction $action, array $args): ArgumentRules
     {
         $rules = [];
         $messages = [];
 
-        // The action's own parameters, whose plan is keyed by parameter name.
-        $method = new ClassReflector($action->class)->getMethod($action->method);
-
-        $this->collect($this->compiler->forValues($method, $action->toParameters($args)), $action, $rules, $messages);
+        // The action's own parameters, whose plan is keyed by parameter name. The `Class::method`
+        // string is the name a cached plan is stored under, so no reflection is needed per request.
+        $this->collect($this->compiler->forValues($action->class . '::' . $action->method, $action->toParameters($args)), $action, $rules, $messages);
 
         // Hydrated value objects: their properties are named after the flat args that feed them
         // (Pagination's $page/$limit against #[Paginated]'s page/limit args), so their rules key
@@ -42,7 +40,7 @@ final class LaravelValidationRules implements RuleProvider
             $this->collect($this->compiler->forValues($valueObjectClass, $args), $action, $rules, $messages);
         }
 
-        return new RuleSet($rules, $messages);
+        return new ArgumentRules($rules, $messages);
     }
 
     /**

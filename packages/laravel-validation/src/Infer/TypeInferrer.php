@@ -6,10 +6,10 @@ namespace NielsJanssen\Laravel\Validation\Infer;
 
 use BackedEnum;
 use NielsJanssen\Laravel\Validation\Rule\ArrayType;
-use NielsJanssen\Laravel\Validation\Rule\BooleanType;
+use NielsJanssen\Laravel\Validation\Rule\Boolean;
 use NielsJanssen\Laravel\Validation\Rule\Enum;
-use NielsJanssen\Laravel\Validation\Rule\IntegerType;
-use NielsJanssen\Laravel\Validation\Rule\NumericType;
+use NielsJanssen\Laravel\Validation\Rule\Integer;
+use NielsJanssen\Laravel\Validation\Rule\Numeric;
 use NielsJanssen\Laravel\Validation\Rule\StringType;
 use NielsJanssen\Laravel\Validation\RuleCollection;
 use Tempest\Reflection\ParameterReflector;
@@ -40,9 +40,9 @@ class TypeInferrer implements RuleInferrer
 
         $rule = match ($name) {
             'string' => new StringType(),
-            'int' => new IntegerType(),
-            'float' => new NumericType(),
-            'bool' => new BooleanType(),
+            'int' => new Integer(),
+            'float' => new Numeric(),
+            'bool' => new Boolean(),
             'array', 'iterable' => new ArrayType(),
             default => null,
         };

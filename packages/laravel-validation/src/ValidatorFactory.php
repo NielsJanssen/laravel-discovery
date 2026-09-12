@@ -16,6 +16,23 @@ use RuntimeException;
 final class ValidatorFactory extends BaseFactory
 {
     /**
+     * Take over the extensions, replacers and fallback messages registered on the factory this one
+     * replaces. Those arrays are protected on the base class, which a subclass may read on any
+     * instance of the shared ancestor.
+     */
+    public function adopting(BaseFactory $original): self
+    {
+        $this->extensions = [...$original->extensions, ...$this->extensions];
+        $this->implicitExtensions = [...$original->implicitExtensions, ...$this->implicitExtensions];
+        $this->dependentExtensions = [...$original->dependentExtensions, ...$this->dependentExtensions];
+        $this->replacers = [...$original->replacers, ...$this->replacers];
+        $this->fallbackMessages = [...$original->fallbackMessages, ...$this->fallbackMessages];
+        $this->excludeUnvalidatedArrayKeys = $original->excludeUnvalidatedArrayKeys;
+
+        return $this;
+    }
+
+    /**
      * Build a validator from an object's attributes. Extra $rules and $messages are merged
      * over the ones derived from the object, so a caller key takes precedence.
      *

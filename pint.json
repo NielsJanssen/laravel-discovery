@@ -2,6 +2,10 @@
   "preset": "per",
   "rules": {
     "declare_strict_types": true,
+    "ordered_imports": {
+      "imports_order": ["class", "function", "const"],
+      "sort_algorithm": "alpha"
+    },
 "fully_qualified_strict_types": {
       "import_symbols": true,
       "phpdoc_tags": ["param", "return", "var", "throws", "property", "property-read", "property-write", "method"]

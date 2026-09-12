@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleSet;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use Closure;
 use GraphQL\Type\Definition\NonNull;
 use GraphQL\Type\Definition\NullableType;
@@ -14,6 +11,9 @@ use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Type\Definition\Type as GraphQLType;
 use Illuminate\Foundation\Application;
 use Illuminate\Validation\Rule;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ArgumentRules;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
 use Rebing\GraphQL\Support\Facades\GraphQL;
 use Rebing\GraphQL\Support\Field;
 use ReflectionMethod;
@@ -228,7 +228,7 @@ trait AsActionField
     /**
      * @param  array<string, mixed>  $args
      */
-    private function argumentRules(array $args): RuleSet
+    private function argumentRules(array $args): ArgumentRules
     {
         return $this->app->make(RuleProviderRegistry::class)->rulesFor($this->discoveredAction, $args);
     }

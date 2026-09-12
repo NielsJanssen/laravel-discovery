@@ -8,4 +8,17 @@ use Attribute;
 use NielsJanssen\Laravel\Validation\StringRule;
 
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
-final class Alpha extends StringRule {}
+final class Alpha extends StringRule
+{
+    public function __construct(
+        public readonly bool $ascii = false,
+        ?string $message = null,
+    ) {
+        parent::__construct($message);
+    }
+
+    protected function parameters(): array
+    {
+        return $this->ascii ? ['ascii'] : [];
+    }
+}

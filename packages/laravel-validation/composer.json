@@ -24,8 +24,10 @@
     "php": "^8.5",
     "illuminate/support": "^13.15",
     "illuminate/validation": "^13.15",
-    "tempest/discovery": "^3.10",
     "tempest/reflection": "^3.10"
+  },
+  "suggest": {
+    "tempest/discovery": "Pre-builds and caches rule plans at discovery time; without it rules are reflected on demand"
   },
   "autoload": {
     "psr-4": {

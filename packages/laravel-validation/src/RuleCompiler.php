@@ -46,7 +46,7 @@ final class RuleCompiler
      * There is no owning object, so a contextual closure sees `$context->root === null`; use
      * forObject()/forMethod() when a rule needs to read siblings off a real instance.
      *
-     * @param  ClassReflector<object>|MethodReflector|class-string  $source
+     * @param  ClassReflector<object>|MethodReflector|class-string|string  $source  a class name, or `Class::method` for a method's parameters
      * @param  array<string, mixed>  $values  keyed by property or parameter name
      */
     public function forValues(ClassReflector|MethodReflector|string $source, array $values): CompiledRules
@@ -118,7 +118,7 @@ final class RuleCompiler
     /**
      * #[ListOf] / #[Each]: every element validated at its own path.
      *
-     * ponytail: one rule set per element, so error keys read `lines.2.sku` and each element's
+     * One rule set per element, so error keys read `lines.2.sku` and each element's
      * closures see their own object. Cost is elements × rules; if lists ever get big enough to
      * matter, swap to a single `lines.*` wildcard and give up the per-element context.
      *

@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgs;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use Deprecated;
 use GraphQL\Type\Definition\ResolveInfo;
 use Illuminate\Contracts\Container\ContextualAttribute;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Foundation\Application;
+use LogicException;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgs;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use Rebing\GraphQL\GraphQL;
 use Rebing\GraphQL\Support\Mutation as RebingMutation;
 use Rebing\GraphQL\Support\Query as RebingQuery;
@@ -134,8 +135,10 @@ final class GraphQLDiscovery implements Discovery
                 if (!$argAttr && !$type->isScalar()) {
                     $typeName = $type->getName();
 
-                    if (class_exists($typeName) && isset($valueObjectClasses[$typeName]) && $this->hydrators->hydrates($typeName)) {
-                        $argCompositions[$param->getName()] = $typeName;
+                    $valueObject = $valueObjectClasses[$typeName] ?? null;
+
+                    if ($valueObject !== null && $this->hydrators->hydrates($valueObject)) {
+                        $argCompositions[$param->getName()] = $valueObject;
                         continue;
                     }
 
@@ -147,6 +150,8 @@ final class GraphQLDiscovery implements Discovery
 
                 $args[] = $this->discoverActionParameter($argAttr, $param, $class, $method);
             }
+
+            $this->assertNoArgNameCollisions($args, $class, $method);
 
             $middleware = [
                 ...$classMiddleware,
@@ -249,7 +254,7 @@ final class GraphQLDiscovery implements Discovery
     /**
      * @param  list<ActionArgProvider>  $argProviders
      * @param  ClassReflector<object>  $class
-     * @return array<class-string<ComposedFromArgs>, true>
+     * @return array<class-string<ComposedFromArgs>, class-string<ComposedFromArgs>>
      */
     private function collectValueObjectClasses(array $argProviders, ClassReflector $class, MethodReflector $method): array
     {
@@ -273,7 +278,7 @@ final class GraphQLDiscovery implements Discovery
 
         foreach ($argProviders as $provider) {
             foreach ($provider->provideValueObjects() as $valueObject) {
-                $valueObjectClasses[$valueObject] = true;
+                $valueObjectClasses[$valueObject] = $valueObject;
             }
         }
 
@@ -341,6 +346,39 @@ final class GraphQLDiscovery implements Discovery
             $method->getName(),
             class_basename($action::class),
         ));
+    }
+
+    /**
+     * A renamed arg that lands on another parameter's PHP name would silently overwrite that
+     * parameter when args are mapped back, so it is rejected at discovery time.
+     *
+     * @param  list<DiscoveredArg>  $args
+     * @param  ClassReflector<object>  $class
+     */
+    private function assertNoArgNameCollisions(array $args, ClassReflector $class, MethodReflector $method): void
+    {
+        $paramNames = [];
+
+        foreach ($method->getParameters() as $param) {
+            $paramNames[$param->getName()] = true;
+        }
+
+        foreach ($args as $arg) {
+            if ($arg->name === $arg->paramName) {
+                continue;
+            }
+
+            if (isset($paramNames[$arg->name])) {
+                throw new LogicException(sprintf(
+                    'Argument #[Arg(name: \'%s\')] on %s::%s($%s) collides with the parameter $%s. Rename the arg or the parameter.',
+                    $arg->name,
+                    $class->getName(),
+                    $method->getName(),
+                    $arg->paramName,
+                    $arg->name,
+                ));
+            }
+        }
     }
 
     /**

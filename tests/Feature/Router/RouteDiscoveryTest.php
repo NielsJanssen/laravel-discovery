@@ -12,23 +12,23 @@ use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\Router\AllMethodsController;
 use Tests\Fixtures\Router\DomainController;
-use Tests\Fixtures\Router\ProfilePage;
 use Tests\Fixtures\Router\EnumDomainController;
 use Tests\Fixtures\Router\EnumNamedRouteController;
+use Tests\Fixtures\Router\InvokableRouteController;
 use Tests\Fixtures\Router\MethodPrefixController;
 use Tests\Fixtures\Router\MiddlewareController;
 use Tests\Fixtures\Router\MiddlewareTrackingController;
+use Tests\Fixtures\Router\MultiMethodController;
 use Tests\Fixtures\Router\NamedRouteController;
 use Tests\Fixtures\Router\NoRouteController;
 use Tests\Fixtures\Router\PrefixedController;
+use Tests\Fixtures\Router\ProfilePage;
 use Tests\Fixtures\Router\RepeatableRouteController;
 use Tests\Fixtures\Router\RespondingController;
 use Tests\Fixtures\Router\RouteDomain;
 use Tests\Fixtures\Router\RouteLog;
 use Tests\Fixtures\Router\RouteName;
-use Tests\Fixtures\Router\MultiMethodController;
 use Tests\Fixtures\Router\SimpleGetController;
-use Tests\Fixtures\Router\InvokableRouteController;
 use Tests\Fixtures\Router\TrackingMiddleware;
 
 function discoverRoutes(string ...$classes): RouteDiscovery

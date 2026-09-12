@@ -12,7 +12,7 @@ use RuntimeException;
 
 /**
  * A stand-in for an attribute that cannot be cached, which in practice means one holding a
- * closure: #[Rule(static fn () => ...)] or a conditional rule's condition. The discovery cache
+ * closure: #[Rule(static function () { ... })] or a conditional rule's condition. The discovery cache
  * is written with `serialize()`, and closures are not serializable, so the plan stores where the
  * attribute lives and re-reads it through reflection on first use — the same trick
  * DiscoveredSchedule uses for closure-based schedules.

@@ -22,7 +22,7 @@ use NielsJanssen\Laravel\Validation\Nesting;
  * Use #[Valid] for a single object, and #[Each] to apply plain rules to every element.
  */
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER)]
-class ListOf extends NestingRule
+final class ListOf extends NestingRule
 {
     public Nesting $nesting {
         get => Nesting::Each;

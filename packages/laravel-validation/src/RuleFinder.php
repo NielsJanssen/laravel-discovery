@@ -4,18 +4,16 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Validation;
 
-use NielsJanssen\Laravel\Validation\Infer\RuleInferrer;
-use NielsJanssen\Laravel\Validation\Rule\Rule;
-use NielsJanssen\Laravel\Validation\Rule\Type;
 use LogicException;
+use NielsJanssen\Laravel\Validation\Infer\RuleInferrer;
 use ReflectionAttribute;
 use Tempest\Reflection\ClassReflector;
-use Tempest\Reflection\TypeReflector;
-use Traversable;
 use Tempest\Reflection\MethodReflector;
 use Tempest\Reflection\ParameterReflector;
 use Tempest\Reflection\PropertyReflector;
+use Tempest\Reflection\TypeReflector;
 use Throwable;
+use Traversable;
 
 /**
  * Turns a class or method into a cacheable RuleSet. RuleDiscovery pre-builds these and hands
@@ -43,7 +41,10 @@ final class RuleFinder
     }
 
     /**
-     * @param  ClassReflector<object>|MethodReflector|class-string  $source
+     * A string source is a class name, or `Class::method` for a method's parameters — the same
+     * form a RuleSet is named by, so a cached plan is served without any reflection.
+     *
+     * @param  ClassReflector<object>|MethodReflector|class-string|string  $source
      */
     public function find(ClassReflector|MethodReflector|string $source): RuleSet
     {
@@ -54,7 +55,12 @@ final class RuleFinder
         }
 
         if (is_string($source)) {
-            $source = new ClassReflector($source);
+            [$class, $method] = array_pad(explode('::', $source, 2), 2, null);
+
+            /** @var class-string $class */
+            $source = $method === null
+                ? new ClassReflector($class)
+                : new ClassReflector($class)->getMethod($method);
         }
 
         $members = [];
@@ -89,7 +95,7 @@ final class RuleFinder
     }
 
     /**
-     * @param  ClassReflector<object>|MethodReflector|class-string  $source
+     * @param  ClassReflector<object>|MethodReflector|class-string|string  $source
      */
     private function getName(ClassReflector|MethodReflector|string $source): string
     {
@@ -127,7 +133,18 @@ final class RuleFinder
 
             // Both behaviours are found by interface, so a user's own attribute gets them too.
             if ($instance instanceof MessageValidationRule && $instance->message !== null) {
-                $messages[$instance->messageKey ?? ''] = $instance->message;
+                $key = $instance->messageKey ?? '';
+
+                // Two messages on one key would silently overwrite each other.
+                if (isset($messages[$key])) {
+                    throw new LogicException(sprintf(
+                        '%s carries two messages for the "%s" rule; keep one.',
+                        $this->describe($member, $class, $method),
+                        $key === '' ? 'field' : $key,
+                    ));
+                }
+
+                $messages[$key] = $instance->message;
             }
 
             if ($instance instanceof NestedValidationRule) {
@@ -171,7 +188,7 @@ final class RuleFinder
                 throw new LogicException(sprintf(
                     '%s carries nesting attributes that disagree; a member holds either one object '
                     . 'or many elements.',
-                    $this->describe($member),
+                    $this->describe($member, $class, $method),
                 ));
             }
 
@@ -187,18 +204,18 @@ final class RuleFinder
                 throw new LogicException(sprintf(
                     '%s is not iterable, so it has no elements to validate. Use #[Valid] for a '
                     . 'single object.',
-                    $this->describe($member),
+                    $this->describe($member, $class, $method),
                 ));
             }
 
-            $this->assertCacheable($elementRules, $member);
+            $this->assertCacheable($elementRules, $member, $class, $method);
         }
 
         if ($nesting === Nesting::Value) {
             if ($this->iterates($type)) {
                 throw new LogicException(sprintf(
                     '#[Valid] on %s, which holds many elements. Use #[ListOf(Thing::class)] instead.',
-                    $this->describe($member),
+                    $this->describe($member, $class, $method),
                 ));
             }
 
@@ -274,31 +291,35 @@ final class RuleFinder
      * property's own rules they have to survive the cache on their own.
      *
      * @param  list<ValidationRule>  $elementRules
+     * @param  class-string  $class
      */
-    private function assertCacheable(array $elementRules, PropertyReflector|ParameterReflector $member): void
+    private function assertCacheable(array $elementRules, PropertyReflector|ParameterReflector $member, string $class, ?string $method): void
     {
         foreach ($elementRules as $rule) {
             if (! $this->isCacheable($rule)) {
                 throw new LogicException(sprintf(
-                    '#[Each] on %s holds a closure, which cannot be cached. Put the factory on the '
-                    . "element's own property with #[Rule], or pass a rule object.",
-                    $this->describe($member),
+                    '#[Each] on %s holds a closure, which cannot be cached. Put the rule on the '
+                    . "element's own property, or pass a rule object.",
+                    $this->describe($member, $class, $method),
                 ));
             }
         }
     }
 
-    private function describe(PropertyReflector|ParameterReflector $member): string
+    /**
+     * @param  class-string  $class
+     */
+    private function describe(PropertyReflector|ParameterReflector $member, string $class, ?string $method): string
     {
-        return $member instanceof PropertyReflector
-            ? $member->getClass()->getName() . '::$' . $member->getName()
-            : '$' . $member->getName();
+        return $method === null
+            ? "{$class}::\${$member->getName()}"
+            : "{$class}::{$method}(\${$member->getName()})";
     }
 
     /**
      * Whether an explicitly written attribute makes an inferred rule redundant: the same
      * attribute class, or any other type rule, since a member has exactly one type. This is what
-     * lets #[Nullable] on a `?string` not yield `nullable` twice, and #[NumericType] on an `int`
+     * lets #[Nullable] on a `?string` not yield `nullable` twice, and #[Numeric] on an `int`
      * give `numeric` instead of `integer`.
      *
      * @param  list<ValidationRule>  $declared
@@ -310,7 +331,7 @@ final class RuleFinder
                 return true;
             }
 
-            if ($inferred instanceof Type && $explicit instanceof Type) {
+            if ($inferred instanceof TypeRule && $explicit instanceof TypeRule) {
                 return true;
             }
         }
@@ -334,7 +355,7 @@ final class RuleFinder
      * Whether the attribute survives the discovery cache. Only closures fail, and they fail by
      * throwing from serialize(); asking is cheaper than trying to detect them structurally.
      *
-     * ponytail: serialize() as the probe. If a rule ever needs a different cache backend with
+     * serialize() is the probe. If a rule ever needs a different cache backend with
      * different rules about what it accepts, this is the single place to change.
      */
     private function isCacheable(ValidationRule $attribute): bool

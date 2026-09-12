@@ -67,6 +67,7 @@
     "laravel": {
       "providers": [
         "NielsJanssen\\Laravel\\Discovery\\DiscoveryServiceProvider",
+        "NielsJanssen\\Laravel\\Discovery\\RebingGraphQL\\GraphQLDiscoveryServiceProvider",
         "NielsJanssen\\Laravel\\Validation\\ValidationServiceProvider"
       ]
     }

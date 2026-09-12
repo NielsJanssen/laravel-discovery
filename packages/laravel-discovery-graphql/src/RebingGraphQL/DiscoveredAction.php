@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
 use Exception;
 use Illuminate\Foundation\Application;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
 use Rebing\GraphQL\Support\Field;
 use Rebing\GraphQL\Support\Middleware as RebingMiddleware;
 

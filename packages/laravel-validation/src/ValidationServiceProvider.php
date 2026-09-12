@@ -7,6 +7,7 @@ namespace NielsJanssen\Laravel\Validation;
 use Illuminate\Contracts\Translation\Translator;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\DatabasePresenceVerifier;
+use Illuminate\Validation\Factory;
 use NielsJanssen\Laravel\Validation\Infer\NullableInferrer;
 use NielsJanssen\Laravel\Validation\Infer\SometimesInferrer;
 use NielsJanssen\Laravel\Validation\Infer\TypeInferrer;
@@ -32,7 +33,7 @@ final class ValidationServiceProvider extends ServiceProvider
             return new RuleCompiler($this->app->make(RuleFinder::class));
         });
 
-        $this->app->extend('validator', function (): ValidatorFactory {
+        $this->app->extend('validator', function (Factory $original): ValidatorFactory {
             $factory = new ValidatorFactory(
                 $this->app->make(Translator::class),
                 $this->app,
@@ -42,7 +43,9 @@ final class ValidationServiceProvider extends ServiceProvider
                 $factory->setPresenceVerifier($this->app->make(DatabasePresenceVerifier::class));
             }
 
-            return $factory;
+            // Anything another provider already registered on the original factory — a
+            // Validator::extend() call, a replacer — carries over rather than being lost.
+            return $factory->adopting($original);
         });
     }
 }

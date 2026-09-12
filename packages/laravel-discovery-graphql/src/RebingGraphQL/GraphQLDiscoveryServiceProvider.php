@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProvider;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\LaravelValidationRules;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgsHydrator;
 use Illuminate\Support\ServiceProvider;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgsHydrator;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\LaravelValidationRules;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProvider;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
 use NielsJanssen\Laravel\Validation\RuleCompiler;
 use RuntimeException;
 

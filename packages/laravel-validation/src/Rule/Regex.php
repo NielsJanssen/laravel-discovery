@@ -8,4 +8,17 @@ use Attribute;
 use NielsJanssen\Laravel\Validation\StringRule;
 
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
-final class Regex extends StringRule {}
+final class Regex extends StringRule
+{
+    public function __construct(
+        public readonly string $pattern,
+        ?string $message = null,
+    ) {
+        parent::__construct($message);
+    }
+
+    protected function parameters(): array
+    {
+        return [$this->pattern];
+    }
+}

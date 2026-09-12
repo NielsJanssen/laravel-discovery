@@ -8,4 +8,17 @@ use Attribute;
 use NielsJanssen\Laravel\Validation\StringRule;
 
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
-final class AlphaDash extends StringRule {}
+final class AlphaDash extends StringRule
+{
+    public function __construct(
+        public readonly bool $ascii = false,
+        ?string $message = null,
+    ) {
+        parent::__construct($message);
+    }
+
+    protected function parameters(): array
+    {
+        return $this->ascii ? ['ascii'] : [];
+    }
+}

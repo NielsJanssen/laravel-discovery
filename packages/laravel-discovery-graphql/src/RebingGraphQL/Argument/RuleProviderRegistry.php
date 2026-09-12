@@ -22,7 +22,7 @@ final class RuleProviderRegistry
      *
      * @param  array<string, mixed>  $args
      */
-    public function rulesFor(DiscoveredAction $action, array $args): RuleSet
+    public function rulesFor(DiscoveredAction $action, array $args): ArgumentRules
     {
         $rules = [];
         $messages = [];
@@ -40,6 +40,6 @@ final class RuleProviderRegistry
             $messages = [...$messages, ...$set->messages];
         }
 
-        return new RuleSet($rules, $messages);
+        return new ArgumentRules($rules, $messages);
     }
 }
