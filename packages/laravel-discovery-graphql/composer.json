@@ -25,7 +25,7 @@
     "php": "^8.5",
     "nielsjanssen/laravel-discovery": "^1.0",
     "tempest/discovery": "^3.10",
-    "rebing/graphql-laravel": "10.x-dev"
+    "rebing/graphql-laravel": "^10.0"
   },
   "suggest": {
     "nielsjanssen/laravel-validation": "Validate #[Query]/#[Mutation] parameters with attributes (#[Min], #[Email], ...)"

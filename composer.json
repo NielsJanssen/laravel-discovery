@@ -11,7 +11,7 @@
   "require": {
     "php": "^8.5",
     "tempest/discovery": "^3.10",
-    "rebing/graphql-laravel": "10.x-dev"
+    "rebing/graphql-laravel": "^10.0"
   },
   "require-dev": {
     "larastan/larastan": "^3.10",
