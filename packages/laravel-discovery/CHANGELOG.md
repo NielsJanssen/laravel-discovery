@@ -1,6 +1,16 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [1.0.0-rc.2] - 2026-09-12
+
+### Features
+
+- Keep a discovery cache in the process, so a test run scans once
+
+### Performance
+
+- Add memory cache to speed up large test runs
+
 ## [1.0.0-rc.1] - 2026-09-12
 
 ### Bug Fixes
@@ -19,12 +29,6 @@ All notable changes to this project will be documented in this file.
 - Set scheduled command & method parameters with #[Scheduled(parameters: [])]
 - Support multiple class level #[Scheduled] attributes
 - Implemented PhpStan at level 10
-
-### Miscellaneous Tasks
-
-- Upgrade dev dependencies
-- Branch aliases for both packages
-- Cs
 
 ### Performance
 
