@@ -9,6 +9,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\NullType;
+use Rebing\GraphQL\Support\Facades\GraphQL;
 use Tempest\Discovery\DiscoveryItems;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
@@ -22,6 +23,7 @@ use Tests\Fixtures\RebingGraphQL\DeprecatedQuery;
 use Tests\Fixtures\RebingGraphQL\DescribedQuery;
 use Tests\Fixtures\RebingGraphQL\ExclamationMiddleware;
 use Tests\Fixtures\RebingGraphQL\ExplicitTypeArgQuery;
+use Tests\Fixtures\RebingGraphQL\ExplicitTypeReturnQuery;
 use Tests\Fixtures\RebingGraphQL\FloatBoolQuery;
 use Tests\Fixtures\RebingGraphQL\GatedQuery;
 use Tests\Fixtures\RebingGraphQL\InjectionQuery;
@@ -527,5 +529,65 @@ describe('authorization', function () {
         ])
             ->assertOk()
             ->assertJsonPath('data.secret', 'top-secret');
+    });
+});
+
+describe('nullability alongside an explicit type', function () {
+    /** @return array<string, DiscoveredAction> */
+    function discoverExplicitTypeReturns(): array
+    {
+        $byMethod = [];
+
+        foreach (discoverGraphQL(ExplicitTypeReturnQuery::class)->getItems() as $item) {
+            /** @var DiscoveredAction $item */
+            $byMethod[$item->method] = $item;
+        }
+
+        return $byMethod;
+    }
+
+    it('widens an explicitly typed field when the method returns null', function () {
+        $items = discoverExplicitTypeReturns();
+
+        expect($items['nullableReturn']->action->nullable)->toBeTrue();
+    });
+
+    it('leaves a non-nullable return non-null', function () {
+        $items = discoverExplicitTypeReturns();
+
+        expect($items['nonNullableReturn']->action->nullable)->toBeFalse();
+    });
+
+    it('keeps nullable: true on a non-nullable return', function () {
+        expect(discoverExplicitTypeReturns()['explicitlyNullable']->action->nullable)->toBeTrue();
+    });
+
+    it('widens a nullable list return, making the list itself nullable', function () {
+        expect(discoverExplicitTypeReturns()['nullableList']->action->nullable)->toBeTrue();
+    });
+
+    it('leaves an undeclared return type non-null', function () {
+        expect(discoverExplicitTypeReturns()['undeclaredReturn']->action->nullable)->toBeFalse();
+    });
+});
+
+describe('nullable explicit type end-to-end', function () {
+    it('renders the field as nullable in the built schema', function () {
+        $field = GraphQL::schema('default')->getQueryType()->getField('maybeBook');
+
+        expect((string) $field->getType())->toBe('Book');
+    });
+
+    it('resolves to null without an error', function () {
+        $this->postJson('/graphql', ['query' => '{ maybeBook { title } }'])
+            ->assertOk()
+            ->assertJsonPath('data.maybeBook', null)
+            ->assertJsonMissingPath('errors');
+    });
+
+    it('resolves the object when there is one', function () {
+        $this->postJson('/graphql', ['query' => '{ maybeBook(found: true) { title } }'])
+            ->assertOk()
+            ->assertJsonPath('data.maybeBook.title', 'De Avonden');
     });
 });

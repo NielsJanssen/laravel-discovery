@@ -78,6 +78,10 @@ final class GraphQLDiscovery implements Discovery
 
             if ($action->type === null) {
                 [$action->type, $action->nullable] = $this->discoverActionReturnType($action, $class, $method);
+            } elseif ($method->getReturnType()?->isNullable() === true) {
+                // An explicit type: says which type, not whether the field may be null, so a `?Type`
+                // return still widens it. Inference only ever turns nullability on.
+                $action->nullable = true;
             }
 
             $decorators = [

@@ -116,8 +116,18 @@ registered handlers.
 - [Events](docs/event.md): `#[EventHandler]`, inferred event types, deferred listeners.
 - [Routes](docs/router.md): HTTP attributes and class-level decorators.
 - [Schedule](docs/schedule.md): `#[Scheduled]`, the `Every` enum, `Cron`, time windows, overlap constraints.
-- [GraphQL arguments](docs/graphql-arguments.md): validating and hydrating `#[Query]`/`#[Mutation]` parameters, and the hooks for wiring in your own library.
 - [Discovery internals](docs/discovery.md): how Tempest Discovery is wired into Laravel, and how to write your own.
+
+### `nielsjanssen/laravel-discovery-graphql`
+
+- [GraphQL](docs/graphql.md): `#[Query]` and `#[Mutation]`, arguments, model binding, schemas, pagination, sorting.
+- [GraphQL authorization](docs/graphql-authorization.md): `#[Authorize]`, custom gates, authorizing a bound model.
+- [GraphQL arguments](docs/graphql-arguments.md): validating and hydrating `#[Query]`/`#[Mutation]` parameters, and the hooks for wiring in your own library.
+
+### `nielsjanssen/laravel-validation`
+
+- [Validation](docs/validation.md): declaring rules on properties and parameters, nesting, messages, custom attributes.
+- [Validation rules](docs/validation-rules.md): every rule attribute, the generic `#[Rule]`, and `ValidationContext`.
 
 ## Contributing
 

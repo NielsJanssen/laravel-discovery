@@ -174,6 +174,7 @@ Two registration modes coexist:
 1. **Class-based** — classes extending Rebing's `Type`, `Query`, or `Mutation` are auto-registered in `config('graphql.schemas')` (default schema). `QueryField`/`MutationField` are excluded since they are the dynamic wrappers for mode 2.
 2. **Action-based** (preferred for new code) — methods annotated with `#[Query]` or `#[Mutation]` are registered as discovered `Field` instances (`QueryField`/`MutationField` via the `AsActionField` trait):
    - Return type is inferred from the method's PHP return type hint when scalar (or `void` → `NullType`); otherwise `type:` must be specified on the attribute
+   - A nullable PHP return type sets `nullable` on the action, **including** when `type:` is given explicitly (`type:` says which type, not whether the field may be null). Inference only widens: `nullable: true` survives a non-nullable return, and an undeclared return type leaves the field non-null
    - `#[Query]` / `#[Mutation]` accept `description:` (surfaced as the field description in GraphiQL)
    - Each parameter becomes a GraphQL arg **unless** it is one of the injection sources below
    - `#[Arg]` accepts `name`, `description`, `rules` (array or `Closure` for lazy validation), and `deprecationReason`
