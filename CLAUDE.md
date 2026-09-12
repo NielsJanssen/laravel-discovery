@@ -225,7 +225,16 @@ public function get(#[Arg('id')] #[Authorize('view')] Aantekening $note): ?Aante
 }
 ```
 
-The check runs inside `Field::authorize()`, i.e. **before** validation, preserving Rebing's authorize-first ordering so an unauthorized caller cannot probe validation rules to map the API. A record that cannot be found is **denied** rather than passed through, so "not allowed" and "does not exist" answer identically — a refusal never confirms a record exists. The cost is that the model is loaded once in `authorize()` and again in `resolve()`; there is no shared per-request binding store yet.
+The check runs inside `Field::authorize()`, i.e. **before** validation, preserving Rebing's authorize-first ordering so an unauthorized caller cannot probe validation rules to map the API. The cost is that the model is loaded once in `authorize()` and again in `resolve()`; there is no shared per-request binding store yet.
+
+Nullability decides what a **missing record** means:
+
+| binding | record not found | rationale |
+|---|---|---|
+| `Model $m` (non-nullable) | denied, same error as "not allowed" | a refusal never confirms whether the record exists |
+| `?Model $m = null` | check skipped, resolver gets `null` | the signature already says absence is a valid outcome, so the field returns `null` rather than an error |
+
+A found record is always held to its ability, nullable or not.
 
 A failed parameter-level check reports **`Forbidden`** (`DiscoveredModelAuthorization::DEFAULT_MESSAGE`) rather than Rebing's `Unauthorized`, since the caller is authenticated but not allowed; `message:` overrides it. The class/method forms keep Rebing's default.
 

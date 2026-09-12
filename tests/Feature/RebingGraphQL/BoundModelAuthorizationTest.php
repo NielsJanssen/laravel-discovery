@@ -133,6 +133,23 @@ describe('bound model authorization', function () {
 
         expect($field->authorize(null, [], null, null))->toBeTrue();
     });
+
+    it('skips the check when a nullable binding finds no record', function () {
+        Gate::define('view', fn() => false);
+
+        $field = discoverAuthorizedBindings()['authorizedOptionalUser']->createType(app());
+
+        expect($field->authorize(null, ['user' => 999999], null, null))->toBeTrue();
+    });
+
+    it('still enforces the ability when a nullable binding finds its record', function () {
+        $user = User::factory()->create();
+        Gate::define('view', fn(?User $actor, User $subject) => false);
+
+        $field = discoverAuthorizedBindings()['authorizedOptionalUser']->createType(app());
+
+        expect($field->authorize(null, ['user' => $user->id], null, null))->toBeFalse();
+    });
 });
 
 describe('bound model authorization end-to-end', function () {
@@ -160,6 +177,16 @@ describe('bound model authorization end-to-end', function () {
             ->assertOk()
             ->assertJsonPath('errors.0.message', 'Forbidden')
             ->assertJsonPath('errors.0.extensions.category', 'authorization');
+    });
+
+    it('returns null for a nullable binding whose record is gone, instead of refusing', function () {
+        $this->actingAs(User::factory()->create());
+        Gate::define('view', fn(User $actor, User $subject) => true);
+
+        $this->postJson('/graphql', ['query' => '{ authorizedOptionalUser(id: 999999) }'])
+            ->assertOk()
+            ->assertJsonPath('data.authorizedOptionalUser', null)
+            ->assertJsonMissingPath('errors');
     });
 
     it('resolves normally once the ability passes', function () {

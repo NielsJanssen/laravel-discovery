@@ -271,13 +271,13 @@ trait AsActionField
             }
 
             $value = $args[$binding->argName] ?? null;
+            $model = $value === null ? null : $this->boundModelQuery($binding, $value)->first();
 
-            // Nothing to authorize; a non-nullable binding stays subject to the check below.
-            if ($value === null && $binding->nullable) {
+            // A nullable binding resolves to null, which the resolver is expected to handle, so
+            // there is nothing to authorize. A non-nullable one is denied below.
+            if ($model === null && $binding->nullable) {
                 continue;
             }
-
-            $model = $value === null ? null : $this->boundModelQuery($binding, $value)->first();
 
             foreach ($binding->authorizations as $authorize) {
                 if ($model !== null && $gate->allows($authorize->ability, $model)) {
