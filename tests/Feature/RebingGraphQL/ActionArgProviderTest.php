@@ -13,8 +13,11 @@ use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\RebingGraphQL\DuplicateArgProviderQuery;
 use Tests\Fixtures\RebingGraphQL\PaginatedWithCustomLimitQuery;
 use Tests\Fixtures\RebingGraphQL\PaginatedWithValueObjectQuery;
+use Tests\Fixtures\RebingGraphQL\SortableDefaultFieldQuery;
 use Tests\Fixtures\RebingGraphQL\SortableSeparateQuery;
 use Tests\Fixtures\RebingGraphQL\SortableUnifiedQuery;
+use Tests\Fixtures\RebingGraphQL\SortableUnknownDefaultQuery;
+use Tests\Fixtures\RebingGraphQL\SortableUnknownDirectionQuery;
 
 function discoverArgProviderFixture(string ...$classes): GraphQLDiscovery
 {
@@ -131,5 +134,53 @@ describe('Paginated end-to-end via the workbench', function () {
             ->assertJsonPath('data.paginatedBooks.data.0.title', 'To Kill a Mockingbird')
             ->assertJsonPath('data.paginatedBooks.data.1.title', 'The Great Gatsby')
             ->assertJsonPath('data.paginatedBooks.data.2.title', '1984');
+    });
+});
+
+describe('#[Sortable(defaultField:)]', function () {
+    it('defaults the sortBy arg in separate mode', function () {
+        $items = iterator_to_array(discoverArgProviderFixture(SortableDefaultFieldQuery::class)->getItems());
+        $field = collect($items)->firstWhere(fn(DiscoveredAction $i) => $i->method === 'separate')->createType(app());
+
+        expect($field->args()['sortBy']['defaultValue'])->toBe('author')
+            ->and($field->resolve(null, ['sortBy' => 'author', 'sortDirection' => 'asc'], null, null))->toBe('author:asc');
+    });
+
+    it('defaults the order arg to field:direction in unified mode', function () {
+        $items = iterator_to_array(discoverArgProviderFixture(SortableDefaultFieldQuery::class)->getItems());
+        $field = collect($items)->firstWhere(fn(DiscoveredAction $i) => $i->method === 'unified')->createType(app());
+
+        expect($field->args()['order']['defaultValue'])->toBe('title:desc');
+    });
+
+    it('declares no default when none was asked for', function () {
+        $items = iterator_to_array(discoverArgProviderFixture(SortableSeparateQuery::class)->getItems());
+        $fieldArgs = $items[0]->createType(app())->args();
+
+        expect($fieldArgs['sortBy'])->not->toHaveKey('defaultValue');
+    });
+
+    it('rejects a default direction that is neither asc nor desc', function () {
+        expect(fn() => discoverArgProviderFixture(SortableUnknownDirectionQuery::class))
+            ->toThrow(\LogicException::class, 'must be asc or desc');
+    });
+
+    it('rejects a default that is not sortable', function () {
+        expect(fn() => discoverArgProviderFixture(SortableUnknownDefaultQuery::class))
+            ->toThrow(\LogicException::class, 'is not one of the sortable fields: title');
+    });
+});
+
+describe('#[Sortable(defaultField:)] end-to-end', function () {
+    it('sorts by the default when the caller passes no sort', function () {
+        $this->postJson('/graphql', ['query' => '{ sortedBooks }'])
+            ->assertOk()
+            ->assertJsonPath('data.sortedBooks', 'title:desc');
+    });
+
+    it('lets the caller override the default', function () {
+        $this->postJson('/graphql', ['query' => '{ sortedBooks(sortBy: "author", sortDirection: "asc") }'])
+            ->assertOk()
+            ->assertJsonPath('data.sortedBooks', 'author:asc');
     });
 });

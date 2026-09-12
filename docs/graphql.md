@@ -256,12 +256,20 @@ public function products(Pagination $pagination): LengthAwarePaginator
 ordering to a builder. By default it exposes `sortBy` and `sortDirection`; `unified: true` exposes a single `order`
 argument taking values such as `name:desc` instead.
 
+`defaultField:` decides what a request that asks for no sorting gets. It becomes the argument's GraphQL default, so it
+shows up in the schema and arrives in the resolver like any other value, and `Sort->field` is never null. Without it the
+argument stays optional and `Sort->field` is `null` until the caller sorts.
+
+Both defaults are checked while the schema is built: a `defaultField` outside `fields`, or a `defaultDirection` that is
+neither `asc` nor `desc`, throws a `LogicException` at discovery rather than producing an argument whose own `in:` rule
+rejects its default.
+
 ```php
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Sort;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Sortable;
 
 #[Query(type: 'Product', list: true)]
-#[Sortable(fields: ['name', 'price', 'updated_at'], defaultDirection: 'desc')]
+#[Sortable(fields: ['name', 'price', 'updated_at'], defaultField: 'name', defaultDirection: 'desc')]
 public function products(Sort $sort): array
 {
     return $sort(Product::query())->get()->all();
