@@ -55,12 +55,12 @@ than one replacing the other.
 ## Writing your own rules provider
 
 ```php
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\{RuleProvider, RuleSet};
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\{ArgumentRules, RuleProvider};
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 
 final class SpatieDataRules implements RuleProvider
 {
-    public function rulesFor(DiscoveredAction $action, array $args): RuleSet
+    public function rulesFor(DiscoveredAction $action, array $args): ArgumentRules
     {
         $rules = [];
 
@@ -68,7 +68,7 @@ final class SpatieDataRules implements RuleProvider
             $rules = [...$rules, ...$dataClass::getValidationRules($args)];
         }
 
-        return new RuleSet($rules);
+        return new ArgumentRules($rules);
     }
 }
 ```

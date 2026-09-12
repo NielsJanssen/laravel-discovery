@@ -5,38 +5,62 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Validation\Rule;
 
 use Closure;
+use Illuminate\Support\Arr;
 use NielsJanssen\Laravel\Validation\StringRule;
 use NielsJanssen\Laravel\Validation\ValidationContext;
 use Stringable;
 
 /**
- * Base for Laravel's conditional rules (required_if, prohibited_unless, ...). Each takes
- * either a closure or the classic field/value arguments:
+ * Base for Laravel's conditional rules (required_if, prohibited_unless, ...). Each takes either a
+ * closure or the classic field-and-values form:
  *
- *   #[RequiredIf(static fn (ValidationContext $c): bool => $c->root->subscribe)]
- *   #[RequiredIf('other_field', 'value')]          // string form: required_if:other_field,value
+ *   #[RequiredIf(static function (ValidationContext $c): bool { return $c->root->subscribe; })]
+ *   #[RequiredIf('plan', 'pro')]                  // required_if:plan,pro
+ *   #[RequiredIf('plan', ['pro', 'team'])]        // required_if:plan,pro,team
  *
- * The string form is just a StringRule, so it inherits that formatting. Laravel invokes a
- * rule's condition closure with no arguments, so the context is bound in here at resolve time.
+ * Laravel invokes a rule's condition closure with no arguments, so the context is bound in at
+ * resolve time.
  */
 abstract class ConditionalRule extends StringRule
 {
-    private readonly ?Closure $condition;
+    /** @var list<string|int|float|bool> */
+    private readonly array $values;
 
-    public function __construct(Closure|string $key, int|string|float|bool ...$arguments)
+    /**
+     * @param  Closure(ValidationContext): bool|string  $condition  a closure, or the other field's name
+     * @param  string|int|float|bool|array<int, string|int|float|bool>|null  $values  the other field's value(s), for the field form
+     */
+    public function __construct(
+        public readonly Closure|string $condition,
+        string|int|float|bool|array|null $values = null,
+        ?string $message = null,
+    ) {
+        parent::__construct($message);
+
+        $this->values = $values === null ? [] : array_values(Arr::wrap($values));
+    }
+
+    /**
+     * The closure form resolves to a rule object that Laravel parses back to its unconditional name
+     * (`required`, `prohibited`, ...), so a message has to be keyed there.
+     */
+    public ?string $messageKey {
+        get => $this->condition instanceof Closure ? $this->resolvedName : $this->name;
+    }
+
+    /** What the closure form's rule object reads as once Laravel has parsed it. */
+    abstract protected string $resolvedName { get; }
+
+    protected function parameters(): array
     {
-        if ($key instanceof Closure) {
-            parent::__construct();
-            $this->condition = $key;
-        } else {
-            parent::__construct($key, ...$arguments);
-            $this->condition = null;
-        }
+        assert(is_string($this->condition));
+
+        return [$this->condition, ...$this->values];
     }
 
     public function rules(ValidationContext $context): array
     {
-        if ($this->condition === null) {
+        if (! $this->condition instanceof Closure) {
             return parent::rules($context);
         }
 

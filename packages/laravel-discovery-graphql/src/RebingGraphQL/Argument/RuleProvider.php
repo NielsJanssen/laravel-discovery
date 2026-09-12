@@ -26,5 +26,5 @@ interface RuleProvider
     /**
      * @param  array<string, mixed>  $args  the request arguments, keyed by GraphQL arg name
      */
-    public function rulesFor(DiscoveredAction $action, array $args): RuleSet;
+    public function rulesFor(DiscoveredAction $action, array $args): ArgumentRules;
 }

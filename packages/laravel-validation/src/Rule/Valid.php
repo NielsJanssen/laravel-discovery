@@ -20,7 +20,7 @@ use NielsJanssen\Laravel\Validation\Nesting;
  * Use #[ListOf] or #[Each] for a member holding many elements.
  */
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER)]
-class Valid extends NestingRule
+final class Valid extends NestingRule
 {
     public Nesting $nesting {
         get => Nesting::Value;

@@ -4,18 +4,20 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
+use GraphQL\Language\AST\StringValueNode;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\NullType;
 use Tempest\Discovery\DiscoveryItems;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredField;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\NullType;
 use Tests\Fixtures\RebingGraphQL\AlwaysAllowGate;
 use Tests\Fixtures\RebingGraphQL\AlwaysDenyGate;
 use Tests\Fixtures\RebingGraphQL\AuthorizedQuery;
 use Tests\Fixtures\RebingGraphQL\BareDeprecatedQuery;
 use Tests\Fixtures\RebingGraphQL\BoolReturnQuery;
+use Tests\Fixtures\RebingGraphQL\CollidingArgNameQuery;
 use Tests\Fixtures\RebingGraphQL\DeprecatedQuery;
 use Tests\Fixtures\RebingGraphQL\DescribedQuery;
 use Tests\Fixtures\RebingGraphQL\ExclamationMiddleware;
@@ -24,8 +26,6 @@ use Tests\Fixtures\RebingGraphQL\FloatBoolQuery;
 use Tests\Fixtures\RebingGraphQL\GatedQuery;
 use Tests\Fixtures\RebingGraphQL\InjectionQuery;
 use Tests\Fixtures\RebingGraphQL\MiddlewareQuery;
-use Tests\Fixtures\RebingGraphQL\SinceOnlyDeprecatedQuery;
-use Workbench\App\GraphQL\Mutations\RebingNativeMutation;
 use Tests\Fixtures\RebingGraphQL\MissingTypeQuery;
 use Tests\Fixtures\RebingGraphQL\NonScalarQuery;
 use Tests\Fixtures\RebingGraphQL\NullableScalarReturnQuery;
@@ -35,10 +35,11 @@ use Tests\Fixtures\RebingGraphQL\SchemaExplicitArgQuery;
 use Tests\Fixtures\RebingGraphQL\SchemaMethodOverridesClassQuery;
 use Tests\Fixtures\RebingGraphQL\SchemaOnClassQuery;
 use Tests\Fixtures\RebingGraphQL\SchemaOnMethodQuery;
+use Tests\Fixtures\RebingGraphQL\SinceOnlyDeprecatedQuery;
 use Tests\Fixtures\RebingGraphQL\UppercaseMiddleware;
 use Tests\Fixtures\RebingGraphQL\VoidQuery;
+use Workbench\App\GraphQL\Mutations\RebingNativeMutation;
 use Workbench\App\Models\User;
-use GraphQL\Language\AST\StringValueNode;
 
 function discoverGraphQL(string ...$classes): GraphQLDiscovery
 {
@@ -128,6 +129,11 @@ describe('resolution and return-type inference', function () {
     it('throws during discovery when a non-scalar argument is missing #[Arg]', function () {
         expect(fn() => discoverGraphQL(NonScalarQuery::class))
             ->toThrow(\RuntimeException::class, '#[Arg(type:');
+    });
+
+    it('throws during discovery when an #[Arg(name:)] collides with another parameter name', function () {
+        expect(fn() => discoverGraphQL(CollidingArgNameQuery::class))
+            ->toThrow(\LogicException::class, 'collides with the parameter $name');
     });
 
     it('throws during discovery when type is missing and return type is non-scalar', function () {

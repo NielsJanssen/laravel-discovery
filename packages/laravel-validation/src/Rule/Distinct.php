@@ -8,4 +8,21 @@ use Attribute;
 use NielsJanssen\Laravel\Validation\StringRule;
 
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
-final class Distinct extends StringRule {}
+final class Distinct extends StringRule
+{
+    public function __construct(
+        public readonly bool $strict = false,
+        public readonly bool $ignoreCase = false,
+        ?string $message = null,
+    ) {
+        parent::__construct($message);
+    }
+
+    protected function parameters(): array
+    {
+        return [
+            ...($this->strict ? ['strict'] : []),
+            ...($this->ignoreCase ? ['ignore_case'] : []),
+        ];
+    }
+}

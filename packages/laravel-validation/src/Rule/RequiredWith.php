@@ -8,4 +8,20 @@ use Attribute;
 use NielsJanssen\Laravel\Validation\StringRule;
 
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
-final class RequiredWith extends StringRule {}
+final class RequiredWith extends StringRule
+{
+    /**
+     * @param  list<string>  $fields
+     */
+    public function __construct(
+        public readonly array $fields,
+        ?string $message = null,
+    ) {
+        parent::__construct($message);
+    }
+
+    protected function parameters(): array
+    {
+        return $this->fields;
+    }
+}

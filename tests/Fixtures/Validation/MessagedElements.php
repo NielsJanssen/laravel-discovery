@@ -15,8 +15,8 @@ final class MessagedElements
     #[Each(new Rule('email', message: 'That is not an email.'))]
     public array $recipients = [];
 
-    /** A wrapped named attribute inside #[Each]. */
-    #[Each(new Rule(new Min(3), message: 'Too short an alias.'))]
+    /** A named attribute inside #[Each] keeps the message it was given. */
+    #[Each(new Min(3, message: 'Too short an alias.'))]
     public array $aliases = [];
 
     /** Composed with #[ListOf]: the element message applies to the element itself. */

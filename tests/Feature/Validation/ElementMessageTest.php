@@ -7,47 +7,54 @@ use NielsJanssen\Laravel\Validation\RuleCompiler;
 use Tests\Fixtures\Validation\Country;
 use Tests\Fixtures\Validation\MessagedElements;
 
-it('keys an #[Each] element message per index', function () {
-    $form = new MessagedElements();
-    $form->recipients = ['a@example.com', 'nope', 'also-bad'];
+describe('#[Each] element messages', function () {
+    it('keys an element message per index', function () {
+        $form = new MessagedElements();
+        $form->recipients = ['a@example.com', 'nope', 'also-bad'];
 
-    expect(app(RuleCompiler::class)->forObject($form)->messages)->toBe([
-        'recipients.0.email' => 'That is not an email.',
-        'recipients.1.email' => 'That is not an email.',
-        'recipients.2.email' => 'That is not an email.',
-    ]);
-});
+        expect(app(RuleCompiler::class)->forObject($form)->messages)->toBe([
+            'recipients.0.email' => 'That is not an email.',
+            'recipients.1.email' => 'That is not an email.',
+            'recipients.2.email' => 'That is not an email.',
+        ]);
+    });
 
-it('surfaces the element message against the offending index only', function () {
-    $form = new MessagedElements();
-    $form->recipients = ['a@example.com', 'nope'];
+    it('surfaces the element message against the offending index only', function () {
+        $form = new MessagedElements();
+        $form->recipients = ['a@example.com', 'nope'];
 
-    $errors = Validator::makeFromObject($form)->errors();
+        $errors = Validator::makeFromObject($form)->errors();
 
-    expect($errors->keys())->toBe(['recipients.1'])
-        ->and($errors->first('recipients.1'))->toBe('That is not an email.');
-});
+        expect($errors->keys())->toBe(['recipients.1']);
+        expect($errors->first('recipients.1'))->toBe('That is not an email.');
+    });
 
-it('keys a wrapped named attribute inside #[Each] under its rule suffix', function () {
-    $form = new MessagedElements();
-    $form->aliases = ['ab'];
+    it('keys a named attribute inside #[Each] under its own rule suffix', function () {
+        $form = new MessagedElements();
+        $form->aliases = ['ab'];
 
-    expect(app(RuleCompiler::class)->forObject($form)->messages)
-        ->toHaveKey('aliases.0.min', 'Too short an alias.');
+        expect(app(RuleCompiler::class)->forObject($form)->messages)
+            ->toHaveKey('aliases.0.min', 'Too short an alias.');
+    });
 
-    expect(Validator::makeFromObject($form)->errors()->first('aliases.0'))->toBe('Too short an alias.');
-});
+    it('surfaces the message a named attribute inside #[Each] carries', function () {
+        $form = new MessagedElements();
+        $form->aliases = ['ab'];
 
-it('emits element messages alongside #[ListOf] nesting', function () {
-    $form = new MessagedElements();
-    $form->countries = [new Country('NL')];
+        expect(Validator::makeFromObject($form)->errors()->first('aliases.0'))->toBe('Too short an alias.');
+    });
 
-    $compiled = app(RuleCompiler::class)->forObject($form);
+    it('emits element messages alongside #[ListOf] nesting', function () {
+        $form = new MessagedElements();
+        $form->countries = [new Country('NL')];
 
-    expect($compiled->messages)->toHaveKey('countries.0.required', 'A country is required here.')
-        ->and($compiled->rules)->toHaveKeys(['countries.0', 'countries.0.code']);
-});
+        $compiled = app(RuleCompiler::class)->forObject($form);
 
-it('emits nothing for an empty iterable', function () {
-    expect(app(RuleCompiler::class)->forObject(new MessagedElements())->messages)->toBe([]);
+        expect($compiled->messages)->toHaveKey('countries.0.required', 'A country is required here.');
+        expect($compiled->rules)->toHaveKeys(['countries.0', 'countries.0.code']);
+    });
+
+    it('emits nothing for an empty iterable', function () {
+        expect(app(RuleCompiler::class)->forObject(new MessagedElements())->messages)->toBe([]);
+    });
 });

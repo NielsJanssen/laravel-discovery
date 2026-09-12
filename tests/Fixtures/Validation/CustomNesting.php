@@ -6,8 +6,8 @@ namespace Tests\Fixtures\Validation;
 
 use Attribute;
 use NielsJanssen\Laravel\Validation\MessageValidationRule;
-use NielsJanssen\Laravel\Validation\Nesting;
 use NielsJanssen\Laravel\Validation\NestedValidationRule;
+use NielsJanssen\Laravel\Validation\Nesting;
 use NielsJanssen\Laravel\Validation\ValidationContext;
 
 /** A user-defined nesting attribute: found by interface, with no edit to the package. */

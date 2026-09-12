@@ -4,44 +4,53 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Validation;
 
-use Illuminate\Support\Str;
-
-use function class_basename;
+use BackedEnum;
+use DateTimeInterface;
 
 /**
- * Base for the named rule attributes (#[Min], #[Email], ...). Each named attribute is a
- * one-line `#[Attribute]` subclass; the rule string is the snake_case of the class name plus
- * the constructor arguments joined as `name:arg1,arg2`. Extend it to add your own — the
- * package finds attributes by interface, so no registration is needed.
+ * Base for the attributes that resolve to a `name:arg1,arg2` rule string (#[Min], #[Between], ...).
+ * A subclass declares a typed constructor and returns its arguments from parameters(); a rule with
+ * no arguments is an empty class body. Extend it to add your own, since attributes are found by
+ * interface and need no registration:
+ *
+ *   #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
+ *   final class Iban extends StringRule {}                    // "iban"
  */
-abstract class StringRule implements ValidationRule
+abstract class StringRule extends NamedRule
 {
-    /** @var list<int|string|float|bool> */
-    protected array $parameters;
-
-    public function __construct(int|string|float|bool ...$parameters)
+    /**
+     * The rule's arguments, in order. Trailing nulls are dropped, so an optional argument that was
+     * not given leaves the rule string shorter rather than emitting an empty parameter.
+     *
+     * @return list<int|float|string|bool|BackedEnum|DateTimeInterface|null>
+     */
+    protected function parameters(): array
     {
-        $this->parameters = array_values($parameters);
-    }
-
-    /** The Laravel rule name. Override to derive it differently; see Rule\Type. */
-    public string $name {
-        get => Str::snake(class_basename(static::class));
+        return [];
     }
 
     public function rules(ValidationContext $context): array
     {
-        if ($this->parameters === []) {
+        $parameters = array_values(array_filter(
+            $this->parameters(),
+            static fn(mixed $parameter): bool => $parameter !== null,
+        ));
+
+        if ($parameters === []) {
             return [$this->name];
         }
 
-        return [$this->name . ':' . implode(',', array_map(
-            static fn(int|string|float|bool $p): string => match (true) {
-                $p === true => 'true',
-                $p === false => 'false',
-                default => (string) $p,
-            },
-            $this->parameters,
-        ))];
+        return [$this->name . ':' . implode(',', array_map($this->format(...), $parameters))];
+    }
+
+    private function format(int|float|string|bool|BackedEnum|DateTimeInterface $parameter): string
+    {
+        return match (true) {
+            $parameter === true => 'true',
+            $parameter === false => 'false',
+            $parameter instanceof BackedEnum => (string) $parameter->value,
+            $parameter instanceof DateTimeInterface => $parameter->format('Y-m-d H:i:s'),
+            default => (string) $parameter,
+        };
     }
 }

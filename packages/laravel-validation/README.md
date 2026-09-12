@@ -67,7 +67,7 @@ final class OrderLine
     #[Between(1, 999)]
     public int $quantity = 1;
 
-    #[In('pending', 'paid', 'shipped')]
+    #[In(['pending', 'paid', 'shipped'])]
     public string $status = 'pending';
 }
 
@@ -142,34 +142,24 @@ So `#[Email] public ?string $email` produces `['nullable', 'string', 'email']`, 
 Writing an inferred rule out by hand is not a mistake: an explicit attribute replaces the
 inferred rule of the same kind, so `#[Nullable, Min(2)] public ?string $x` yields
 `['string', 'nullable', 'min:2']`, not `nullable` twice. That is also how you override one —
-`#[NumericType] public int $amount` gives `numeric` instead of `integer`.
+`#[Numeric] public int $amount` gives `numeric` instead of `integer`.
 
 ## Named rule attributes
 
-The common Laravel rules have a matching attribute under
-`NielsJanssen\Laravel\Validation\Rule`. The rule string is the snake_case of the class name,
-and constructor arguments become its parameters.
+Every Laravel rule has a matching attribute under `NielsJanssen\Laravel\Validation\Rule`. The rule
+string is the snake_case of the class name, and the constructor is typed for that rule's own
+arguments, so a wrong one is a PHP error rather than a validation surprise.
 
 ```php
-#[Min(5)]            // min:5
-#[Between(1, 10)]    // between:1,10
-#[In('nl', 'be')]    // in:nl,be
-#[Digits(6)]         // digits:6
-#[Email]             // email
+#[Min(5)]                  // min:5
+#[Between(1, 10)]          // between:1,10
+#[In(['nl', 'be'])]        // in:"nl","be"
+#[Digits(6)]               // digits:6
+#[Email]                   // email
 ```
 
-Available: `Accepted` `AcceptedIf` `After` `AfterOrEqual` `Alpha` `AlphaDash` `AlphaNum` `Bail`
-`Before` `BeforeOrEqual` `Between` `Confirmed` `Date` `DateFormat` `Decimal` `Declined`
-`DeclinedIf` `Different` `Digits` `DigitsBetween` `Distinct` `Email` `EndsWith` `Enum`
-`ExcludeIf` `ExcludeUnless` `Exists` `File` `Filled` `Gt` `Gte` `Image` `In` `Integer` `Json`
-`Lowercase` `Lt` `Lte` `Max` `Min` `NotIn` `NotRegex` `Nullable` `Prohibited` `ProhibitedIf`
-`ProhibitedUnless` `Regex` `Required` `RequiredIf` `RequiredUnless` `RequiredWith`
-`RequiredWithout` `Same` `Size` `Sometimes` `StartsWith` `Unique` `Uppercase` `Url` `Uuid`,
-plus the type rules `StringType` `IntegerType` `NumericType` `BooleanType` `ArrayType` (the
-`Type` suffix dodges PHP's reserved words; inference adds these for you).
-
-Anything not on that list is one `#[Rule('...')]` away — see below. Attributes are repeatable,
-so several can stack on one member:
+Every attribute takes `message:` last, and every one is repeatable, so several can stack on one
+member:
 
 ```php
 use NielsJanssen\Laravel\Validation\Rule\{Alpha, Max, Min};
@@ -181,8 +171,133 @@ final class Employee
 }
 ```
 
+Multi-value arguments are arrays rather than variadics — `#[In(['nl', 'be'])]`, not
+`#[In('nl', 'be')]` — which is what leaves room for the trailing `message:`.
+
+### Types
+
+Inference adds these for you; write one out to override the inferred rule. The `Type` suffix dodges
+PHP's reserved words and is not part of the rule string.
+
+| Attribute | Rule |
+|---|---|
+| `StringType()` | `string` |
+| `Integer(bool $strict = false)` | `integer` |
+| `Numeric()` | `numeric` |
+| `Boolean(bool $strict = false)` | `boolean` |
+| `ArrayType(?array $keys = null)` | `array`, optionally limited to those keys |
+| `ListType()` | `list` |
+| `Enum(string $class, ?array $only = null, ?array $except = null)` | Laravel's `Enum` rule object |
+
+### Presence
+
+| Attribute | Rule |
+|---|---|
+| `Required()` `Present()` `Filled()` `Missing()` `Prohibited()` `Nullable()` `Sometimes()` `Bail()` `Exclude()` | the rule of the same name |
+| `RequiredWith(array $fields)` `RequiredWithAll` `RequiredWithout` `RequiredWithoutAll` | `required_with:a,b`, … |
+| `PresentWith(array $fields)` `PresentWithAll` `MissingWith` `MissingWithAll` `ExcludeWith` `ExcludeWithout` `Prohibits` | idem |
+| `PresentIf(string $field, string\|int\|float\|bool\|array $values)` `PresentUnless` `MissingIf` `MissingUnless` | `present_if:plan,pro` |
+| `RequiredIfAccepted(string $field)` `RequiredIfDeclined` `ProhibitedIfAccepted` `ProhibitedIfDeclined` | `required_if_accepted:terms`, … |
+| `RequiredArrayKeys(array $keys)` | `required_array_keys:a,b` |
+
+The condition-carrying `RequiredIf`, `RequiredUnless`, `ProhibitedIf`, `ProhibitedUnless`,
+`ExcludeIf`, `ExcludeUnless`, `AcceptedIf` and `DeclinedIf` are covered under
+[conditional rules](#conditional-rules).
+
+### Size and number
+
+| Attribute | Rule |
+|---|---|
+| `Min(int\|float $value)` `Max` `Size` | `min:5` |
+| `Between(int\|float $min, int\|float $max)` | `between:1,10` |
+| `Digits(int $length)` | `digits:6` |
+| `MinDigits(int $value)` `MaxDigits(int $value)` | `min_digits:2` |
+| `DigitsBetween(int $min, int $max)` | `digits_between:2,4` |
+| `Decimal(int $min, ?int $max = null)` | `decimal:2` |
+| `MultipleOf(int\|float $value)` | `multiple_of:0.5` |
+
+### Comparing with another field
+
+| Attribute | Rule |
+|---|---|
+| `Same(string $field)` `Different(string $field)` | `same:other` |
+| `Gt(string\|int\|float $fieldOrValue)` `Gte` `Lt` `Lte` | `gt:other` |
+| `InArray(string $field)` | `in_array:other.*` |
+| `InArrayKeys(array $keys)` | `in_array_keys:a,b` |
+| `Confirmed(?string $field = null)` | `confirmed`, or `confirmed:repeat` |
+
+### Strings
+
+| Attribute | Rule |
+|---|---|
+| `Alpha(bool $ascii = false)` `AlphaDash` `AlphaNum` | `alpha`, or `alpha:ascii` |
+| `Ascii()` `Lowercase()` `Uppercase()` `Json()` `Ulid()` `HexColor()` `MacAddress()` `ActiveUrl()` | the rule of the same name |
+| `Ip()` `Ipv4()` `Ipv6()` | `ip`, `ipv4`, `ipv6` |
+| `Uuid(int\|string\|null $version = null)` | `uuid`, or `uuid:4` |
+| `Url(array $protocols = [])` | `url`, or `url:https` |
+| `Email(bool $strict, bool $dns, bool $spoof, bool $native, bool $unicode)` | `email`, or Laravel's `Email` rule object once a flag is set |
+| `Regex(string $pattern)` `NotRegex(string $pattern)` | `regex:/…/` |
+| `StartsWith(array $values)` `DoesntStartWith` `EndsWith` `DoesntEndWith` | `starts_with:a,b` |
+| `Encoding(string $encoding)` | `encoding:UTF-8` |
+| `Timezone(string $group = 'all', ?string $country = null)` | `timezone:all` |
+| `Password(int $min = 8, bool $letters, bool $mixedCase, bool $numbers, bool $symbols, ?int $uncompromised, ?int $max)` | Laravel's `Password` rule object |
+
+### Sets and arrays
+
+| Attribute | Rule |
+|---|---|
+| `In(array $values)` `NotIn(array $values)` | `in:"nl","be"` — the rule object quotes, so a value holding a comma survives |
+| `Contains(array $values)` `DoesntContain(array $values)` | `contains:"a","b"` |
+| `Distinct(bool $strict = false, bool $ignoreCase = false)` | `distinct`, `distinct:strict` |
+| `AnyOf(array $ruleSets)` | Laravel's `AnyOf` rule object |
+
+### Dates
+
+| Attribute | Rule |
+|---|---|
+| `Date()` | `date` |
+| `DateFormat(array $formats)` | `date_format:Y-m-d,Y-m-d H:i` |
+| `After(DateTimeInterface\|string $date)` `AfterOrEqual` `Before` `BeforeOrEqual` `DateEquals` | `after:today`, `after:2030-01-01 00:00:00`, or another field's name |
+
+### Files
+
+| Attribute | Rule |
+|---|---|
+| `File()` | `file` |
+| `Image(bool $allowSvg = false)` | `image`, or `image:allow_svg` |
+| `Mimes(array $values)` `Mimetypes` `Extensions` | `mimes:pdf,png` |
+| `ImageFile(bool $allowSvg = false)` | Laravel's `File::image()` rule object |
+| `Dimensions(?int $width, ?int $height, ?int $minWidth, ?int $minHeight, ?int $maxWidth, ?int $maxHeight, $ratio, $minRatio, $maxRatio, ?array $ratioBetween)` | `dimensions:min_width=200,ratio=3/2` |
+
+### Database
+
+```php
+#[Unique(User::class, 'email', ignore: static function (ValidationContext $c) { return $c->root->id; })]
+public string $email = '';
+
+#[Exists('teams', where: ['archived_at' => null])]
+public int $teamId = 0;
+```
+
+| Attribute | Signature |
+|---|---|
+| `Unique` | `(string $table, ?string $column = null, int\|string\|Closure\|null $ignore = null, ?string $ignoreColumn = null, array\|Closure\|null $where = null, bool $withoutTrashed = false, bool $onlyTrashed = false, string $deletedAtColumn = 'deleted_at')` |
+| `Exists` | `(string $table, ?string $column = null, array\|Closure\|null $where = null, bool $withoutTrashed = false, bool $onlyTrashed = false, string $deletedAtColumn = 'deleted_at')` |
+
+`$table` takes a model class as well as a table name. An array `$where` maps a column to a value —
+`null` means "is null" and a list means "is one of". A closure `$where` receives the query builder
+and the `ValidationContext`, and an `ignore` closure receives the context and returns the model or
+its key, so the row being edited stays out of its own uniqueness check.
+
+### Authorization
+
+| Attribute | Rule |
+|---|---|
+| `Can(string $ability, array $arguments = [])` | Laravel's `Can` rule object |
+
 For the meaning of each rule, see the
 [Laravel validation documentation](https://laravel.com/docs/validation#available-validation-rules).
+Anything missing is one `#[Rule('...')]` away — see below.
 
 ## The generic `#[Rule]` attribute
 
@@ -258,26 +373,29 @@ public int $age = 0;
 
 ### Giving a named attribute a message
 
-The named attributes take no `message` parameter of their own — their constructors are variadic, so
-there is no room for one. Wrap the attribute in `#[Rule]` instead, and it keeps working exactly as
-before while gaining a message:
+Every named attribute takes `message:` as its last argument, keyed to its own rule, so it overrides
+that failure and leaves the rest alone:
 
 ```php
-#[Rule(new Min(5), message: 'Give it at least five.')]
+#[Min(5, message: 'Give it at least five.')]
 public string $name = '';
 ```
 
-That produces `min:5` and keys the message at `name.min`, so only the `min` failure is overridden.
-It works for any of the named attributes, including the type rules, and takes a list too:
+That produces `min:5` and keys the message at `name.min`. Stacked attributes each carry their own:
 
 ```php
-#[Rule([new Min(2), new Max(4)], message: 'Between two and four, please.')]
+#[Min(2, message: 'Two at least.'), Max(4, message: 'Four at most.')]
 public string $code = '';
 ```
 
-With a list the message is keyed to the **first** rule, so the others keep Laravel's defaults. Stack
-separate `#[Rule]`s when each needs its own text.
+`#[Rule]` takes a `message:` too, for the rules that have no attribute of their own. A message
+belongs to one rule, so `#[Rule]` accepts one alongside a single rule only — pass a list and it
+throws.
 
+The handful of attributes backed by a Laravel rule object rather than a rule string — `Enum`,
+`Email` with a flag set, `Password`, `Can`, `AnyOf`, `ImageFile` — are keyed by Laravel under the
+rule class name (`attr.Illuminate\Validation\Rules\Password`) instead of a rule suffix. The
+attribute does that for you; it only matters if you write the key by hand in a lang file.
 ### From your own attribute
 
 Implement `MessageValidationRule` and the message comes along with the rules, no wrapping needed:
@@ -315,7 +433,7 @@ $validator->errors()->keys();                       // ['recipients.1']
 $validator->errors()->first('recipients.1');        // 'That is not an email.'
 ```
 
-Wrapping a named attribute works here too — `#[Each(new Rule(new Min(3), message: '…'))]` keys at
+A named attribute keeps its own message here — `#[Each(new Min(3, message: '…'))]` keys at
 `aliases.0.min` — and it composes with `#[ListOf]`, where the element message applies to the element
 itself while the nested object's own rules keep their own messages.
 
@@ -361,11 +479,14 @@ final class OrderRequest
 ```
 
 The field-and-value form compares against another field by name and produces the plain string
-rule:
+rule; pass an array to match any of several values:
 
 ```php
-#[RequiredUnless('paymentMethod', 'invoice')]     // required_unless:paymentMethod,invoice
+#[RequiredUnless('paymentMethod', 'invoice')]           // required_unless:paymentMethod,invoice
 public ?string $iban = null;
+
+#[RequiredIf('plan', ['pro', 'team'])]                  // required_if:plan,pro,team
+public ?string $vatNumber = null;
 ```
 
 Six of these are backed by Laravel's own condition-aware rule objects. `#[AcceptedIf]` and
@@ -534,7 +655,7 @@ the element's own property with `#[Rule]`, or pass a rule object.
 
 ## Custom rule attributes
 
-Attributes are found by interface, so your own work with no registration. There are two ways in.
+Attributes are found by interface, so your own work with no registration. There are three ways in.
 
 For a rule that follows the `name:arguments` string convention, extend `StringRule` — the rule
 string comes from the class name, just like the built-in attributes. This pairs well with a rule
@@ -546,6 +667,54 @@ use NielsJanssen\Laravel\Validation\StringRule;
 
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
 final class Iban extends StringRule {}   // produces the rule string "iban"
+```
+
+A rule that takes arguments declares them on a typed constructor and returns them from
+`parameters()`, in the order the rule expects. Take `?string $message = null` last and hand it to
+the parent, and the attribute supports a custom message like every built-in one:
+
+```php
+use Attribute;
+use NielsJanssen\Laravel\Validation\StringRule;
+
+#[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
+final class DivisibleBy extends StringRule
+{
+    public function __construct(
+        public readonly int $divisor,
+        ?string $message = null,
+    ) {
+        parent::__construct($message);
+    }
+
+    protected function parameters(): array
+    {
+        return [$this->divisor];   // #[DivisibleBy(3)] → "divisible_by:3"
+    }
+}
+```
+
+Trailing nulls are dropped, so an optional argument that was not given leaves the rule string
+shorter rather than emitting an empty parameter. Booleans, backed enums and `DateTimeInterface`
+values are formatted the way Laravel reads them.
+
+For a rule Laravel expresses as an object rather than a string, extend `NamedRule` and build the
+object in `rules()` — never in the constructor, since the attribute has to stay serializable for
+the discovery cache:
+
+```php
+use Attribute;
+use NielsJanssen\Laravel\Validation\NamedRule;
+use NielsJanssen\Laravel\Validation\ValidationContext;
+
+#[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
+final class ActiveMandate extends NamedRule
+{
+    public function rules(ValidationContext $context): array
+    {
+        return [new MandateRule($context->root->customerId)];
+    }
+}
 ```
 
 For full control, implement `ValidationRule` and return whatever rules you like. This is how you

@@ -8,4 +8,20 @@ use Attribute;
 use NielsJanssen\Laravel\Validation\StringRule;
 
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
-final class Uuid extends StringRule {}
+final class Uuid extends StringRule
+{
+    /**
+     * @param  int|string|null  $version  a UUID version (1-8), 'max' or 'nil'; any version by default
+     */
+    public function __construct(
+        public readonly int|string|null $version = null,
+        ?string $message = null,
+    ) {
+        parent::__construct($message);
+    }
+
+    protected function parameters(): array
+    {
+        return [$this->version];
+    }
+}

@@ -6,8 +6,8 @@ namespace Tests\Feature\RebingGraphQL;
 
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProvider;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use RuntimeException;
@@ -69,8 +69,9 @@ describe('the RuleProvider hook', function () {
 
         $rules = discoveredActionFor(ValidatedNameFixtureQuery::class)->createType(app())->getRules(['name' => 'Niels']);
 
-        expect($rules['name'])->toContain('in:impossible')
-            ->and($rules['name'])->toContain('min:50');
+        expect($rules['name'])->toContain('in:impossible');
+
+        expect($rules['name'])->toContain('min:50');
     });
 
     it('carries a provider message through to the validator', function () {
@@ -96,8 +97,9 @@ describe('the Hydrator hook', function () {
 
         $action = discoveredActionFor(HydratedCursorQuery::class);
 
-        expect($action->argCompositions)->toBe(['cursor' => PlainCursor::class])
-            ->and($action->args)->toBeEmpty();
+        expect($action->argCompositions)->toBe(['cursor' => PlainCursor::class]);
+
+        expect($action->args)->toBeEmpty();
 
         $resolved = $action->createType(app())->resolve(null, ['cursor' => 'abc'], null, null);
 
@@ -111,42 +113,46 @@ describe('the Hydrator hook', function () {
 
         $action = discoveredActionFor(HydratedCursorQuery::class);
 
-        expect($action->argCompositions)->toBe([])
-            ->and($action->containerInjections)->toBe(['cursor' => PlainCursor::class]);
+        expect($action->argCompositions)->toBe([]);
+
+        expect($action->containerInjections)->toBe(['cursor' => PlainCursor::class]);
     });
 
     it('still hydrates ComposedFromArgs value objects through the built-in hydrator', function () {
         $action = discoveredActionFor(ValueObjectValidatedQuery::class);
 
-        expect($action->argCompositions)->toBe(['page' => TestPage::class])
-            ->and($action->createType(app())->resolve(null, ['offset' => 7], null, null))->toBe('offset 7');
+        expect($action->argCompositions)->toBe(['page' => TestPage::class]);
+
+        expect($action->createType(app())->resolve(null, ['offset' => 7], null, null))->toBe('offset 7');
     });
 });
 
-it('keys a hydrated value object rule onto the flat arg it is built from', function () {
-    $action = discoveredActionFor(ValueObjectValidatedQuery::class);
+describe('keying and registry edge cases', function () {
+    it('keys a hydrated value object rule onto the flat arg it is built from', function () {
+        $action = discoveredActionFor(ValueObjectValidatedQuery::class);
 
-    expect(app(RuleProviderRegistry::class)->rulesFor($action, ['offset' => 1])->rules['offset'])
-        ->toContain('min:1');
+        expect(app(RuleProviderRegistry::class)->rulesFor($action, ['offset' => 1])->rules['offset'])
+            ->toContain('min:1');
 
-    expect($action->createType(app())->getRules(['offset' => 0])['offset'])->toContain('min:1');
-});
+        expect($action->createType(app())->getRules(['offset' => 0])['offset'])->toContain('min:1');
+    });
 
-it('degrades to nothing when no rules provider is registered', function () {
-    $providers = new RuleProviderRegistry([]);
-    $set = $providers->rulesFor(discoveredActionFor(ValidatedNameFixtureQuery::class), []);
+    it('degrades to nothing when no rules provider is registered', function () {
+        $providers = new RuleProviderRegistry([]);
+        $set = $providers->rulesFor(discoveredActionFor(ValidatedNameFixtureQuery::class), []);
 
-    expect($set->isEmpty())->toBeTrue();
-});
+        expect($set->isEmpty())->toBeTrue();
+    });
 
-it('names the class when nothing can hydrate it', function () {
-    expect(fn() => new HydratorRegistry([])->hydrate(PlainCursor::class, []))
-        ->toThrow(RuntimeException::class, 'No Hydrator handles');
-});
+    it('names the class when nothing can hydrate it', function () {
+        expect(fn() => new HydratorRegistry([])->hydrate(PlainCursor::class, []))
+            ->toThrow(RuntimeException::class, 'No Hydrator handles');
+    });
 
-it('rejects a binding tagged as a hook it does not implement', function () {
-    tagArgumentHook(RuleProvider::TAG, [PlainCursorHydrator::class]);
+    it('rejects a binding tagged as a hook it does not implement', function () {
+        tagArgumentHook(RuleProvider::TAG, [PlainCursorHydrator::class]);
 
-    expect(fn() => app(RuleProviderRegistry::class))
-        ->toThrow(RuntimeException::class, 'does not implement');
+        expect(fn() => app(RuleProviderRegistry::class))
+            ->toThrow(RuntimeException::class, 'does not implement');
+    });
 });

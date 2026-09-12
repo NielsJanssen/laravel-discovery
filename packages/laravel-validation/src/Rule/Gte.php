@@ -8,4 +8,17 @@ use Attribute;
 use NielsJanssen\Laravel\Validation\StringRule;
 
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
-final class Gte extends StringRule {}
+final class Gte extends StringRule
+{
+    public function __construct(
+        public readonly string|int|float $fieldOrValue,
+        ?string $message = null,
+    ) {
+        parent::__construct($message);
+    }
+
+    protected function parameters(): array
+    {
+        return [$this->fieldOrValue];
+    }
+}

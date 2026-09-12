@@ -7,23 +7,24 @@ namespace NielsJanssen\Laravel\Validation\Rule;
 use Attribute;
 use LogicException;
 use NielsJanssen\Laravel\Validation\Nesting;
+use NielsJanssen\Laravel\Validation\ValidationRule;
 
 /**
  * Applies rules to every element a member iterates over, each at its own path.
  *
- *   #[Each('email')]                    public array $recipients;
- *   #[Each('integer', 'between:1,10')]  public array $scores;
- *   #[Each(new Rule('min:2'))]          public array $tags;
+ *   #[Each('email')]                                  public array $recipients;
+ *   #[Each('integer', 'between:1,10')]                public array $scores;
+ *   #[Each(new Min(2, message: 'Too short.'))]        public array $tags;
  *
  * Composes with #[ListOf], which validates the elements as nested objects; #[Each] then adds
  * rules on the element itself.
  *
  * Element rules are stored in the cached plan rather than re-read through reflection, so unlike a
- * property's own rules they cannot hold a closure — put a factory on the element's own property
- * with #[Rule], or pass a rule object.
+ * property's own rules they cannot hold a closure — put the factory on the element's own property,
+ * or pass a rule object.
  */
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER)]
-class Each extends NestingRule
+final class Each extends NestingRule
 {
     public Nesting $nesting {
         get => Nesting::Each;
@@ -47,7 +48,7 @@ class Each extends NestingRule
                 ));
             }
 
-            $this->elementRules[] = $argument instanceof Rule ? $argument : new Rule($argument);
+            $this->elementRules[] = $argument instanceof ValidationRule ? $argument : new Rule($argument);
         }
     }
 }

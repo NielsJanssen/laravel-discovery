@@ -6,13 +6,18 @@ namespace NielsJanssen\Laravel\Validation\Rule;
 
 use Attribute;
 use Closure;
+use Illuminate\Validation\Rules\RequiredIf as LaravelRequiredIf;
 use Stringable;
 
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
-class RequiredIf extends ConditionalRule
+final class RequiredIf extends ConditionalRule
 {
+    protected string $resolvedName {
+        get => 'required';
+    }
+
     protected function rule(Closure $condition): Stringable
     {
-        return new \Illuminate\Validation\Rules\RequiredIf($condition);
+        return new LaravelRequiredIf($condition);
     }
 }

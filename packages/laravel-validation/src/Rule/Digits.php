@@ -8,4 +8,17 @@ use Attribute;
 use NielsJanssen\Laravel\Validation\StringRule;
 
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER | Attribute::IS_REPEATABLE)]
-final class Digits extends StringRule {}
+final class Digits extends StringRule
+{
+    public function __construct(
+        public readonly int $length,
+        ?string $message = null,
+    ) {
+        parent::__construct($message);
+    }
+
+    protected function parameters(): array
+    {
+        return [$this->length];
+    }
+}
