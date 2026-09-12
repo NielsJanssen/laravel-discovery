@@ -307,4 +307,7 @@ beforeEach(function () {
 ## CI/CD
 
 - **`.github/workflows/ci.yml`**: lint (Pint) → test (Pest on PHP 8.5) → `composer audit` → dependency review (PRs only)
-- **`.github/workflows/release.yml`**: manual `workflow_dispatch` with a `version` input; validates semver, regenerates `CHANGELOG.md` via `git-cliff` (`cliff.toml`), tags, creates a GitHub release, and propagates tags to split repos
+- **`.github/workflows/release.yml`**: manual `workflow_dispatch` — **one package per run**, so the three packages version independently. Inputs: `package` (choice), `bump` (`patch`/`minor`/`major`/`alpha`/`beta`/`rc`, default `patch`) and an optional `version` that overrides the bump with an exact semver. The next version is computed from the package's highest existing `<package>@v*` tag by `.github/scripts/bump-version.sh` (npm `semver inc` semantics: a prerelease whose base is already the target promotes to stable, so `1.0.0-beta.8` + `patch` → `1.0.0`; channels number from `.1`). Prereleases are marked as such on GitHub automatically. The workflow then regenerates `packages/<package>/CHANGELOG.md` via `git-cliff` (scoped with `--include-path` and `--tag-pattern`), commits it, and tags `<package>@vX.Y.Z`
+- `.github/scripts/bump-version.test.sh` covers the bump table and runs in the CI lint job
+- **`.github/workflows/split.yml`**: a push to `main` mirrors all three packages to their split repos; a `<package>@vX.Y.Z` tag only splits that one package, and the split repo receives the bare `vX.Y.Z` tag
+- Cross-package constraints are **not** bumped automatically — `laravel-discovery-graphql` requires `nielsjanssen/laravel-discovery` by constraint, so a major of the core package needs that `require` edited by hand before releasing the dependent

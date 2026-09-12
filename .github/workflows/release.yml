@@ -3,12 +3,32 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to release (semver, e.g. 1.0.0 or 1.0.0-beta.1)'
+      package:
+        description: 'Package to release'
         required: true
+        type: choice
+        options:
+          - laravel-discovery
+          - laravel-discovery-graphql
+          - laravel-validation
+      bump:
+        description: 'Bump the package version by'
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - alpha
+          - beta
+          - rc
+      version:
+        description: 'Exact version to release (optional, e.g. 1.0.0 or 1.0.0-beta.1). Overrides the bump.'
+        required: false
         type: string
       prerelease:
-        description: 'Mark as pre-release'
+        description: 'Force marking as pre-release (versions with a -alpha/-beta/-rc suffix are marked automatically)'
         required: false
         type: boolean
         default: false
@@ -18,8 +38,13 @@ permissions:
 
 jobs:
   release:
-    name: Release v${{ inputs.version }}
+    name: Release ${{ inputs.package }}
     runs-on: ubuntu-24.04
+
+    env:
+      PACKAGE: ${{ inputs.package }}
+      VERSION: ${{ inputs.version }}
+      BUMP: ${{ inputs.bump }}
 
     steps:
       - uses: actions/checkout@v7
@@ -27,38 +52,75 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.SPLIT_ACCESS_TOKEN }}
 
-      - name: Validate version format
+      - name: Resolve and validate release target
+        id: target
         run: |
-          if ! printf '%s' "${{ inputs.version }}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
-            echo "::error::Invalid version '${{ inputs.version }}'. Expected semver like 1.2.3 or 1.2.3-beta.1"
+          if [ ! -f "packages/$PACKAGE/composer.json" ]; then
+            echo "::error::No package at packages/$PACKAGE"
             exit 1
           fi
 
-      - name: Check tag does not already exist
-        run: |
-          if git tag --list "v${{ inputs.version }}" | grep -q .; then
-            echo "::error::Tag v${{ inputs.version }} already exists"
+          # Highest existing version for this package. versionsort.suffix makes
+          # `1.0.0-beta.8` sort before `1.0.0` instead of after it.
+          latest=$(git -c versionsort.suffix=- tag --list "$PACKAGE@v*" --sort=-v:refname | head -n 1)
+          current="${latest#"$PACKAGE"@v}"
+
+          if [ -n "$VERSION" ]; then
+            if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+              echo "::error::Invalid version '$VERSION'. Expected semver like 1.2.3 or 1.2.3-beta.1"
+              exit 1
+            fi
+          else
+            if ! VERSION=$(.github/scripts/bump-version.sh "$current" "$BUMP" 2>&1); then
+              echo "::error::Cannot apply '$BUMP' bump: $VERSION"
+              exit 1
+            fi
+            echo "Bumping ${current:-<unreleased>} by '$BUMP' -> $VERSION"
+          fi
+
+          echo "::notice::Releasing $PACKAGE ${current:-<unreleased>} -> $VERSION"
+
+          tag="$PACKAGE@v$VERSION"
+          if git tag --list "$tag" | grep -q .; then
+            echo "::error::Tag $tag already exists"
             exit 1
           fi
+
+          {
+            echo "version=$VERSION"
+            echo "tag=$tag"
+            echo "prerelease=$(case "$VERSION" in *-*) echo true ;; *) echo false ;; esac)"
+            echo "tag_pattern=^$PACKAGE@v[0-9]"
+            echo "include_path=packages/$PACKAGE/**"
+            echo "changelog=packages/$PACKAGE/CHANGELOG.md"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes (unreleased only)
         uses: orhun/git-cliff-action@v4
         id: cliff
         with:
           config: cliff.toml
-          args: --unreleased --tag v${{ inputs.version }} --strip header
+          args: >-
+            --unreleased
+            --tag '${{ steps.target.outputs.tag }}'
+            --tag-pattern '${{ steps.target.outputs.tag_pattern }}'
+            --include-path '${{ steps.target.outputs.include_path }}'
+            --strip header
         env:
           OUTPUT: RELEASE_NOTES.md
           GITHUB_REPO: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Regenerate full CHANGELOG.md
+      - name: Regenerate package CHANGELOG.md
         uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
-          args: --tag v${{ inputs.version }}
+          args: >-
+            --tag '${{ steps.target.outputs.tag }}'
+            --tag-pattern '${{ steps.target.outputs.tag_pattern }}'
+            --include-path '${{ steps.target.outputs.include_path }}'
         env:
-          OUTPUT: CHANGELOG.md
+          OUTPUT: ${{ steps.target.outputs.changelog }}
           GITHUB_REPO: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -66,31 +128,18 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md
-          git commit -m "release: v${{ inputs.version }}"
-          git tag "v${{ inputs.version }}"
+          git add "${{ steps.target.outputs.changelog }}"
+          git commit -m "release: $PACKAGE v${{ steps.target.outputs.version }}"
+          git tag "${{ steps.target.outputs.tag }}"
           git push
-          git push origin "v${{ inputs.version }}"
+          git push origin "${{ steps.target.outputs.tag }}"
 
       - name: Create GitHub release
         uses: ncipollo/release-action@v1
         with:
-          tag: v${{ inputs.version }}
-          name: v${{ inputs.version }}
+          tag: ${{ steps.target.outputs.tag }}
+          name: ${{ inputs.package }} v${{ steps.target.outputs.version }}
           bodyFile: RELEASE_NOTES.md
-          prerelease: ${{ inputs.prerelease }}
-          makeLatest: ${{ !inputs.prerelease }}
+          prerelease: ${{ inputs.prerelease || steps.target.outputs.prerelease == 'true' }}
+          makeLatest: false
           token: ${{ secrets.GITHUB_TOKEN }}
-
-#      - name: Notify Packagist
-#        run: |
-#          status=$(curl -s -o /dev/null -w "%{http_code}" \
-#            -X POST \
-#            -H "Content-Type: application/json" \
-#            -d '{"repository":{"url":"https://github.com/NielsJanssen/laravel-discovery"}}' \
-#            "https://packagist.org/api/update-package?username=${{ secrets.PACKAGIST_USERNAME }}&apiToken=${{ secrets.PACKAGIST_TOKEN }}")
-#          if [ "$status" != "202" ]; then
-#            echo "::error::Packagist update-package returned HTTP $status"
-#            exit 1
-#          fi
-#          echo "Packagist notified (HTTP 202)"

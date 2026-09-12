@@ -3,7 +3,7 @@ name: Split
 on:
   push:
     branches: [ main ]
-    tags: [ 'v*' ]
+    tags: [ '*@v*' ]
 
 env:
   GITHUB_TOKEN: ${{ secrets.SPLIT_ACCESS_TOKEN }}
@@ -31,6 +31,7 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Branch push: mirror main into every split repository.
       - if: "!startsWith(github.ref, 'refs/tags/')"
         uses: danharrin/monorepo-split-github-action@v2.4.5
         with:
@@ -40,10 +41,17 @@ jobs:
           user_name: github-actions[bot]
           user_email: github-actions[bot]@users.noreply.github.com
 
-      - if: "startsWith(github.ref, 'refs/tags/')"
+      # Tag push: `<package>@vX.Y.Z` releases only that package, and the split
+      # repository receives the bare `vX.Y.Z` tag.
+      - name: Resolve package version from tag
+        id: tag
+        if: startsWith(github.ref, 'refs/tags/') && startsWith(github.ref_name, format('{0}@v', matrix.package.local_path))
+        run: echo "version=${GITHUB_REF_NAME#${{ matrix.package.local_path }}@}" >> "$GITHUB_OUTPUT"
+
+      - if: steps.tag.outputs.version != ''
         uses: danharrin/monorepo-split-github-action@v2.4.5
         with:
-          tag: ${GITHUB_REF#refs/tags/}
+          tag: ${{ steps.tag.outputs.version }}
           package_directory: packages/${{ matrix.package.local_path }}
           repository_organization: NielsJanssen
           repository_name: ${{ matrix.package.split_repository }}

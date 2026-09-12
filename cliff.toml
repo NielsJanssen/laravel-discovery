@@ -2,7 +2,7 @@
 header = "# Changelog\n\nAll notable changes to this project will be documented in this file.\n"
 body = """
 {% if version %}\
-    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+    ## [{{ version | split(pat="@") | last | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
 {% else %}\
     ## [Unreleased]
 {% endif %}\
@@ -38,7 +38,9 @@ commit_parsers = [
 ]
 protect_breaking_commits = false
 filter_commits = false
-tag_pattern = "v[0-9].*"
+# Per-package tags: `<package>@vX.Y.Z`. The release workflow overrides this with
+# `--tag-pattern` so each package only sees its own tags.
+tag_pattern = ".*@v[0-9].*"
 ignore_tags = ""
 topo_order = false
 sort_commits = "oldest"
