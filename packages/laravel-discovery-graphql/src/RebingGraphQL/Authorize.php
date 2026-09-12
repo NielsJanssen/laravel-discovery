@@ -12,7 +12,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
  *   #[Authorize('view')]                  on a model-bound parameter: Gate check against the model
  */
 #[\Attribute(\Attribute::TARGET_CLASS | \Attribute::TARGET_METHOD | \Attribute::TARGET_PARAMETER | \Attribute::IS_REPEATABLE)]
-class Authorize
+class Authorize implements ActionArgProvider
 {
     public function __construct(
         /** Gate ability; only meaningful on a model-bound parameter. */
@@ -21,4 +21,14 @@ class Authorize
         public readonly ?string $gate = null,
         public readonly ?string $message = null,
     ) {}
+
+    public function provideArgs(): array
+    {
+        return [];
+    }
+
+    public function provideValueObjects(): array
+    {
+        return [Authorization::class];
+    }
 }

@@ -233,6 +233,25 @@ Discovery rejects the shapes that can't work, rather than letting them silently 
 
 Attributes are collected class-first then method-first; **all** must pass (AND semantics). The first failing attribute's optional `message:` surfaces via `getAuthorizationMessage()` (otherwise Rebing's default "Unauthorized"). Hooks in via overrides of `Field::authorize()` and `Field::getAuthorizationMessage()` on `AsActionField`, so Rebing's resolver pipeline blocks the request **before** validation runs.
 
+**In-resolver checks (`Authorization`).** Type-hint `Authorization` on an action to authorize from inside the method, for checks the attribute cannot express — a subject computed in the body, a branch that only guards part of the work, a second ability after the first has passed:
+
+```php
+#[Query(type: 'Report')]
+public function report(#[Arg('id')] Dossier $dossier, Authorization $auth): Report
+{
+    $auth->authorize('view', $dossier);
+    $auth->authorize(ReportAbility::Export, message: 'Not your report');
+
+    return $dossier->report();
+}
+```
+
+`authorize(string|iterable|\UnitEnum $abilities, mixed $arguments = [], ?string $message = null)` delegates to `Gate::denies()` — so a list requires **every** ability, and enums resolve through Laravel's `enum_value()`. On failure it throws Rebing's `AuthorizationError`, which is client-safe and carries the `authorization` category, defaulting to the same `Forbidden` as the attribute. Laravel's own `Gate::authorize()` is the wrong tool here: its `AuthorizationException` is not client-safe and surfaces as *Internal server error*.
+
+Injection takes one of two routes, both giving the same stateless object: `#[Authorize]` on the class or method provides it as a value object (`ActionArgProvider::provideValueObjects()` → `ComposedFromArgs::fromArgs()`), and without that attribute it resolves straight from the container. Either way it is not a GraphQL arg.
+
+Prefer `#[Authorize('ability')]` on the parameter when it fits — it runs before validation, where this helper runs inside the resolver, after it.
+
 ```php
 #[Schema('admin')]
 class AdminQueries
@@ -309,6 +328,7 @@ beforeEach(function () {
 | `packages/laravel-discovery/src/Schedule/Every.php` | Backed enum of intervals (Second…Year) |
 | `packages/laravel-discovery-graphql/src/RebingGraphQL/GraphQLDiscovery.php` | Discovers GraphQL types/queries/mutations and `#[Query]`/`#[Mutation]` actions |
 | `packages/laravel-discovery-graphql/src/RebingGraphQL/AsActionField.php` | Trait that adapts a `DiscoveredAction` into a Rebing `Field` |
+| `packages/laravel-discovery-graphql/src/RebingGraphQL/Authorization.php` | Injectable helper for authorizing from inside a resolver |
 | `packages/laravel-discovery/config/discovery.php` | Package configuration |
 | `tests/TestCase.php` | Base test class; registers package + GraphQL + Workbench providers |
 
