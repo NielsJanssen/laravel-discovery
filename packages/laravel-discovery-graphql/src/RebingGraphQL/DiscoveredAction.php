@@ -75,15 +75,15 @@ class DiscoveredAction
     {
         $parameters = $args;
 
-        foreach ($this->args as $arg) {
-            if ($arg->name === $arg->paramName) {
+        foreach ($this->argNamesByParam() as $paramName => $argName) {
+            if ($argName === $paramName) {
                 continue;
             }
 
-            unset($parameters[$arg->name]);
+            unset($parameters[$argName]);
 
-            if (array_key_exists($arg->name, $args)) {
-                $parameters[$arg->paramName] = $args[$arg->name];
+            if (array_key_exists($argName, $args)) {
+                $parameters[$paramName] = $args[$argName];
             }
         }
 
@@ -96,14 +96,37 @@ class DiscoveredAction
      */
     public function toArgPath(string $paramPath): string
     {
-        [$head, $rest] = array_pad(explode('.', $paramPath, 2), 2, null);
+        $segments = explode('.', $paramPath, 2);
+        $head = $segments[0];
+        $rest = $segments[1] ?? null;
 
-        foreach ($this->args as $arg) {
-            if ($arg->paramName === $head) {
-                return $rest === null ? $arg->name : "{$arg->name}.{$rest}";
-            }
+        $argName = $this->argNamesByParam()[$head] ?? null;
+
+        if ($argName === null) {
+            return $paramPath;
         }
 
-        return $paramPath;
+        return $rest === null ? $argName : "{$argName}.{$rest}";
+    }
+
+    /**
+     * GraphQL arg name for every parameter that has one, model bindings included: those carry their
+     * own `ID` arg on $modelBindings rather than an entry in $args.
+     *
+     * @return array<string, string> arg name keyed by parameter name
+     */
+    private function argNamesByParam(): array
+    {
+        $names = [];
+
+        foreach ($this->args as $arg) {
+            $names[$arg->paramName] = $arg->name;
+        }
+
+        foreach ($this->modelBindings as $binding) {
+            $names[$binding->paramName] = $binding->argName;
+        }
+
+        return $names;
     }
 }

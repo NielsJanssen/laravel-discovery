@@ -6,6 +6,7 @@ namespace Tests\Fixtures\RebingGraphQL;
 
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Arg;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
+use NielsJanssen\Laravel\Validation\Rule\Numeric;
 use Workbench\App\Models\User;
 
 class ModelBindingQuery
@@ -30,6 +31,12 @@ class ModelBindingQuery
 
     #[Query]
     public function bareUser(User $user): string
+    {
+        return $user->name;
+    }
+
+    #[Query]
+    public function validatedBinding(#[Arg('id')] #[Numeric] User $user): string
     {
         return $user->name;
     }

@@ -144,3 +144,18 @@ describe('model binding end-to-end', function () {
             ->assertJsonPath('errors.0.extensions.validation.id.0', 'The selected id is invalid.');
     });
 });
+
+describe('validation attributes on a model-bound parameter', function () {
+    it('keys their rules onto the GraphQL arg, not the parameter name', function () {
+        $item = discoverModelBindings()['validatedBinding'];
+
+        expect($item->toArgPath('user'))->toBe('id')
+            ->and($item->toParameters(['id' => '7']))->toBe(['user' => '7']);
+
+        $rules = $item->createType(app())->getRules();
+
+        expect($rules)->toHaveKey('id')
+            ->and($rules)->not->toHaveKey('user')
+            ->and($rules['id'])->toContain('numeric');
+    });
+});
