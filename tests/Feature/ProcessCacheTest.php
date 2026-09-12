@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use NielsJanssen\Laravel\Discovery\Cache\MemoryAdapter;
 use NielsJanssen\Laravel\Discovery\DiscoveryServiceProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use ReflectionProperty;
-use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
 use Tempest\Discovery\DiscoveryCache;
 use Tempest\Discovery\DiscoveryCacheStrategy;
@@ -51,8 +51,8 @@ function skipOnNextScan(string $class): void
     app()->forgetInstance(DiscoveryConfig::class);
 }
 
-beforeEach(fn() => DiscoveryServiceProvider::forgetProcessCache());
-afterEach(fn() => DiscoveryServiceProvider::forgetProcessCache());
+beforeEach(fn() => MemoryAdapter::forget());
+afterEach(fn() => MemoryAdapter::forget());
 
 describe('cache store selection', function () {
     it('uses the file pool by default', function () {
@@ -64,7 +64,7 @@ describe('cache store selection', function () {
     it('uses an in-memory pool when the store is memory', function () {
         config()->set('discovery.cache_store', 'memory');
 
-        expect(discoveryPool(freshCache()))->toBeInstanceOf(ArrayAdapter::class);
+        expect(discoveryPool(freshCache()))->toBeInstanceOf(MemoryAdapter::class);
     });
 
     it('hands the same in-memory pool to a rebuilt container', function () {
@@ -81,7 +81,7 @@ describe('cache store selection', function () {
         config()->set('discovery.cache_store', 'memory');
         $first = discoveryPool(freshCache());
 
-        DiscoveryServiceProvider::forgetProcessCache();
+        MemoryAdapter::forget();
 
         expect(discoveryPool(freshCache()))->not->toBe($first);
     });
@@ -123,7 +123,8 @@ describe('the in-memory cache across boots', function () {
 
         expect(bootProvider())->toContain(GraphQLDiscovery::class);
 
-        DiscoveryServiceProvider::forgetProcessCache();
+        MemoryAdapter::forget();
+
         app()->forgetInstance(DiscoveryCache::class);
         app()->forgetInstance(DiscoveryConfig::class);
 
