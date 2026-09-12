@@ -9,6 +9,9 @@ use GraphQL\Type\Definition\NonNull;
 use GraphQL\Type\Definition\NullableType;
 use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Type\Definition\Type as GraphQLType;
+use Illuminate\Contracts\Auth\Access\Gate as GateContract;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
 use Illuminate\Validation\Rule;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ArgumentRules;
@@ -27,7 +30,7 @@ trait AsActionField
     /** @var \ReflectionParameter[] */
     private array $reflectionParameters;
 
-    private ?Authorize $failedAuthorize = null;
+    private Authorize|DiscoveredModelAuthorization|null $failedAuthorize = null;
 
     public function __construct(
         private readonly Application $app,
@@ -168,9 +171,7 @@ trait AsActionField
                 continue;
             }
 
-            $modelClass = $binding->modelClass;
-            $key = new $modelClass()->getRouteKeyName();
-            $query = $modelClass::query()->where($key, $value);
+            $query = $this->boundModelQuery($binding, $value);
 
             $mappedArgs[$binding->paramName] = $binding->nullable
                 ? $query->first()
@@ -252,7 +253,56 @@ trait AsActionField
             }
         }
 
+        return $this->authorizeBoundModels($args);
+    }
+
+    /**
+     * #[Authorize('ability')] on a model-bound parameter, checked against the record it binds.
+     *
+     * @param  array<string, mixed>  $args
+     */
+    private function authorizeBoundModels(array $args): bool
+    {
+        $gate = $this->app->make(GateContract::class);
+
+        foreach ($this->discoveredAction->modelBindings as $binding) {
+            if ($binding->authorizations === []) {
+                continue;
+            }
+
+            $value = $args[$binding->argName] ?? null;
+
+            // Nothing to authorize; a non-nullable binding stays subject to the check below.
+            if ($value === null && $binding->nullable) {
+                continue;
+            }
+
+            $model = $value === null ? null : $this->boundModelQuery($binding, $value)->first();
+
+            foreach ($binding->authorizations as $authorize) {
+                if ($model !== null && $gate->allows($authorize->ability, $model)) {
+                    continue;
+                }
+
+                $this->failedAuthorize = $authorize;
+
+                return false;
+            }
+        }
+
         return true;
+    }
+
+    /**
+     * Looks the model up by its route key, as Laravel's own route-model binding does.
+     *
+     * @return Builder<Model>
+     */
+    private function boundModelQuery(DiscoveredModelBinding $binding, mixed $value): Builder
+    {
+        $modelClass = $binding->modelClass;
+
+        return $modelClass::query()->where(new $modelClass()->getRouteKeyName(), $value);
     }
 
     public function getAuthorizationMessage(): string

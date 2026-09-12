@@ -127,10 +127,13 @@ final class GraphQLDiscovery implements Discovery
                         nullable: $type->isNullable() || $param->hasDefaultValue(),
                         type: $argAttr?->type,
                         hasUserRules: $argAttr !== null && ! empty($argAttr->rules),
+                        authorizations: $this->discoverParameterAuthorizations($param, $class, $method),
                     );
 
                     continue;
                 }
+
+                $this->assertNoParameterAuthorization($param, $class, $method);
 
                 if (!$argAttr && !$type->isScalar()) {
                     $typeName = $type->getName();
@@ -345,6 +348,57 @@ final class GraphQLDiscovery implements Discovery
             $class->getName(),
             $method->getName(),
             class_basename($action::class),
+        ));
+    }
+
+    /**
+     * @param ClassReflector<object> $class
+     * @return list<DiscoveredModelAuthorization>
+     */
+    private function discoverParameterAuthorizations(ParameterReflector $param, ClassReflector $class, MethodReflector $method): array
+    {
+        $authorizations = [];
+
+        foreach ($param->getAttributes(Authorize::class) as $authorize) {
+            if ($authorize->ability === null) {
+                throw new LogicException(sprintf(
+                    '#[Authorize] on the parameter $%s in %s::%s needs an ability, as in #[Authorize(\'view\')]. Bare #[Authorize] and #[Authorize(gate:)] belong on the class or the method.',
+                    $param->getName(),
+                    $class->getName(),
+                    $method->getName(),
+                ));
+            }
+
+            if ($authorize->gate !== null) {
+                throw new LogicException(sprintf(
+                    '#[Authorize(gate:)] on the parameter $%s in %s::%s is not supported: a gate class receives the raw args, so it belongs on the class or the method.',
+                    $param->getName(),
+                    $class->getName(),
+                    $method->getName(),
+                ));
+            }
+
+            $authorizations[] = new DiscoveredModelAuthorization($authorize->ability, $authorize->message);
+        }
+
+        return $authorizations;
+    }
+
+    /**
+     * @param ClassReflector<object> $class
+     */
+    private function assertNoParameterAuthorization(ParameterReflector $param, ClassReflector $class, MethodReflector $method): void
+    {
+        if ($param->getAttributes(Authorize::class) === []) {
+            return;
+        }
+
+        throw new LogicException(sprintf(
+            '#[Authorize] on the parameter $%s in %s::%s only applies to a model-bound parameter; $%s does not bind an Eloquent model.',
+            $param->getName(),
+            $class->getName(),
+            $method->getName(),
+            $param->getName(),
         ));
     }
 

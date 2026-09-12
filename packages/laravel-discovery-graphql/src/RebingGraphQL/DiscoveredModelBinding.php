@@ -19,5 +19,7 @@ readonly class DiscoveredModelBinding
         /** Explicit GraphQL type from #[Arg(type:)]; null defaults to the ID scalar. */
         public ?string $type = null,
         public bool $hasUserRules = false,
+        /** @var list<DiscoveredModelAuthorization> parameter-level #[Authorize('ability')], all must pass */
+        public array $authorizations = [],
     ) {}
 }

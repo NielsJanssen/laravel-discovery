@@ -211,10 +211,23 @@ public function user(#[Arg('id')] User $user): User
 
 **Middleware (`#[Middleware]`).** Repeatable, `TARGET_CLASS | TARGET_METHOD`. Carries one or more `class-string<\Rebing\GraphQL\Support\Middleware>` values. Class-level attributes are flattened first, then method-level (so class middleware wraps method middleware — class is outermost). The list is exposed to Rebing through an `AsActionField::getMiddleware()` override, so it flows through Rebing's existing `Pipeline::send($arguments)->through($middleware)->via('resolve')` pipeline alongside global middleware and `terminate()` hooks. We do **not** ship a custom middleware interface — users extend `Rebing\GraphQL\Support\Middleware` and inherit its `handle(mixed $root, array $args, mixed $context, ResolveInfo $info, Closure $next): mixed` contract.
 
-**Authorization (`#[Authorize]`).** Repeatable, `TARGET_CLASS | TARGET_METHOD`. Two modes:
+**Authorization (`#[Authorize]`).** Repeatable, `TARGET_CLASS | TARGET_METHOD | TARGET_PARAMETER`. Three modes:
 
 - **Bare `#[Authorize]`** — enforces "must be logged in" via `auth()->check()`. Works regardless of whether Rebing's `AddAuthUserContextValueMiddleware` is enabled.
-- **`#[Authorize(gate: SomeGate::class)]`** — delegates to a class implementing `AuthorizationGate::check(mixed $root, array $args, mixed $context, ?ResolveInfo $info): bool`. The gate is resolved from the container, so it gets constructor DI. Use this for anything more involved than a logged-in check (policies, fetch-then-authorize, role checks, etc).
+- **`#[Authorize(gate: SomeGate::class)]`** — delegates to a class implementing `AuthorizationGate::check(mixed $root, array $args, mixed $context, ?ResolveInfo $info): bool`. The gate is resolved from the container, so it gets constructor DI. Use this for anything more involved than a logged-in check (role checks, context-dependent rules, etc).
+- **`#[Authorize('ability')]` on a model-bound parameter** — runs `Gate::allows($ability, $model)` against the record that parameter binds. This is how a bound model gets authorized; see below.
+
+```php
+#[Query('aantekening', type: 'Aantekening')]
+public function get(#[Arg('id')] #[Authorize('view')] Aantekening $note): ?Aantekening
+{
+    return $note;   // AantekeningPolicy::view($user, $note) has already passed
+}
+```
+
+The check runs inside `Field::authorize()`, i.e. **before** validation, preserving Rebing's authorize-first ordering so an unauthorized caller cannot probe validation rules to map the API. A record that cannot be found is **denied** rather than passed through, so "not allowed" and "does not exist" answer identically — a refusal never confirms a record exists. The cost is that the model is loaded once in `authorize()` and again in `resolve()`; there is no shared per-request binding store yet.
+
+Discovery rejects the shapes that can't work, rather than letting them silently pass: `#[Authorize]` with no ability on a parameter, `#[Authorize(gate:)]` on a parameter (a gate only sees raw args), `#[Authorize('ability')]` on a parameter that binds no model, and **laravel-validation's `#[Can]` on a model-bound parameter** — that one validates the raw `ID` arg, so the gate receives an id string where the policy expects a record; it is a `LogicException` at discovery pointing at `#[Authorize]`.
 
 Attributes are collected class-first then method-first; **all** must pass (AND semantics). The first failing attribute's optional `message:` surfaces via `getAuthorizationMessage()` (otherwise Rebing's default "Unauthorized"). Hooks in via overrides of `Field::authorize()` and `Field::getAuthorizationMessage()` on `AsActionField`, so Rebing's resolver pipeline blocks the request **before** validation runs.
 
