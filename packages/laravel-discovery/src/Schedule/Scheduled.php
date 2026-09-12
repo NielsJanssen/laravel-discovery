@@ -15,7 +15,7 @@ final class Scheduled
      * @param array<string, mixed> $parameters
      */
     public function __construct(
-        private(set) Cron|Every|\Closure $schedule,
+        public private(set) Cron|Every|\Closure $schedule,
         public readonly ?BetweenTime $between = null,
         public readonly ?BetweenTime $unlessBetween = null,
         public readonly ?string $name = null,
