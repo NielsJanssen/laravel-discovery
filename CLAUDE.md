@@ -71,7 +71,7 @@ All discoverers implement Tempest's `Discovery` interface, use the `IsDiscovery`
 
 ### Discovery Flow
 
-1. `DiscoveryServiceProvider::register()` binds `DiscoveryConfig` (using `discovery.autoload` from config) and `DiscoveryCache` (Symfony `PhpFilesAdapter`, FULL strategy in `discovery.cache_environments`, NONE otherwise)
+1. `DiscoveryServiceProvider::register()` binds `DiscoveryConfig` (using `discovery.autoload` from config) and `DiscoveryCache` (FULL strategy in `discovery.cache_environments`, NONE otherwise). The pool comes from `discovery.cache_store`: `files` is a Symfony `PhpFilesAdapter` written only by `discovery:cache`, `memory` is an `ArrayAdapter` held in a static so it survives the container being rebuilt between tests, and `boot()` fills it once per process (`forgetProcessCache()` resets both)
 2. `DiscoveryServiceProvider::boot()` calls `BootDiscovery`, then stores resolved discovery class names in `config('discovery.discovery_classes')`
 3. `BootDiscovery` runs `DiscoveryDiscovery` first to find every `Discovery` implementation
 4. Each discoverer's `discover()` is invoked for every class in every `DiscoveryLocation`; `apply()` runs after
@@ -93,7 +93,8 @@ return [
     'skip_classes' => [],
     'skip_paths' => [],
     'cache_path' => 'framework/cache/discovery',
-    'cache_environments' => ['production'],
+    'cache_environments' => ['production'],   // DISCOVERY_CACHE_ENVIRONMENTS, comma separated
+    'cache_store' => 'files',                 // DISCOVERY_CACHE_STORE: files|memory
 ];
 ```
 

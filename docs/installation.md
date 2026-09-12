@@ -33,7 +33,8 @@ php artisan vendor:publish --tag=discovery-config
 | `skip_classes`       | `[]`                        | Fully-qualified class names that discovery should ignore. Useful for opting individual classes out of scanning.               |
 | `skip_paths`         | `[]`                        | Filesystem paths whose contents are skipped entirely. Add paths here if you want a whole directory tree ignored by discovery. |
 | `cache_path`         | `framework/cache/discovery` | Storage-relative path used by the discovery cache. Resolved with `storage_path(...)`.                                         |
-| `cache_environments` | `['production']`            | Environments where the discovery cache is active. In any other environment, classes are scanned fresh on each request.        |
+| `cache_environments` | `['production']`            | Environments where the discovery cache is active, overridable with `DISCOVERY_CACHE_ENVIRONMENTS` (comma separated). In any other environment, classes are scanned fresh on each request. |
+| `cache_store`        | `files`                     | Where a cached run is kept: `files` writes to `cache_path`, `memory` keeps it in the PHP process. Overridable with `DISCOVERY_CACHE_STORE`. |
 
 ## How discovery finds your code
 
@@ -75,6 +76,25 @@ of environments where the cache should be active:
 ```
 
 Running `discovery:cache` in an environment that isn't on this list prints a warning and exits without writing anything.
+
+### Caching a test run
+
+A test suite rebuilds the application for every test, so it scans your code once per test. Setting the cache store to
+`memory` keeps one cached run in the PHP process: the first boot scans and fills the cache, every later boot in that
+process restores it, and the cache disappears when the process ends. Each run therefore starts fresh, and a run with
+`--parallel` gets one cache per worker.
+
+```xml
+<!-- phpunit.xml.dist -->
+<env name="DISCOVERY_CACHE_STORE" value="memory"/>
+<env name="DISCOVERY_CACHE_ENVIRONMENTS" value="production,testing"/>
+```
+
+The in-memory store fills itself, so there is no `discovery:cache` step to run. The file store never fills itself on
+boot, which leaves a deployment in control of when it is written.
+
+A test that changes what discovery should find (a fixture class written at runtime, for instance) can start over with
+`DiscoveryServiceProvider::forgetProcessCache()`.
 
 ## Where to next
 
