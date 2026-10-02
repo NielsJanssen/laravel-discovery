@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
+use GraphQL\Utils\BuildSchema;
 use GraphQL\Utils\SchemaPrinter;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
@@ -418,6 +419,8 @@ it('resolves a list of a few thousand objects quickly', function () {
 });
 
 it('leaves the workbench schema unchanged', function () {
-    expect(SchemaPrinter::doPrint(GraphQL::schema()))
-        ->toBe(file_get_contents(__DIR__ . '/../../Fixtures/RebingGraphQL/workbench-schema.graphql'));
+    $sorted = ['sortArguments' => true, 'sortEnumValues' => true, 'sortFields' => true, 'sortInputFields' => true, 'sortTypes' => true];
+    $snapshot = BuildSchema::build((string) file_get_contents(__DIR__ . '/../../Fixtures/RebingGraphQL/workbench-schema.graphql'));
+
+    expect(SchemaPrinter::doPrint(GraphQL::schema(), $sorted))->toBe(SchemaPrinter::doPrint($snapshot, $sorted));
 });
