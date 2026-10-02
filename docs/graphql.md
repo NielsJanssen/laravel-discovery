@@ -40,8 +40,9 @@ For discovery configuration and caching, see [Installation](installation.md).
 
 ## Two ways to register a field
 
-**Class-based.** Classes extending Rebing's `Type`, `Query`, or `Mutation` are discovered and registered in the default
-schema without an attribute. Existing Rebing code keeps working, and you can adopt attributes gradually.
+**Class-based.** Classes extending Rebing's `Query` or `Mutation` are discovered and registered in the default
+schema without an attribute. Classes extending Rebing's `Type` go to `graphql.types`, so every schema can use them.
+Existing Rebing code keeps working, and you can adopt attributes gradually.
 
 **Action-based.** A method carrying `#[Query]` or `#[Mutation]` becomes a field on its own, with the resolver arguments
 taken from the method signature. This is the preferred style for new code, and the rest of this page describes it.
@@ -223,7 +224,8 @@ class Maintenance
 }
 ```
 
-Class-based registrations always land in the default schema, since there is no action to decorate.
+Class-based `Query` and `Mutation` registrations always land in the default schema, since there is no action to
+decorate. Class-based `Type` registrations go to `graphql.types`, so every schema can use them.
 
 ## Middleware
 

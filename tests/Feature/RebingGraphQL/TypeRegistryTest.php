@@ -6,16 +6,12 @@ namespace Tests\Feature\RebingGraphQL;
 
 use GraphQL\Type\Definition\Type as GraphQLType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\NullType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
 use Rebing\GraphQL\Support\Facades\GraphQL;
-use Tempest\Discovery\DiscoveryItems;
-use Tempest\Discovery\DiscoveryLocation;
-use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\RebingGraphQL\Types\Book;
 use Tests\Fixtures\RebingGraphQL\Types\ClassTypedPaginatedQuery;
 use Tests\Fixtures\RebingGraphQL\Types\ListOfQuery;
@@ -32,17 +28,9 @@ beforeEach(function () {
  */
 function discoverTypeFixture(string $class): array
 {
-    $discovery = app(GraphQLDiscovery::class);
-    $discovery->setItems(new DiscoveryItems());
-
-    $discovery->discover(
-        new DiscoveryLocation('Tests\\Fixtures\\RebingGraphQL\\Types', dirname(__DIR__, 2) . '/Fixtures/RebingGraphQL/Types'),
-        new ClassReflector($class),
-    );
-
     $items = [];
 
-    foreach ($discovery->getItems() as $item) {
+    foreach (discoverGraphQL($class)->getItems() as $item) {
         $items[$item->method] = $item;
     }
 
