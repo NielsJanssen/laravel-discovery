@@ -7,7 +7,9 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 use Deprecated;
 use Illuminate\Foundation\Application;
 use LogicException;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\DeprecationReason;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ParameterClassifier;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeCollector;
 use Rebing\GraphQL\GraphQL;
 use Rebing\GraphQL\Support\Mutation as RebingMutation;
 use Rebing\GraphQL\Support\Query as RebingQuery;
@@ -26,6 +28,7 @@ final class GraphQLDiscovery implements Discovery
     public function __construct(
         private readonly Application $app,
         private readonly ParameterClassifier $parameters,
+        private readonly TypeCollector $types,
     ) {}
 
     /**
@@ -33,7 +36,17 @@ final class GraphQLDiscovery implements Discovery
      */
     public function discover(DiscoveryLocation $location, ClassReflector $class): void
     {
-        if (!class_exists(GraphQL::class) || ! $class->isInstantiable()) {
+        if (!class_exists(GraphQL::class)) {
+            return;
+        }
+
+        $type = $class->getAttribute(Type::class);
+
+        if ($type !== null) {
+            $this->addType($location, $this->types->collect($class, $type));
+        }
+
+        if (! $class->isInstantiable()) {
             return;
         }
 
@@ -122,7 +135,7 @@ final class GraphQLDiscovery implements Discovery
                 $parameters->args,
                 $parameters->injections,
                 $middleware,
-                $this->resolveDeprecationReason($method->getAttribute(Deprecated::class)),
+                DeprecationReason::from($method->getAttribute(Deprecated::class)),
                 $authorizations,
                 $typeBuilder,
                 $parameters->containerInjections,
@@ -182,7 +195,45 @@ final class GraphQLDiscovery implements Discovery
      *
      * @param  list<DiscoveredType>  $types
      */
-    private function validate(array $types): void {}
+    private function validate(array $types): void
+    {
+        $handWritten = [];
+
+        foreach ($this->discoveryItems as $item) {
+            if ($item instanceof DiscoveredField && $item->fieldType === 'types' && ($name = $item->getName()) !== null) {
+                $handWritten[$name] = $item->class;
+            }
+        }
+
+        foreach ($types as $type) {
+            $taken = $handWritten[$type->name] ?? null;
+
+            if ($taken !== null) {
+                throw new LogicException(sprintf(
+                    'GraphQL type name [%s] is used by both %s (#[Type]) and the Rebing type %s. Rename one with #[Type(name: ...)].',
+                    $type->name,
+                    $type->class,
+                    $taken,
+                ));
+            }
+        }
+    }
+
+    private function addType(DiscoveryLocation $location, DiscoveredType $type): void
+    {
+        foreach ($this->discoveryItems as $item) {
+            if ($item instanceof DiscoveredType && $item->name === $type->name && $item->class !== $type->class) {
+                throw new LogicException(sprintf(
+                    'GraphQL type name [%s] is used by both %s and %s. Rename one with #[Type(name: ...)].',
+                    $type->name,
+                    $item->class,
+                    $type->class,
+                ));
+            }
+        }
+
+        $this->discoveryItems->add($location, $type->withBindName());
+    }
 
     private function writeConfig(): void
     {
@@ -249,23 +300,6 @@ final class GraphQLDiscovery implements Discovery
         }
 
         return $classBuilders[0] ?? null;
-    }
-
-    private function resolveDeprecationReason(?Deprecated $deprecated): ?string
-    {
-        if ($deprecated === null) {
-            return null;
-        }
-
-        $message = $deprecated->message;
-        $since = $deprecated->since;
-
-        return match (true) {
-            $message !== null && $since !== null => "$message (since $since)",
-            $message !== null => $message,
-            $since !== null => "Deprecated since $since",
-            default => 'Deprecated',
-        };
     }
 
     /**

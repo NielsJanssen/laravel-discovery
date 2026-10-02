@@ -78,16 +78,11 @@ final class DiscoveredObjectType extends RebingType
         $args = [];
 
         foreach ($field->parameters->args as $arg) {
-            if ($arg->hasRules) {
-                throw new LogicException(sprintf(
-                    'Field %s.%s has #[Arg(rules:)] on $%s, which type fields do not validate yet.',
-                    $this->discoveredType->name,
-                    $field->name,
-                    $arg->paramName,
-                ));
-            }
-
             $entry = ['type' => $registry->resolve(TypeRef::from($arg->type, nullable: $arg->nullable), Position::Input)];
+
+            if ($arg->hasDefault && $arg->defaultValue !== null) {
+                $entry['defaultValue'] = $arg->defaultValue;
+            }
 
             if ($arg->description !== null) {
                 $entry['description'] = $arg->description;
@@ -129,14 +124,6 @@ final class DiscoveredObjectType extends RebingType
     private function methodResolver(DiscoveredTypeField $field): Closure
     {
         $parameters = $field->parameters;
-
-        if ($parameters->modelBindings !== [] || $parameters->argCompositions !== []) {
-            throw new LogicException(sprintf(
-                'Field %s.%s binds a model or value-object parameter, which type fields do not support yet.',
-                $this->discoveredType->name,
-                $field->name,
-            ));
-        }
 
         return function (mixed $root, array $args, mixed $context, ?ResolveInfo $info) use ($field, $parameters): mixed {
             if (! is_object($root)) {

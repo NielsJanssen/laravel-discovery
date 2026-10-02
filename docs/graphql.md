@@ -108,6 +108,93 @@ public function shelf(): array
 }
 ```
 
+## Object types
+
+`#[Type]` on a plain class makes it a GraphQL object type. Its public properties become fields, and so do methods that
+carry `#[Field]`. Return an instance from a query and reference the type by class-string:
+
+```php
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Ignore;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
+
+#[Type(description: 'A published book')]
+final class Book
+{
+    public function __construct(
+        #[Field(type: 'ID')] public string $id,
+        public string $title,
+        public ?string $subtitle,
+        public AuthorSummary $author,                 // another #[Type] class
+        #[Field(of: 'string')] public array $tags = [],
+        #[Field(description: 'ISBN-13', deprecationReason: 'Use identifiers')] public ?string $isbn = null,
+        #[Ignore] public string $internalNotes = '',
+    ) {}
+
+    public string $slug { get => Str::slug($this->title); }
+
+    #[Field(description: 'The title, shortened')]
+    public function excerpt(int $length = 80): string { return Str::limit($this->title, $length); }
+
+    #[Field(of: Book::class)]
+    public function related(Recommender $recommender, int $limit = 5): array { return $recommender->for($this, $limit); }
+}
+
+class Books
+{
+    #[Query(type: Book::class)]
+    public function book(): Book { /* ... */ }
+}
+```
+
+```graphql
+"A published book"
+type Book {
+  id: ID!
+  title: String!
+  subtitle: String
+  author: AuthorSummary!
+  tags: [String!]!
+  "ISBN-13"
+  isbn: String @deprecated(reason: "Use identifiers")
+  slug: String!
+  "The title, shortened"
+  excerpt(length: Int = 80): String!
+  related(limit: Int = 5): [Book!]!
+}
+```
+
+The type is named after the class, with a `Type` suffix dropped (`BookType` becomes `Book`). `#[Type(name: ...)]`
+overrides it. Two types with the same name, including a hand-written Rebing type, are an error.
+
+**Fields.** Every public, non-static property is a field: promoted, plain, and hooked properties with a `get` hook.
+`#[Ignore]` leaves one out. A public method is a field only with `#[Field]`; its parameters work as they do on a query:
+scalars become arguments (with their defaults), `#[Root]`, `#[Context]` and `ResolveInfo` are injected, and any other
+class is resolved from the container. The method is called on the object being resolved, never on a fresh instance.
+
+`#[Field]` takes:
+
+| Parameter           | Type      | Default         | Purpose                                                                        |
+|---------------------|-----------|-----------------|--------------------------------------------------------------------------------|
+| `name`              | `?string` | the member name | The field name in the schema.                                                  |
+| `type`              | `?string` | inferred        | A GraphQL type name, a scalar name or a class-string.                          |
+| `of`                | `?string` | `null`          | The item type of a list; cannot be combined with `type`.                       |
+| `nullable`          | `bool`    | `false`         | Makes the field nullable. It only widens: `false` keeps a `?T` field nullable. |
+| `nullableItems`     | `bool`    | `false`         | Allow list items to be `null`.                                                 |
+| `description`       | `?string` | `null`          | The field description.                                                         |
+| `deprecationReason` | `?string` | `null`          | Marks the field deprecated. On methods, native `#[\Deprecated]` works too.     |
+
+**Inferred types.** `string`, `int`, `float` and `bool` map to their scalars. A class maps to the GraphQL type it is
+registered as, which is looked up when the schema is built, so classes can reference each other in any order. `?T`
+makes a field nullable; a default value does not. `array`, `iterable` and `Collection` need `of:` (or `type:`), and so
+does anything without a GraphQL counterpart: `mixed`, no type, a union, `void`.
+
+**Errors at discovery.** `#[Field]` on a private, protected, static or write-only member, an action attribute such as `#[Paginated]` on a field method, `#[Field]` together with
+`#[Ignore]`, a type that cannot be inferred, two fields with one name, and a field method that binds a model or sets
+`#[Arg(rules:)]` all throw a `LogicException` naming the class, the member and the fix. Field arguments are not
+validated yet, so validate inside the method.
+
 ## Arguments
 
 Every parameter becomes a GraphQL argument unless it is one of the injections described below. A scalar parameter needs

@@ -18,12 +18,12 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ArgumentRules;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
 use Rebing\GraphQL\Support\Facades\GraphQL;
-use Rebing\GraphQL\Support\Field;
+use Rebing\GraphQL\Support\Field as RebingField;
 use ReflectionMethod;
 use RuntimeException;
 
 /**
- * @phpstan-require-extends Field
+ * @phpstan-require-extends RebingField
  */
 trait AsActionField
 {
