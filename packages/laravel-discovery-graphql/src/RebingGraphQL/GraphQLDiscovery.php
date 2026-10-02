@@ -5,13 +5,8 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Deprecated;
-use GraphQL\Type\Definition\ResolveInfo;
-use Illuminate\Contracts\Container\ContextualAttribute;
-use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Foundation\Application;
-use LogicException;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgs;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ParameterClassifier;
 use Rebing\GraphQL\GraphQL;
 use Rebing\GraphQL\Support\Mutation as RebingMutation;
 use Rebing\GraphQL\Support\Query as RebingQuery;
@@ -22,18 +17,14 @@ use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
-use Tempest\Reflection\ParameterReflector;
 
 final class GraphQLDiscovery implements Discovery
 {
     use IsDiscovery;
 
-    /** laravel-validation's #[Can]. */
-    private const VALUE_AUTHORIZATION_RULE = 'NielsJanssen\\Laravel\\Validation\\Rule\\Can';
-
     public function __construct(
         private readonly Application $app,
-        private readonly HydratorRegistry $hydrators,
+        private readonly ParameterClassifier $parameters,
     ) {}
 
     /**
@@ -98,72 +89,7 @@ final class GraphQLDiscovery implements Discovery
                 ...$class->getAttributes(ActionArgProvider::class),
             ]);
 
-            $valueObjectClasses = $this->collectValueObjectClasses($argProviders, $class, $method);
-
-            $args = [];
-            $injections = [];
-            $containerInjections = [];
-            $argCompositions = [];
-            $modelBindings = [];
-
-            foreach ($method->getParameters() as $param) {
-                // Parameters carrying a Laravel ContextualAttribute (e.g. #[CurrentUser], #[Config])
-                // are left untouched at discovery so that $container->call() can resolve them via
-                // the attribute's resolve() hook. Pre-filling $mappedArgs would override the attribute.
-                if ($param->getAttribute(ContextualAttribute::class) !== null) {
-                    continue;
-                }
-
-                /** @var Arg|null $argAttr */
-                $argAttr = $param->getAttribute(Arg::class);
-
-                $kind = $this->detectInjectionKind($param);
-
-                if ($kind !== null) {
-                    $injections[$param->getName()] = $kind;
-                    continue;
-                }
-
-                $type = $param->getType();
-
-                if (!$type->isScalar() && is_a($type->getName(), EloquentModel::class, true)) {
-                    $this->assertNoValueAuthorizationRule($param, $class, $method);
-
-                    $modelBindings[] = new DiscoveredModelBinding(
-                        paramName: $param->getName(),
-                        argName: $argAttr !== null && $argAttr->name !== null ? $argAttr->name : $param->getName(),
-                        modelClass: $type->getName(),
-                        nullable: $type->isNullable() || $param->hasDefaultValue(),
-                        type: $argAttr?->type,
-                        hasUserRules: $argAttr !== null && ! empty($argAttr->rules),
-                        authorizations: $this->discoverParameterAuthorizations($param, $class, $method),
-                    );
-
-                    continue;
-                }
-
-                $this->assertNoParameterAuthorization($param, $class, $method);
-
-                if (!$argAttr && !$type->isScalar()) {
-                    $typeName = $type->getName();
-
-                    $valueObject = $valueObjectClasses[$typeName] ?? null;
-
-                    if ($valueObject !== null && $this->hydrators->hydrates($valueObject)) {
-                        $argCompositions[$param->getName()] = $valueObject;
-                        continue;
-                    }
-
-                    if (class_exists($typeName) || interface_exists($typeName)) {
-                        $containerInjections[$param->getName()] = $typeName;
-                        continue;
-                    }
-                }
-
-                $args[] = $this->discoverActionParameter($argAttr, $param, $class, $method);
-            }
-
-            $this->assertNoArgNameCollisions($args, $class, $method);
+            $parameters = $this->parameters->classify($class, $method, $argProviders);
 
             $middleware = [
                 ...$classMiddleware,
@@ -183,16 +109,16 @@ final class GraphQLDiscovery implements Discovery
                 $action,
                 $class->getName(),
                 $method->getName(),
-                $args,
-                $injections,
+                $parameters->args,
+                $parameters->injections,
                 $middleware,
                 $this->resolveDeprecationReason($method->getAttribute(Deprecated::class)),
                 $authorizations,
                 $typeBuilder,
-                $containerInjections,
+                $parameters->containerInjections,
                 $argProviders,
-                $argCompositions,
-                $modelBindings,
+                $parameters->argCompositions,
+                $parameters->modelBindings,
             )->withBindName());
         }
     }
@@ -263,62 +189,6 @@ final class GraphQLDiscovery implements Discovery
         return $classBuilders[0] ?? null;
     }
 
-    /**
-     * @param  list<ActionArgProvider>  $argProviders
-     * @param  ClassReflector<object>  $class
-     * @return array<class-string<ComposedFromArgs>, class-string<ComposedFromArgs>>
-     */
-    private function collectValueObjectClasses(array $argProviders, ClassReflector $class, MethodReflector $method): array
-    {
-        $seen = [];
-
-        foreach ($argProviders as $provider) {
-            foreach (array_keys($provider->provideArgs()) as $name) {
-                if (isset($seen[$name])) {
-                    throw new RuntimeException(sprintf(
-                        'Method %s::%s has multiple ActionArgProvider attributes declaring the same arg "%s".',
-                        $class->getName(),
-                        $method->getName(),
-                        $name,
-                    ));
-                }
-                $seen[$name] = true;
-            }
-        }
-
-        $valueObjectClasses = [];
-
-        foreach ($argProviders as $provider) {
-            foreach ($provider->provideValueObjects() as $valueObject) {
-                $valueObjectClasses[$valueObject] = $valueObject;
-            }
-        }
-
-        return $valueObjectClasses;
-    }
-
-    /**
-     * @return 'root'|'context'|'info'|null
-     */
-    private function detectInjectionKind(ParameterReflector $param): ?string
-    {
-        if ($param->getAttribute(Root::class) !== null) {
-            return 'root';
-        }
-
-        if ($param->getAttribute(Context::class) !== null) {
-            return 'context';
-        }
-
-        $type = $param->getType();
-
-        if (! $type->isScalar() && is_a($type->getName(), ResolveInfo::class, true)) {
-            return 'info';
-        }
-
-        return null;
-    }
-
     private function resolveDeprecationReason(?Deprecated $deprecated): ?string
     {
         if ($deprecated === null) {
@@ -358,150 +228,5 @@ final class GraphQLDiscovery implements Discovery
             $method->getName(),
             class_basename($action::class),
         ));
-    }
-
-    /**
-     * Matched by class name, so laravel-validation stays a suggestion rather than a dependency.
-     *
-     * @param ClassReflector<object> $class
-     */
-    private function assertNoValueAuthorizationRule(ParameterReflector $param, ClassReflector $class, MethodReflector $method): void
-    {
-        foreach ($param->getReflection()->getAttributes() as $attribute) {
-            if ($attribute->getName() !== self::VALUE_AUTHORIZATION_RULE) {
-                continue;
-            }
-
-            throw new LogicException(sprintf(
-                'Validation attribute #[Can] on the model-bound parameter $%s in %s::%s would authorize the raw id, not the %s it binds. Use #[Authorize(\'ability\')] on the parameter instead.',
-                $param->getName(),
-                $class->getName(),
-                $method->getName(),
-                class_basename($param->getType()->getName()),
-            ));
-        }
-    }
-
-    /**
-     * @param ClassReflector<object> $class
-     * @return list<DiscoveredModelAuthorization>
-     */
-    private function discoverParameterAuthorizations(ParameterReflector $param, ClassReflector $class, MethodReflector $method): array
-    {
-        $authorizations = [];
-
-        foreach ($param->getAttributes(Authorize::class) as $authorize) {
-            if ($authorize->ability === null) {
-                throw new LogicException(sprintf(
-                    '#[Authorize] on the parameter $%s in %s::%s needs an ability, as in #[Authorize(\'view\')]. Bare #[Authorize] and #[Authorize(gate:)] belong on the class or the method.',
-                    $param->getName(),
-                    $class->getName(),
-                    $method->getName(),
-                ));
-            }
-
-            if ($authorize->gate !== null) {
-                throw new LogicException(sprintf(
-                    '#[Authorize(gate:)] on the parameter $%s in %s::%s is not supported: a gate class receives the raw args, so it belongs on the class or the method.',
-                    $param->getName(),
-                    $class->getName(),
-                    $method->getName(),
-                ));
-            }
-
-            $authorizations[] = new DiscoveredModelAuthorization(
-                $authorize->ability,
-                $authorize->message ?? DiscoveredModelAuthorization::DEFAULT_MESSAGE,
-            );
-        }
-
-        return $authorizations;
-    }
-
-    /**
-     * @param ClassReflector<object> $class
-     */
-    private function assertNoParameterAuthorization(ParameterReflector $param, ClassReflector $class, MethodReflector $method): void
-    {
-        if ($param->getAttributes(Authorize::class) === []) {
-            return;
-        }
-
-        throw new LogicException(sprintf(
-            '#[Authorize] on the parameter $%s in %s::%s only applies to a model-bound parameter; $%s does not bind an Eloquent model.',
-            $param->getName(),
-            $class->getName(),
-            $method->getName(),
-            $param->getName(),
-        ));
-    }
-
-    /**
-     * A renamed arg that lands on another parameter's PHP name would silently overwrite that
-     * parameter when args are mapped back, so it is rejected at discovery time.
-     *
-     * @param  list<DiscoveredArg>  $args
-     * @param  ClassReflector<object>  $class
-     */
-    private function assertNoArgNameCollisions(array $args, ClassReflector $class, MethodReflector $method): void
-    {
-        $paramNames = [];
-
-        foreach ($method->getParameters() as $param) {
-            $paramNames[$param->getName()] = true;
-        }
-
-        foreach ($args as $arg) {
-            if ($arg->name === $arg->paramName) {
-                continue;
-            }
-
-            if (isset($paramNames[$arg->name])) {
-                throw new LogicException(sprintf(
-                    'Argument #[Arg(name: \'%s\')] on %s::%s($%s) collides with the parameter $%s. Rename the arg or the parameter.',
-                    $arg->name,
-                    $class->getName(),
-                    $method->getName(),
-                    $arg->paramName,
-                    $arg->name,
-                ));
-            }
-        }
-    }
-
-    /**
-     * @param ClassReflector<object> $class
-     */
-    private function discoverActionParameter(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method): DiscoveredArg
-    {
-        $typeReflector = $param->getType();
-
-        if ($argAttr !== null && $argAttr->type !== null) {
-            $typeName = $argAttr->type;
-        } elseif ($typeReflector->isScalar()) {
-            $typeName = $typeReflector->getName();
-        } else {
-            throw new RuntimeException(sprintf(
-                'Parameter $%s in %s::%s is not a scalar type. Use #[Arg(type: \'GraphQLTypeName\')] to specify the GraphQL type.',
-                $param->getName(),
-                $class->getName(),
-                $method->getName(),
-            ));
-        }
-
-        $hasRules = $argAttr !== null && ! empty($argAttr->rules);
-        $hasDefault = $param->hasDefaultValue();
-
-        return new DiscoveredArg(
-            name: $argAttr !== null && $argAttr->name !== null ? $argAttr->name : $param->getName(),
-            paramName: $param->getName(),
-            type: $typeName,
-            nullable: $typeReflector->isNullable() || $hasDefault,
-            description: $argAttr?->description,
-            hasRules: $hasRules,
-            hasDefault: $hasDefault,
-            defaultValue: $hasDefault ? $param->getDefaultValue() : null,
-            deprecationReason: $argAttr?->deprecationReason,
-        );
     }
 }
