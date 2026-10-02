@@ -1,0 +1,97 @@
+"A book"
+type Book {
+  "The id of the book"
+  id: Int!
+
+  "The title of the book"
+  title: String!
+
+  "The name of the author"
+  author: String
+}
+
+"An author"
+type Author {
+  "The id of the author"
+  id: Int!
+
+  "The name of the author"
+  name: String!
+}
+
+"An application user"
+type User {
+  "The id of the user"
+  id: Int!
+
+  "The name of the user"
+  name: String
+
+  "The email of the user"
+  email: String
+}
+
+type BookPagination {
+  "List of items on the current page"
+  data: [Book!]!
+
+  "Number of total items selected by the query"
+  total: Int!
+
+  "Number of items returned per page"
+  per_page: Int!
+
+  "Current page of the cursor"
+  current_page: Int!
+
+  "Number of the first item returned"
+  from: Int
+
+  "Number of the last item returned"
+  to: Int
+
+  "The last page (number of pages)"
+  last_page: Int!
+
+  "Determines if cursor has more pages after the current page"
+  has_more_pages: Boolean!
+}
+
+type Query {
+  guardedReport: String!
+  validatedHello(name: String!): String!
+  authorizedUser(id: ID!): String!
+  sortedBooks(sortBy: String = "title", sortDirection: String = "desc"): String!
+  user(id: ID!): User!
+  maybeBook(found: Boolean): Book
+  authorizedOptionalUser(id: ID): String
+  authors: [Author!]!
+  greet(
+    "Name to greet"
+    name: String!
+  ): String!
+  whoami: String!
+  books(
+    "Filter by title"
+    title: String
+  ): [Book!]!
+  shout(name: String!): String!
+  currentUser: String!
+  secret: String!
+  attributeHello(name: String!): String!
+  bothRulesHello(name: String!): String!
+  renamedHello(nickname: String!): String!
+  messageHello(name: String!): String!
+  optionalHello(name: String): String!
+  notifyAll(recipients: [String!]): [String!]!
+  add(a: Int, b: Int): Int!
+  paginatedBooks(page: Int = 1, limit: Int = 20, sortBy: String, sortDirection: String = "asc"): BookPagination
+}
+
+type Mutation {
+  clearCache: Null
+  rebingNative: String
+}
+
+"Represents the absence of a return value."
+scalar Null

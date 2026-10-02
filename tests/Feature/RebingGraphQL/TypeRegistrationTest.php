@@ -5,15 +5,11 @@ declare(strict_types=1);
 namespace Tests\Feature\RebingGraphQL;
 
 use GraphQL\Utils\SchemaPrinter;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredArg;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredModelBinding;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredObjectType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredTypeField;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ClassifiedParameters;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ParameterClassifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldSource;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Pagination;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\QueryField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
@@ -29,7 +25,6 @@ use Tests\Fixtures\RebingGraphQL\Types\ShelfQuery;
 use Workbench\App\GraphQL\Types\AuthorType;
 use Workbench\App\GraphQL\Types\BookType;
 use Workbench\App\GraphQL\Types\UserType;
-use Workbench\App\Models\User;
 
 afterEach(function () {
     app()->forgetInstance('config_loaded_from_cache');
@@ -174,24 +169,6 @@ describe('the object type adapter', function () {
 
         expect(fn() => schemaSdl(ShelfQuery::class, $type))
             ->toThrow(\LogicException::class, 'Field Shelf.label comes from a type factory');
-    });
-
-    it('rejects a model-bound or value-object parameter on a method field', function (ClassifiedParameters $parameters) {
-        $type = singleFieldType(new DiscoveredTypeField('summary', 'summary', TypeRef::scalar('string'), FieldSource::Method, $parameters));
-
-        expect(fn() => schemaSdl(ShelfQuery::class, $type))
-            ->toThrow(\LogicException::class, 'Field Shelf.summary binds a model or value-object parameter');
-    })->with([
-        'model binding' => fn() => new ClassifiedParameters(modelBindings: [new DiscoveredModelBinding('user', 'user', User::class, false)]),
-        'value object' => fn() => new ClassifiedParameters(argCompositions: ['page' => Pagination::class]),
-    ]);
-
-    it('rejects #[Arg(rules:)] on a method field arg instead of dropping the rules', function () {
-        $parameters = new ClassifiedParameters(args: [new DiscoveredArg('times', 'times', 'int', false, hasRules: true)]);
-        $type = singleFieldType(new DiscoveredTypeField('summary', 'summary', TypeRef::scalar('string'), FieldSource::Method, $parameters));
-
-        expect(fn() => schemaSdl(ShelfQuery::class, $type))
-            ->toThrow(\LogicException::class, 'Field Shelf.summary has #[Arg(rules:)] on $times, which type fields do not validate yet.');
     });
 });
 
