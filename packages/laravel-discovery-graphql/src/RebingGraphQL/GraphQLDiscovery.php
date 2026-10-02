@@ -6,6 +6,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Deprecated;
 use Illuminate\Foundation\Application;
+use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ParameterClassifier;
 use Rebing\GraphQL\GraphQL;
 use Rebing\GraphQL\Support\Mutation as RebingMutation;
@@ -67,7 +68,16 @@ final class GraphQLDiscovery implements Discovery
                 continue;
             }
 
-            if ($action->type === null) {
+            if ($action->type !== null && $action->of !== null) {
+                throw new LogicException(sprintf(
+                    'Method %s::%s sets both type: and of: on #[%s]. Use of: for a list of that type, or type: for a single value.',
+                    $class->getName(),
+                    $method->getName(),
+                    class_basename($action::class),
+                ));
+            }
+
+            if ($action->type === null && $action->of === null) {
                 [$action->type, $action->nullable] = $this->discoverActionReturnType($action, $class, $method);
             } elseif ($method->getReturnType()?->isNullable() === true) {
                 // An explicit type: says which type, not whether the field may be null, so a `?Type`
@@ -119,6 +129,7 @@ final class GraphQLDiscovery implements Discovery
                 $argProviders,
                 $parameters->argCompositions,
                 $parameters->modelBindings,
+                TypeRef::fromAction($action),
             )->withBindName());
         }
     }

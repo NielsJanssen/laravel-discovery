@@ -116,24 +116,20 @@ trait AsActionField
     public function type(): GraphQLType
     {
         $action = $this->discoveredAction->action;
+        $ref = $this->discoveredAction->returnType;
+        $registry = $this->app->make(TypeRegistry::class);
 
         if ($this->discoveredAction->typeBuilder !== null) {
-            return $this->discoveredAction->typeBuilder->buildType($action);
+            $resolved = $ref === null ? $action : clone($action, ['type' => $registry->name($ref, Position::Output)]);
+
+            return $this->discoveredAction->typeBuilder->buildType($resolved);
         }
 
-        $innerType = match ($action->type) {
-            'void' => new NullType(),
-            null => throw new RuntimeException('Action type was not resolved during discovery.'),
-            default => $this->scalarType($action->type),
-        };
-
-        if ($action->list) {
-            $type = GraphQLType::listOf(GraphQLType::nonNull($innerType));
-        } else {
-            $type = $innerType;
+        if ($ref === null) {
+            throw new RuntimeException('Action type was not resolved during discovery.');
         }
 
-        return $action->nullable ? $type : GraphQLType::nonNull($type);
+        return $registry->resolve($ref, Position::Output);
     }
 
     /**

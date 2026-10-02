@@ -14,7 +14,11 @@ class Mutation implements Action
         public ?string $type = null,
         public ?string $schema = null,
         public ?string $description = null,
-        public bool $list = false,
+        public bool $list = false {
+            get => $this->list || $this->of !== null;
+        },
         public bool $nullable = false,
+        public ?string $of = null,
+        public bool $nullableItems = false,
     ) {}
 }

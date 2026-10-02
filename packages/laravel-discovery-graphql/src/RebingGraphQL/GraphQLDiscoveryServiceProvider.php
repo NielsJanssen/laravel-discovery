@@ -38,6 +38,8 @@ final class GraphQLDiscoveryServiceProvider extends ServiceProvider
             $this->app->tag([LaravelValidationRules::class], RuleProvider::TAG);
         }
 
+        $this->app->singleton(TypeRegistry::class);
+
         $this->app->singleton(
             HydratorRegistry::class,
             fn(): HydratorRegistry => new HydratorRegistry(
