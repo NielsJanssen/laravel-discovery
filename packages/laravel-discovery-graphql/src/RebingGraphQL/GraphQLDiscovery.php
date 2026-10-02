@@ -136,28 +136,74 @@ final class GraphQLDiscovery implements Discovery
 
     public function apply(): void
     {
-        if ($this->app->configurationIsCached()) {
-            foreach ($this->discoveryItems as $item) {
-                if ($item instanceof DiscoveredAction && $item->bindName !== null) {
-                    $this->app->singleton($item->bindName, $item->createType(...));
-                }
-            }
+        $types = $this->bindSingletons();
 
-            return;
+        $this->registerTypes($types);
+        $this->validate($types);
+
+        if (! $this->app->configurationIsCached()) {
+            $this->writeConfig();
         }
+    }
 
-        $config = $this->app->make('config');
-        $defaultSchema = $config->string('graphql.default_schema', 'default');
-
-        $schemas = [];
+    /**
+     * @return list<DiscoveredType>
+     */
+    private function bindSingletons(): array
+    {
+        $types = [];
 
         foreach ($this->discoveryItems as $item) {
             if ($item instanceof DiscoveredAction && $item->bindName !== null) {
                 $this->app->singleton($item->bindName, $item->createType(...));
+            } elseif ($item instanceof DiscoveredType && $item->bindName !== null) {
+                $this->app->singleton($item->bindName, $item->createType(...));
+                $types[] = $item;
+            }
+        }
+
+        return $types;
+    }
+
+    /**
+     * @param  list<DiscoveredType>  $types
+     */
+    private function registerTypes(array $types): void
+    {
+        $registry = $this->app->make(TypeRegistry::class);
+
+        foreach ($types as $type) {
+            $registry->register($type->class, $type->name, $type->kind);
+        }
+    }
+
+    /**
+     * Cross-item checks on the discovered types.
+     *
+     * @param  list<DiscoveredType>  $types
+     */
+    private function validate(array $types): void {}
+
+    private function writeConfig(): void
+    {
+        $config = $this->app->make('config');
+        $defaultSchema = $config->string('graphql.default_schema', 'default');
+
+        $schemas = [];
+        $types = [];
+
+        foreach ($this->discoveryItems as $item) {
+            if ($item instanceof DiscoveredAction && $item->bindName !== null) {
                 $fieldName = $item->action->name ?? $item->method;
                 $schemas[$item->action->schema ?? $defaultSchema][$item->fieldType][$fieldName] = $item->bindName;
+            } elseif ($item instanceof DiscoveredType && $item->bindName !== null) {
+                $types[$item->name] = $item->bindName;
             } elseif ($item instanceof DiscoveredField && ($fieldName = $item->getName()) !== null) {
-                $schemas[$item->schema][$item->fieldType][$fieldName] = $item->class;
+                if ($item->fieldType === 'types') {
+                    $types[$fieldName] = $item->class;
+                } else {
+                    $schemas[$item->schema][$item->fieldType][$fieldName] = $item->class;
+                }
             }
         }
 
@@ -165,6 +211,11 @@ final class GraphQLDiscovery implements Discovery
             $config->array('graphql.schemas', []),
             $schemas,
         ));
+
+        $config->set('graphql.types', [
+            ...$config->array('graphql.types', []),
+            ...$types,
+        ]);
     }
 
     /**

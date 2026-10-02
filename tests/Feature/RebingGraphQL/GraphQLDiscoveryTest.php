@@ -7,12 +7,8 @@ namespace Tests\Feature\RebingGraphQL;
 use GraphQL\Language\AST\StringValueNode;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredField;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\NullType;
 use Rebing\GraphQL\Support\Facades\GraphQL;
-use Tempest\Discovery\DiscoveryItems;
-use Tempest\Discovery\DiscoveryLocation;
-use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\RebingGraphQL\AlwaysAllowGate;
 use Tests\Fixtures\RebingGraphQL\AlwaysDenyGate;
 use Tests\Fixtures\RebingGraphQL\AuthorizedQuery;
@@ -42,23 +38,6 @@ use Tests\Fixtures\RebingGraphQL\UppercaseMiddleware;
 use Tests\Fixtures\RebingGraphQL\VoidQuery;
 use Workbench\App\GraphQL\Mutations\RebingNativeMutation;
 use Workbench\App\Models\User;
-
-function discoverGraphQL(string ...$classes): GraphQLDiscovery
-{
-    $discovery = app(GraphQLDiscovery::class);
-    $discovery->setItems(new DiscoveryItems());
-
-    $location = new DiscoveryLocation(
-        namespace: 'Tests\\Fixtures\\GraphQL',
-        path: dirname(__DIR__, 2) . '/Fixtures/RebingGraphQL',
-    );
-
-    foreach ($classes as $class) {
-        $discovery->discover($location, new ClassReflector($class));
-    }
-
-    return $discovery;
-}
 
 describe('resolution and return-type inference', function () {
     it('returns books from the books query', function () {
