@@ -37,6 +37,7 @@ class DiscoveredAction
         public array $argCompositions = [],
         /** @var list<DiscoveredModelBinding> */
         public array $modelBindings = [],
+        public ?TypeRef $returnType = null,
     ) {}
 
     public function createType(Application $app): Field

@@ -50,14 +50,16 @@ taken from the method signature. This is the preferred style for new code, and t
 
 Both attributes target methods and take the same arguments.
 
-| Parameter     | Type      | Default            | Purpose                                                                       |
-|---------------|-----------|--------------------|-------------------------------------------------------------------------------|
-| `name`        | `?string` | the method name    | The field name in the schema.                                                 |
-| `type`        | `?string` | inferred           | The GraphQL type returned. Required unless the return type is scalar or void. |
-| `schema`      | `?string` | `graphql.default_schema` | The schema this field is registered in. See [Schemas](#schemas).        |
-| `description` | `?string` | `null`             | Surfaced as the field description in GraphiQL.                                |
-| `list`        | `bool`    | `false`            | Wrap the type in a GraphQL list of non-null elements.                         |
-| `nullable`    | `bool`    | `false`            | Allow the field to resolve to `null`.                                         |
+| Parameter       | Type      | Default                  | Purpose                                                                        |
+|-----------------|-----------|--------------------------|--------------------------------------------------------------------------------|
+| `name`          | `?string` | the method name          | The field name in the schema.                                                  |
+| `type`          | `?string` | inferred                 | The GraphQL type returned. Required unless the return type is scalar or void.  |
+| `schema`        | `?string` | `graphql.default_schema` | The schema this field is registered in. See [Schemas](#schemas).               |
+| `description`   | `?string` | `null`                   | Surfaced as the field description in GraphiQL.                                 |
+| `list`          | `bool`    | `false`                  | Wrap the type in a GraphQL list of non-null elements.                          |
+| `nullable`      | `bool`    | `false`                  | Allow the field to resolve to `null`.                                          |
+| `of`            | `?string` | `null`                   | The item type of a list. Implies `list: true`; cannot be combined with `type`. |
+| `nullableItems` | `bool`    | `false`                  | Allow list items to be `null`: `[Product]!` instead of `[Product!]!`.          |
 
 `list: true` with the default `nullable: false` produces `[Product!]!`: a non-null list of non-null elements. Setting
 `nullable: true`, or returning `?array`, makes the list itself nullable.
@@ -91,6 +93,19 @@ public function product(#[Arg('id')] Product $product): Product
 ```
 
 Note that `type:` describes the GraphQL type, and the PHP return type stays whatever your code returns.
+
+`type:` and `of:` take a GraphQL type name (`'Product'`), a scalar name (`'string'`, `'ID'`) or a class-string
+(`Product::class`). A class-string resolves to the GraphQL type that class is registered as in the
+`NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry`. Building the field throws a `RuntimeException` naming the
+class when it is not registered.
+
+```php
+#[Query(of: 'Product', nullableItems: true)]
+public function shelf(): array
+{
+    return [Product::first(), null];   // [Product]!
+}
+```
 
 ## Arguments
 
