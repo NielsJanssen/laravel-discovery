@@ -15,7 +15,6 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorize;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Context;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredArg;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredModelAuthorization;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredModelBinding;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Root;
 use RuntimeException;
@@ -193,7 +192,7 @@ final readonly class ParameterClassifier
 
     /**
      * @param ClassReflector<object> $class
-     * @return list<DiscoveredModelAuthorization>
+     * @return list<Authorize>
      */
     private function discoverParameterAuthorizations(ParameterReflector $param, ClassReflector $class, MethodReflector $method): array
     {
@@ -218,10 +217,16 @@ final readonly class ParameterClassifier
                 ));
             }
 
-            $authorizations[] = new DiscoveredModelAuthorization(
-                $authorize->ability,
-                $authorize->message ?? DiscoveredModelAuthorization::DEFAULT_MESSAGE,
-            );
+            if ($authorize->onDenied !== null) {
+                throw new LogicException(sprintf(
+                    '#[Authorize(onDenied:)] on the parameter $%s in %s::%s only applies to a field of a #[Type]. A denied parameter always reports an error; remove onDenied:.',
+                    $param->getName(),
+                    $class->getName(),
+                    $method->getName(),
+                ));
+            }
+
+            $authorizations[] = $authorize;
         }
 
         return $authorizations;

@@ -6,12 +6,16 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery;
 
 use Deprecated;
 use LogicException;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Action;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\ActionArgProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\ActionDecorator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\ActionTypeBuilder;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredTypeField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDecorator;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDecoratorReference;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDiscoveryVerifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldSource;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Ignore;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
@@ -52,6 +56,16 @@ final readonly class TypeCollector
             ));
         }
 
+        $decorator = $class->getAttribute(FieldDecorator::class);
+
+        if ($decorator !== null && ! $this->hasActions($class)) {
+            throw new LogicException(sprintf(
+                '#[%s] on the #[Type] class %s has nothing to apply to: on a class it only reaches #[Query] and #[Mutation] methods, never fields. Put it on each property or #[Field] method it should guard.',
+                class_basename($decorator::class),
+                $class->getName(),
+            ));
+        }
+
         return new DiscoveredType(
             name: $type->name ?? $this->typeName($class),
             class: $class->getName(),
@@ -70,7 +84,15 @@ final readonly class TypeCollector
         $fields = [];
 
         foreach ($class->getProperties() as $property) {
-            if ($this->includes($property) && ($field = $this->propertyField($class, $property)) !== null) {
+            if (! $this->includes($property)) {
+                continue;
+            }
+
+            $field = $this->propertyField($class, $property);
+
+            if ($field === null) {
+                $this->assertUndecorated($property);
+            } else {
                 $fields[] = $field;
             }
         }
@@ -78,7 +100,15 @@ final readonly class TypeCollector
         foreach ($class->getReflection()->getMethods() as $reflection) {
             $method = new MethodReflector($reflection);
 
-            if ($this->includes($method) && ($field = $this->methodField($class, $method)) !== null) {
+            if (! $this->includes($method)) {
+                continue;
+            }
+
+            $field = $this->methodField($class, $method);
+
+            if ($field === null) {
+                $this->assertUndecorated($method);
+            } else {
                 $fields[] = $field;
             }
         }
@@ -113,15 +143,14 @@ final readonly class TypeCollector
             return $field === null ? null : throw new LogicException("$member has #[Field] but no get hook, so it cannot be read.");
         }
 
-        return new DiscoveredTypeField(
+        return $this->decorate($member, $property, new DiscoveredTypeField(
             phpName: $property->getName(),
             name: $field->name ?? $this->fieldName($property),
             type: $this->inferType($reflection->getType(), $class, $member, $field),
             source: FieldSource::Property,
             description: $field?->description,
             deprecationReason: $field?->deprecationReason,
-            decorators: $this->decorators($property),
-        );
+        ));
     }
 
     /**
@@ -156,7 +185,7 @@ final readonly class TypeCollector
 
         $this->assertResolvableParameters($member, $parameters);
 
-        return new DiscoveredTypeField(
+        return $this->decorate($member, $method, new DiscoveredTypeField(
             phpName: $method->getName(),
             name: $field->name ?? $this->fieldName($method),
             type: $this->inferType($reflection->getReturnType(), $class, $member, $field),
@@ -164,8 +193,7 @@ final readonly class TypeCollector
             parameters: $parameters,
             description: $field->description,
             deprecationReason: $field->deprecationReason ?? DeprecationReason::from($method->getAttribute(Deprecated::class)),
-            decorators: $this->decorators($method),
-        );
+        ));
     }
 
     /**
@@ -202,21 +230,76 @@ final readonly class TypeCollector
     }
 
     /**
-     * Attribute instances that adjust a field when its definition is built.
-     *
-     * @return list<object>
+     * Attaches the field's decorators, each checked against the field first.
      */
-    private function decorators(PropertyReflector|MethodReflector $member): array
+    private function decorate(string $label, PropertyReflector|MethodReflector $member, DiscoveredTypeField $field): DiscoveredTypeField
     {
-        return [];
+        $decorators = $member->getAttributes(FieldDecorator::class);
+
+        foreach ($decorators as $decorator) {
+            if ($decorator instanceof FieldDiscoveryVerifier) {
+                $decorator->verify($label, $field);
+            }
+        }
+
+        return $decorators === [] ? $field : $field->withDecorators(array_map(
+            static fn(FieldDecorator $decorator, int $index) => FieldDecoratorReference::storable($decorator, $field->source, $field->phpName, $index),
+            $decorators,
+            array_keys($decorators),
+        ));
+    }
+
+    /**
+     * A field decorator on a member that is not a field would be silently ignored.
+     */
+    private function assertUndecorated(PropertyReflector|MethodReflector $member): void
+    {
+        $decorator = $member->getAttribute(FieldDecorator::class);
+
+        if ($decorator === null) {
+            return;
+        }
+
+        $name = class_basename($decorator::class);
+        $class = $member->getReflection()->getDeclaringClass()->getName();
+
+        if ($member instanceof PropertyReflector) {
+            throw new LogicException(sprintf(
+                'Property %s::$%s has #[%s] but is not a field, because it is ignored, not public, static or has no get hook. Make it a field, or remove #[%s].',
+                $class,
+                $member->getName(),
+                $name,
+                $name,
+            ));
+        }
+
+        if ($member->getAttribute(Action::class) === null) {
+            throw new LogicException(sprintf(
+                'Method %s::%s() has #[%s] but is not a field. Add #[Field], or remove #[%s].',
+                $class,
+                $member->getName(),
+                $name,
+                $name,
+            ));
+        }
+    }
+
+    /**
+     * @param  ClassReflector<object>  $class
+     */
+    private function hasActions(ClassReflector $class): bool
+    {
+        return array_any($class->getPublicMethods(), static fn(MethodReflector $method): bool => $method->getAttribute(Action::class) !== null);
     }
 
     private function assertNoActionAttributes(string $member, MethodReflector $method): void
     {
         foreach ([ActionArgProvider::class, ActionTypeBuilder::class, ActionDecorator::class] as $contract) {
-            $attribute = $method->getAttribute($contract);
+            foreach ($method->getAttributes($contract) as $attribute) {
+                if ($attribute instanceof FieldDecorator) {
+                    continue;
+                }
 
-            if ($attribute !== null) {
                 throw new LogicException(sprintf(
                     '%s has #[%s], which only applies to #[Query] and #[Mutation] methods.',
                     $member,

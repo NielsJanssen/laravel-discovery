@@ -140,6 +140,45 @@ final class GraphQLDiscovery implements Discovery
                 ...$method->getAttributes(Authorize::class),
             ]);
 
+            if (array_any($authorizations, static fn(Authorize $authorize): bool => $authorize->onDenied !== null)) {
+                throw new LogicException(sprintf(
+                    'Method %s::%s has #[Authorize(onDenied:)], which only applies to a field of a #[Type]. A denied #[%s] always reports an error; remove onDenied:.',
+                    $class->getName(),
+                    $method->getName(),
+                    class_basename($action::class),
+                ));
+            }
+
+            foreach ($authorizations as $authorize) {
+                if ($authorize->ability !== null && $authorize->gate !== null) {
+                    throw new LogicException(sprintf(
+                        "Method %s::%s has #[Authorize] with both an ability and gate:. A gate decides on its own: remove the ability, or move it to the model-bound parameter as #[Authorize('%s')].",
+                        $class->getName(),
+                        $method->getName(),
+                        $authorize->ability,
+                    ));
+                }
+
+                if ($authorize->gate !== null && ! is_a($authorize->gate, AuthorizationGate::class, true)) {
+                    throw new LogicException(sprintf(
+                        'Method %s::%s has #[Authorize(gate: %s)], which does not implement %s.',
+                        $class->getName(),
+                        $method->getName(),
+                        $authorize->gate,
+                        AuthorizationGate::class,
+                    ));
+                }
+
+                if ($authorize->ability !== null) {
+                    throw new LogicException(sprintf(
+                        "Method %s::%s has #[Authorize('%s')] on the class or method, where there is no record to check the ability against. Put it on the model-bound parameter, or use #[Authorize(gate: ...)].",
+                        $class->getName(),
+                        $method->getName(),
+                        $authorize->ability,
+                    ));
+                }
+            }
+
             $returnType = $action->type === null && $action->of === null ? null : TypeRef::fromAction($action);
 
             $this->addReferencedEnums($location, [

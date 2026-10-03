@@ -68,6 +68,11 @@ final readonly class TypeRef
         };
     }
 
+    public function asNullable(): self
+    {
+        return clone($this, ['nullable' => true]);
+    }
+
     public static function fromAction(Action $action): self
     {
         $type = $action->of ?? $action->type;

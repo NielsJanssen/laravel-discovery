@@ -29,7 +29,7 @@ final readonly class Authorization implements ComposedFromArgs
     public function authorize(string|iterable|\UnitEnum $abilities, mixed $arguments = [], ?string $message = null): void
     {
         if (Gate::denies($abilities, $arguments)) {
-            throw new AuthorizationError($message ?? DiscoveredModelAuthorization::DEFAULT_MESSAGE);
+            throw new AuthorizationError($message ?? Authorize::DEFAULT_MESSAGE);
         }
     }
 }

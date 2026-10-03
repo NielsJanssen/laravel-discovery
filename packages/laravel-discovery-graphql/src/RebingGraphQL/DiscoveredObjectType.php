@@ -47,11 +47,20 @@ final class DiscoveredObjectType extends RebingType
     private function fieldDefinition(DiscoveredTypeField $field): array
     {
         $registry = $this->app->make(TypeRegistry::class);
+        $blueprint = new FieldBlueprint($this->app, $this->discoveredType, $field, $field->type, $this->resolver($field));
+
+        foreach ($field->decorators as $decorator) {
+            ($decorator instanceof FieldDecoratorReference ? $decorator->resolve($this->discoveredType->class) : $decorator)->decorate($blueprint);
+        }
 
         $definition = [
-            'type' => $registry->resolve($field->type, Position::Output),
-            'resolve' => $this->resolver($field),
+            'type' => $registry->resolve($blueprint->typeRef, Position::Output),
+            'resolve' => $blueprint->resolver,
         ];
+
+        if ($blueprint->privacy !== null) {
+            $definition['privacy'] = $blueprint->privacy;
+        }
 
         $args = $this->args($field, $registry);
 
