@@ -60,7 +60,13 @@ final class SchemaValidator
         $this->assertNoRebingNameClash($items, $types);
         $this->assertUniqueOperations($items);
         $this->assertNoInputFieldArgs($items);
-        $this->assertClassReferencesRegistered($items, $types);
+        $references = iterator_to_array($this->usage->references($items, $types), false);
+
+        if ($this->registry->providers() === []) {
+            $this->assertRegistered($references);
+        } else {
+            $this->registry->deferReferences($references);
+        }
     }
 
     /**
@@ -171,11 +177,11 @@ final class SchemaValidator
      * Every class-string an action return or a type field points at must be a registered output type, and every
      * class-string an argument points at a registered input type.
      *
-     * @param  list<DiscoveredType>  $types
+     * @param  iterable<TypeReference>  $references
      */
-    private function assertClassReferencesRegistered(DiscoveryItems $items, array $types): void
+    public function assertRegistered(iterable $references): void
     {
-        foreach ($this->usage->references($items, $types) as $reference) {
+        foreach ($references as $reference) {
             $class = $reference->ref->class;
             $position = $reference->position;
             $referrer = $reference->referrer;
@@ -215,11 +221,12 @@ final class SchemaValidator
             }
 
             throw new LogicException(sprintf(
-                '%s references %s, which is not a registered GraphQL output type. Add #[Type] to %s, or name a registered GraphQL type with type: (or of: for a list) on #[%s].',
+                '%s references %s, which is not a registered GraphQL output type. Add #[Type] to %s, or name a registered GraphQL type with type: (or of: for a list) on #[%s].%s',
                 $referrer,
                 $class,
                 class_basename($class),
                 $attribute,
+                $this->registry->providers() === [] ? '' : ' A type provider can map the class to a type with TypeDefinition(class:).',
             ));
         }
     }
