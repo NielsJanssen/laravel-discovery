@@ -56,7 +56,7 @@ rebase-merged into `main` as one commit per WP (Phase 0 as one commit per WP ins
 | WP4.3 Batch loading | Done | `1331636` | #15 |
 | Simplification audit ([details](#simplification-audit)) | Done | Commits `fix: Keep the exists rule for closure rules on bindings` to `docs: Document the test helpers and fixture convention` (hashes pending a rewrite) | |
 | WP5.1 TypeFactory | Done | `479da11`, `64c6ac0`, `cf1b77d`, `9510728`, docs `a5103c1` | #22 |
-| WP5.2 TypeProvider | To do | | |
+| WP5.2 TypeProvider | Done | `647a851`, `924c3ed`, `c835175`, docs (branch `feat/type-provider`) | |
 | WP5.3 `replace: true` | To do | | |
 | WP5.4 `#[ExtendType]` | To do | | |
 | WP5.5 Schema-scoped types | To do (added during implementation) | | |
@@ -105,6 +105,7 @@ conflict, this list wins.
   `#[AsArgs]`), or with a non-`Omitted::Value` default is rejected. An absent field runs no rules and no
   authorization.
 - **WP5.1:** output only: `#[Input(factory:)]` is rejected at discovery, and the input variant is left for later. `TypeContext::$declaredFields` is a `list<string>` of GraphQL names, and `TypeContext::$naming` is the type's field strategy, rebuilt from `DiscoveredType::$naming` (the persisted `#[Type(naming:)]` override). A factory field's `Field::$args` are exposed under the argument naming strategy but reach `resolve` under their declared keys. Arg `rules:` are rejected (Rebing does not validate nested field args) and arg defaults are unsupported. `#[Field(resolve:)]` and `#[Field(args:)]` on a declared member are rejected at discovery (`FieldMembers`). Factory field types are invisible to `TypeUsage` and `SchemaValidator`, so they must reference registered types. `FactoryFields` builds the definitions; duplicate names, a missing name or type, and `type:` with `of:` throw at type build.
+- **WP5.2:** `TypeDefinition` has `name`, `kind`, `fields`, `class` and `description`; `interfaces` waits for WP6.1. `kind` is `Position::Output` or `Position::Input`. An input definition is class-less: `class:` on it is rejected, because the parameter classifier decides at discovery which parameters are hydrated and cannot know a provider's class then. Name the input with `#[Arg(type: 'Name')]` on an `array` parameter; the value arrives as a plain array. Input fields reject `resolve`, `args` and `rules`. `FactoryFields::build()` (with `FactoryOwner`) builds the fields for factories and providers alike. When a provider exists, `SchemaValidator::validate()` hands the class references to `TypeRegistry::deferReferences()` instead of asserting them, and `ProvidedTypes` (the `afterResolving` handler) runs `assertRegistered()` once the providers have registered; a failure forgets the half-built `GraphQL` instance so a second resolve fails again. A provided name that `graphql.types` or another provider already holds is a `LogicException`.
 - **Simplification audit:** `GraphQLDiscovery` no longer holds validation, reference walking or return-type
   resolution: see `SchemaValidator`, `TypeUsage`, `ReturnTypeResolver` and `FieldMembers`. `#[Authorize]` shape rules are
   `Authorize::verify()`, `verifyOnAction()`, `verifyOnParameter()` and `verifyOnProperty()`. The WP sections below name
@@ -766,22 +767,22 @@ factory args; a duplicate name rejected; factory dependencies injected.
 
 ### WP5.2 TypeProvider
 
-**Status:** To do.
+**Status:** Done, `647a851`, `924c3ed`, `c835175` and the docs commit (branch `feat/type-provider`). Output and class-less input types are supported; see Deviations.
 
 **Depends on:** WP5.1.
 
 **Scope:**
 - `TypeProvider::types(): iterable<TypeDefinition>`, discovered by interface. Only the class name is cached.
 - `TypeDefinition`: `name`, `kind`, `class` (optional: lets inference and type resolution map a PHP class to this
-  type), `interfaces`, `description`, and `fields` (a closure taking a `TypeContext`). `TypeContext::$class` is a non-null `class-string` today; make it nullable here for class-less definitions.
+  type), `description`, and `fields` (a closure taking a `TypeContext`). `TypeContext::$class` is nullable for class-less definitions.
 - Register through our own `afterResolving(\Rebing\GraphQL\GraphQL::class)` hook: call `addType()` and add to the
   `TypeRegistry`. Never write these to config. Add the hook in `GraphQLDiscoveryServiceProvider::register()`, not in
   `apply()`: Laravel doesn't run an `afterResolving` callback retroactively, so a hook added after something has
   already resolved `GraphQL` would never fire. The hook reads the provider classes from the `TypeRegistry`, which
   `apply()` fills.
 - When any provider is registered, the unknown-class check from WP1.2 moves from `apply()` to schema build. The
-  check now lives in `SchemaValidator::assertClassReferencesRegistered()` (private, called from `validate()`, which
-  `GraphQLDiscovery::apply()` runs), so that is the method to gate.
+  check now lives in `SchemaValidator::assertClassReferencesRegistered()` (now the public `assertRegistered()`, fed by `validate()`, which
+  `GraphQLDiscovery::apply()` runs, and gated there).
   `TypeUsage::missingEnums()` and `typesToRegister()` decide which implicit types get registered.
 
 **Tests:** a provider yielding two types from an array "meta"; a query returning `: ProvidedClass` infers the
