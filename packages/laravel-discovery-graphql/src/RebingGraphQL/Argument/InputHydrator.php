@@ -7,6 +7,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
 use Illuminate\Database\Eloquent\Model;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\OmittableType;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
@@ -72,13 +73,16 @@ final class InputHydrator implements Hydrator
     private function convert(ReflectionProperty $property, mixed $value): mixed
     {
         $type = $property->getType();
+        $omittable = OmittableType::of($type);
+        $nullable = $omittable === null ? ($type?->allowsNull() ?? true) : $omittable->allowsNull;
+        $type = $omittable === null ? $type : $omittable->inner;
 
         if ($value === null) {
             return null;
         }
 
         if ($type instanceof ReflectionNamedType && class_exists($type->getName())) {
-            return $this->convertTo($type->getName(), $value, $type->allowsNull());
+            return $this->convertTo($type->getName(), $value, $nullable);
         }
 
         $of = ($property->getAttributes(Field::class)[0] ?? null)?->newInstance()->of;

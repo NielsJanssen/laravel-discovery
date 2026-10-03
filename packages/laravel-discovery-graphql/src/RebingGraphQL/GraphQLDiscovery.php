@@ -117,6 +117,8 @@ final class GraphQLDiscovery implements Discovery
                 ));
             }
 
+            $this->assertReturnNotOmittable($class, $method);
+
             $typeBuilder = $this->resolveTypeBuilder($class, $method);
 
             $inferred = null;
@@ -811,6 +813,25 @@ final class GraphQLDiscovery implements Discovery
         }
 
         return $classBuilders[0] ?? null;
+    }
+
+    /**
+     * @param  ClassReflector<object>  $class
+     */
+    private function assertReturnNotOmittable(ClassReflector $class, MethodReflector $method): void
+    {
+        $returnType = $method->getReflection()->getReturnType();
+
+        if (OmittableType::of($returnType) === null) {
+            return;
+        }
+
+        throw new LogicException(sprintf(
+            'Method %s::%s is typed %s, but Omitted only applies to a property of an #[Input] class, in input position. Remove Omitted from the return type.',
+            $class->getName(),
+            $method->getName(),
+            $returnType,
+        ));
     }
 
     /**

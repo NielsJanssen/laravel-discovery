@@ -9,6 +9,7 @@ use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\OmittableType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use ReflectionClass;
@@ -45,6 +46,12 @@ final readonly class TypeInferrer
         bool $nullableItems = false,
         ?Member $member = null,
     ): TypeRef {
+        if (OmittableType::of($type) !== null) {
+            throw new LogicException(Input::marks($declaringClass)
+                ? sprintf('%s is typed %s, but %s is both a #[Type] and an #[Input], and Omitted has no meaning in output position. Remove Omitted, or declare the partial update as its own #[Input] class.', $label, $type, class_basename($declaringClass))
+                : sprintf('%s is typed %s, but Omitted only applies to a property of an #[Input] class, in input position. Remove Omitted from the type.', $label, $type));
+        }
+
         if ($explicitType !== null && $of !== null) {
             throw new LogicException(sprintf(
                 '%s sets both type: and of: on #[%s]. Use of: for a list of that type, or type: for a single value.',

@@ -820,14 +820,15 @@ another used input; an unused one, and an enum only it refers to, stay out of th
 cannot reference a discovered input by name unless a discovered argument also uses it. Output types are always
 registered.
 
-Discovery throws a `LogicException` for shapes that cannot work: an input property typed as an interface, a union, an
-output-only `#[Type]` or a list of models; an `#[Input]` class returned from a query or used as a `#[Type]` field unless
-the class is a `#[Type]` too; `#[Input]` on an enum, an abstract class or a Rebing type; a `#[Field]` method on an
-input; `#[Field(rules:)]` outside an input; an input argument on a `#[Field]` method, also when named by `#[Arg(type:)]` or a type mapper, since field args are neither
-validated, hydrated nor authorized; and `#[Authorize]` on an input
-property that binds no model, without an ability, with `gate:`, or with `onDenied:`. `#[Input]` on an Eloquent model is
-rejected as well, since a model in input position is always an `ID` binding. So is a constructor the hydrator could not
-call: a required parameter that no input field fills, or a required one whose field is optional.
+Discovery throws a `LogicException` for shapes that cannot work: an input property typed as an interface, a union
+(other than with [`Omitted`](#partial-updates-with-omitted)), an output-only `#[Type]` or a list of models; an
+`#[Input]` class returned from a query or used as a `#[Type]` field unless the class is a `#[Type]` too; `#[Input]` on
+an enum, an abstract class or a Rebing type; a `#[Field]` method on an input; `#[Field(rules:)]` outside an input; an
+input argument on a `#[Field]` method, also when named by `#[Arg(type:)]` or a type mapper, since field args are neither
+validated, hydrated nor authorized; and `#[Authorize]` on an input property that binds no model, without an ability,
+with `gate:`, or with `onDenied:`. `#[Input]` on an Eloquent model is rejected as well, since a model in input position
+is always an `ID` binding. So is a constructor the hydrator could not call: a required parameter that no input field
+fills, or a required one whose field is optional.
 
 ### Flattening an input with `#[AsArgs]`
 
@@ -874,6 +875,67 @@ elsewhere is. Discovery rejects `#[AsArgs]` on a parameter that is not an `#[Inp
 as a nullable input argument instead), and on a `#[Field]` method. A flattened argument whose name another argument,
 model binding, arg provider such as `#[Paginated]`, or other `#[AsArgs]` field already takes is rejected as well,
 naming both owners; rename one with `#[Field(name:)]` or `#[Arg(name:)]`.
+
+### Partial updates with `Omitted`
+
+GraphQL tells a field the caller left out from one sent as `null`, and a partial update needs both: "leave the
+subtitle alone" is not "clear the subtitle". Add the `Omitted` enum to an input property's type, with
+`Omitted::Value` as its default, and the property receives `Omitted::Value` when the field is absent.
+
+```php
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Omitted;
+
+#[Input]
+final readonly class UpdateBook
+{
+    public function __construct(
+        public string|Omitted $title = Omitted::Value,          // absent: Omitted, null: rejected
+        public string|Omitted|null $subtitle = Omitted::Value,  // absent: Omitted, null: null
+    ) {}
+}
+
+final class BookMutations
+{
+    #[Mutation] public function updateBook(#[Arg('id')] Book $book, UpdateBook $input): Book
+    {
+        if ($input->title !== Omitted::Value) {
+            $book->title = $input->title;
+        }
+
+        // ...
+    }
+}
+```
+
+```graphql
+input UpdateBookInput {
+  title: String
+  subtitle: String
+}
+```
+
+In the schema, `Omitted` is removed from the type and the field is optional, with no default value, so an absent
+field stays absent. The remaining type is inferred as for any input field: a scalar, an enum, a nested `#[Input]`, a
+list through `of:`, an Eloquent model, or whatever a [type mapper](#type-mappers) makes of it. GraphQL accepts `null`
+for every optional field, so when `null` is not part of the PHP type, an explicit `null` fails validation with
+"The input.title field may be left out, but not set to null.". When `null` is part of it, the property receives `null`.
+
+An absent field runs none of its rules: no laravel-validation attribute, no `#[Field(rules:)]`, not even an implicit
+rule such as `required`. A given field runs all of them. A rejected `null` reports only that error.
+
+A model property (`Publisher|Omitted`) is an optional `ID`. Left out, it binds nothing: no `exists` rule and no
+`#[Authorize]` check. Given, it is looked up and authorized before validation like any other model property; a
+missing record is denied or fails `exists`. `Publisher|Omitted|null` follows the nullable rules instead: an explicit
+`null`, or an ID without a record, binds `null`.
+
+`Omitted` works the same in nested inputs, in list items and in [`#[AsArgs]`](#flattening-an-input-with-asargs)
+flattened arguments, where a left-out argument hydrates to `Omitted::Value`.
+
+Discovery rejects `Omitted` where it has no meaning: on a `#[Type]` property, a `#[Field]` method or a query return
+type; on any property of a class that is both `#[Type]` and `#[Input]` (declare the partial update as its own
+`#[Input]`); on a query or mutation parameter (put the optional arguments on an `#[Input]` and flatten it with
+`#[AsArgs]`); next to more than one other type (`string|int|Omitted`) or on its own (`?Omitted`); and on a property
+whose default is not `Omitted::Value`.
 
 ## Arguments
 

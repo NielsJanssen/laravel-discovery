@@ -25,6 +25,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\NamingStrategy;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\OmittableType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Root;
 use ReflectionProperty;
@@ -69,6 +70,8 @@ final readonly class ParameterClassifier
             if ($param->getAttribute(ContextualAttribute::class) !== null) {
                 continue;
             }
+
+            $this->assertNotOmittable($param, $class, $method);
 
             /** @var Arg|null $argAttr */
             $argAttr = $param->getAttribute(Arg::class);
@@ -571,6 +574,26 @@ final readonly class ParameterClassifier
         }
 
         return $this->names->name($naming, $param->getName(), sprintf('the parameter $%s in %s::%s', $param->getName(), $class->getName(), $method->getName()));
+    }
+
+    /**
+     * @param  ClassReflector<object>  $class
+     */
+    private function assertNotOmittable(ParameterReflector $param, ClassReflector $class, MethodReflector $method): void
+    {
+        $type = $param->getReflection()->getType();
+
+        if (OmittableType::of($type) === null) {
+            return;
+        }
+
+        throw new LogicException(sprintf(
+            'Parameter $%s in %s::%s is typed %s, but Omitted only applies to a property of an #[Input] class. Move the optional args into an #[Input] class and take it with #[AsArgs] to keep them top-level.',
+            $param->getName(),
+            $class->getName(),
+            $method->getName(),
+            $type,
+        ));
     }
 
     private function member(ParameterReflector $param, MethodReflector $method): Member

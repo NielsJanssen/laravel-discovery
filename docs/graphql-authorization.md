@@ -100,6 +100,10 @@ final readonly class CreateBook
 }
 ```
 
+On an [`Omitted`](graphql.md#partial-updates-with-omitted) model property, a field the caller leaves out binds no
+record, so neither the check nor the `exists` rule runs; an explicit `null` is left to validation. A given ID is
+checked as on any other model property.
+
 On an input property, discovery rejects `#[Authorize]` on a property that binds no model, one without an ability,
 `gate:` and `onDenied:`, as it does on a parameter. A class that is both `#[Type]` and `#[Input]` is the exception for
 non-model properties: there `#[Authorize]` guards the output field, as described below, and input ignores it.

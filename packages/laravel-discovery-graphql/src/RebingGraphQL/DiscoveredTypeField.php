@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\NotNull;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ClassifiedParameters;
 
 /** One field of a discovered type, as a serializable description. */
@@ -29,7 +30,38 @@ final readonly class DiscoveredTypeField
         public ?DiscoveredModelBinding $binding = null,
         public bool $hasDefault = false,
         public mixed $defaultValue = null,
+        public bool $omittable = false,
+        public bool $rejectsNull = false,
     ) {}
+
+    /**
+     * The only rules an Omitted field gets when left out (none) or sent as a null it rejects; null otherwise.
+     *
+     * @param  array<array-key, mixed>  $values  keyed by field name
+     * @return list<mixed>|null
+     */
+    public function omittedRules(array $values): ?array
+    {
+        if (! $this->omittable) {
+            return null;
+        }
+
+        if (! array_key_exists($this->name, $values)) {
+            return [];
+        }
+
+        return $values[$this->name] === null && $this->rejectsNull ? [new NotNull()] : null;
+    }
+
+    /**
+     * Whether an Omitted field was left out or sent as null, so it binds no record to authorize.
+     *
+     * @param  array<array-key, mixed>  $values  keyed by field name
+     */
+    public function bindsNothingIn(array $values): bool
+    {
+        return $this->omittable && ($values[$this->name] ?? null) === null;
+    }
 
     /**
      * @param  list<FieldDecorator|FieldDecoratorReference>  $decorators
