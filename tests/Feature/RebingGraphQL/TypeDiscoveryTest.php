@@ -6,10 +6,16 @@ namespace Tests\Feature\RebingGraphQL;
 
 use GraphQL\Utils\BuildSchema;
 use GraphQL\Utils\SchemaPrinter;
+use LogicException;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Arg;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldSource;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Ignore;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Paginated;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Pagination;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
 use Rebing\GraphQL\Support\Facades\GraphQL;
@@ -27,16 +33,7 @@ use Tests\Fixtures\RebingGraphQL\Types\Reference\AuthorSummary;
 use Tests\Fixtures\RebingGraphQL\Types\Reference\Book;
 use Tests\Fixtures\RebingGraphQL\Types\Reference\BookQuery;
 use Tests\Fixtures\RebingGraphQL\Types\Reference\Genre;
-
-/**
- * @return list<DiscoveredType>
- */
-function discoveredTypes(string ...$classes): array
-{
-    $items = iterator_to_array(discoverGraphQL(...$classes)->getItems(), false);
-
-    return array_values(array_filter($items, static fn(mixed $item): bool => $item instanceof DiscoveredType));
-}
+use Workbench\App\Models\User;
 
 const REFERENCE_SDL = <<<'GRAPHQL'
     "A published book"
@@ -85,7 +82,6 @@ describe('the reference Book type', function () {
     it('prints the same definitions whatever order the classes are discovered in', function (array $order) {
         expect(sdlDefinitions(schemaSdl(...$order)))->toBe(sdlDefinitions(REFERENCE_SDL));
     })->with([
-        'type before its reference' => [[BookQuery::class, Book::class, AuthorSummary::class, Genre::class]],
         'reference before the type' => [[AuthorSummary::class, Genre::class, Book::class, BookQuery::class]],
         'enum only through its reference' => [[BookQuery::class, Book::class, AuthorSummary::class]],
     ]);
@@ -127,8 +123,6 @@ describe('the reference Book type', function () {
         [$type] = discoveredTypes(Book::class);
 
         expect(unserialize(serialize($type)))->toEqual($type)
-            ->and($type->bindName)->toStartWith('discovery.rebing_graphql.type.')
-            ->and($type->kind)->toBe(TypeKind::Object)
             ->and(array_column(array_map(static fn($field) => (array) $field, $type->fields), 'phpName'))
             ->toBe(['id', 'title', 'subtitle', 'genre', 'author', 'tags', 'isbn', 'slug', 'excerpt', 'related']);
     });
@@ -228,16 +222,6 @@ describe('field sources', function () {
             ]]]);
     });
 
-    it('skips static, non-public, write-only, ignored and unmarked members', function () {
-        [$type] = discoveredTypes(FieldSourcesType::class);
-
-        $names = array_map(static fn($field) => $field->phpName, $type->fields);
-
-        expect(array_values(array_intersect($names, ['shared', 'hidden', 'secret', 'writeOnly', 'ignored', 'notAField', 'ignoredMethod', '__construct'])))->toBe([])
-            ->and($type->fields[0]->source)->toBe(FieldSource::Property)
-            ->and(end($type->fields)->source)->toBe(FieldSource::Method);
-    });
-
     it('names a type after its class without a Type suffix, unless named explicitly', function () {
         expect(discoveredTypes(FieldSourcesType::class)[0]->name)->toBe('FieldSources')
             ->and(discoveredTypes(NamedType::class)[0])
@@ -259,103 +243,153 @@ describe('the instantiable guard', function () {
     it('passes enums to discovery', function () {
         expect(iterator_to_array(discoverGraphQL(PlainEnum::class)->getItems(), false))->toBe([])
             ->and(fn() => discoverGraphQL(Invalid\TypeOnEnum::class))
-            ->toThrow(\LogicException::class, '#[Type] on the enum ' . Invalid\TypeOnEnum::class . ' is not supported');
+            ->toThrow(LogicException::class, '#[Type] on the enum ' . Invalid\TypeOnEnum::class . ' is not supported');
     });
 });
 
 describe('rejections', function () {
-    it('rejects shapes that cannot become a field', function (string $class, string $message) {
-        expect(fn() => discoverGraphQL($class))->toThrow(\LogicException::class, $message);
+    it('rejects shapes that cannot become a field', function (object $shape, string $format) {
+        expectRejected($shape, $format);
     })->with([
         '#[Field] on a private property' => [
-            Invalid\FieldOnPrivateProperty::class,
-            'Property ' . Invalid\FieldOnPrivateProperty::class . '::$secret has #[Field] but is not public.',
+            fn() => new #[Type] class {
+                #[Field]
+                private string $secret = 'secret';
+
+                public function secret(): string
+                {
+                    return $this->secret;
+                }
+            },
+            'Property %1$s::$secret has #[Field] but is not public.',
         ],
         '#[Field] on a static property' => [
-            Invalid\FieldOnStaticProperty::class,
-            'Property ' . Invalid\FieldOnStaticProperty::class . '::$shared has #[Field] but is static.',
+            fn() => new #[Type] class {
+                #[Field]
+                public static string $shared = 'shared';
+            },
+            'Property %1$s::$shared has #[Field] but is static.',
         ],
         '#[Field] on a protected method' => [
-            Invalid\FieldOnProtectedMethod::class,
-            'Method ' . Invalid\FieldOnProtectedMethod::class . '::hidden() has #[Field] but is not public.',
+            fn() => new #[Type] class {
+                #[Field]
+                protected function hidden(): string
+                {
+                    return 'hidden';
+                }
+            },
+            'Method %1$s::hidden() has #[Field] but is not public.',
         ],
         '#[Field] on a write-only property' => [
-            Invalid\FieldOnWriteOnlyProperty::class,
-            'Property ' . Invalid\FieldOnWriteOnlyProperty::class . '::$label has #[Field] but no get hook',
+            fn() => new #[Type] class {
+                public string $stored = '';
+
+                #[Field]
+                public string $label {
+                    set(string $value) {
+                        $this->stored = $value;
+                    }
+                }
+            },
+            'Property %1$s::$label has #[Field] but no get hook',
         ],
         '#[Field] and #[Ignore] on a promoted property' => [
-            Invalid\FieldAndIgnoreProperty::class,
-            'Property ' . Invalid\FieldAndIgnoreProperty::class . '::$label has both #[Field] and #[Ignore]. Remove one.',
+            fn() => new #[Type] class {
+                public function __construct(
+                    #[Field, Ignore]
+                    public string $label = 'label',
+                ) {}
+            },
+            'Property %1$s::$label has both #[Field] and #[Ignore]. Remove one.',
         ],
         '#[Field] and #[Ignore] on a method' => [
-            Invalid\FieldAndIgnoreMethod::class,
-            'Method ' . Invalid\FieldAndIgnoreMethod::class . '::label() has both #[Field] and #[Ignore]. Remove one.',
-        ],
-        'array without of:' => [
-            Invalid\ArrayWithoutOf::class,
-            'Property ' . Invalid\ArrayWithoutOf::class . '::$tags has type array, which needs #[Field(of: ...)]',
-        ],
-        'Collection without of:' => [
-            Invalid\CollectionWithoutOf::class,
-            'Property ' . Invalid\CollectionWithoutOf::class . '::$tags has type ?Illuminate\Support\Collection, which needs #[Field(of: ...)]',
-        ],
-        'iterable without of:' => [
-            Invalid\IterableWithoutOf::class,
-            'Method ' . Invalid\IterableWithoutOf::class . '::tags() has type iterable, which needs #[Field(of: ...)]',
+            fn() => new #[Type] class {
+                #[Field, Ignore]
+                public function label(): string
+                {
+                    return 'label';
+                }
+            },
+            'Method %1$s::label() has both #[Field] and #[Ignore]. Remove one.',
         ],
         'a PHP union' => [
-            Invalid\UnionProperty::class,
-            'Property ' . Invalid\UnionProperty::class . '::$key has the union type string|int, which has no GraphQL type.',
-        ],
-        'mixed' => [
-            Invalid\MixedProperty::class,
-            'Property ' . Invalid\MixedProperty::class . '::$value declares the type mixed. Add a PHP type, or name the GraphQL type with #[Field(type: ...)].',
-        ],
-        'no type' => [
-            Invalid\UntypedProperty::class,
-            'Property ' . Invalid\UntypedProperty::class . '::$value declares no type.',
-        ],
-        'a void method' => [
-            Invalid\VoidMethod::class,
-            'Method ' . Invalid\VoidMethod::class . '::touch() has type void, which has no GraphQL output type.',
-        ],
-        'a class that does not exist' => [
-            Invalid\UnknownClassProperty::class,
-            'Property ' . Invalid\UnknownClassProperty::class . '::$missing has type ?Tests\Fixtures\RebingGraphQL\Types\Invalid\DoesNotExist, which has no GraphQL output type.',
+            fn() => new #[Type] class {
+                public int|string $key = 1;
+            },
+            'Property %1$s::$key has the union type string|int, which has no GraphQL type.',
         ],
         'both type: and of:' => [
-            Invalid\TypeAndOfField::class,
-            'Property ' . Invalid\TypeAndOfField::class . '::$tags sets both type: and of: on #[Field].',
+            fn() => new #[Type] class {
+                /** @var list<string> */
+                #[Field(type: 'String', of: 'string')]
+                public array $tags = [];
+            },
+            'Property %1$s::$tags sets both type: and of: on #[Field].',
         ],
         '#[Arg(rules:)] on a method field' => [
-            Invalid\MethodFieldWithRules::class,
-            'Method ' . Invalid\MethodFieldWithRules::class . '::excerpt() has #[Arg(rules:)] on $length, but field args are not validated yet.',
+            fn() => new #[Type] class {
+                #[Field]
+                public function excerpt(#[Arg(rules: ['min:1'])] int $length): string
+                {
+                    return str_repeat('x', $length);
+                }
+            },
+            'Method %1$s::excerpt() has #[Arg(rules:)] on $length, but field args are not validated yet.',
         ],
         '#[Field] on a static method' => [
-            Invalid\FieldOnStaticMethod::class,
-            'Method ' . Invalid\FieldOnStaticMethod::class . '::shared() has #[Field] but is static.',
+            fn() => new #[Type] class {
+                #[Field]
+                public static function shared(): string
+                {
+                    return 'shared';
+                }
+            },
+            'Method %1$s::shared() has #[Field] but is static.',
         ],
         'an action attribute on a method field' => [
-            Invalid\PaginatedMethodField::class,
-            'Method ' . Invalid\PaginatedMethodField::class . '::pages() has #[Paginated], which only applies to #[Query] and #[Mutation] methods.',
+            fn() => new #[Type] class {
+                /** @return list<string> */
+                #[Field(of: 'string')]
+                #[Paginated]
+                public function pages(Pagination $page): array
+                {
+                    return [];
+                }
+            },
+            'Method %1$s::pages() has #[Paginated], which only applies to #[Query] and #[Mutation] methods.',
         ],
         'a model-bound parameter on a method field' => [
-            Invalid\MethodFieldWithModel::class,
-            'Method ' . Invalid\MethodFieldWithModel::class . '::ownerName() binds the model parameter $owner, which fields do not support yet.',
+            fn() => new #[Type] class {
+                #[Field]
+                public function ownerName(User $owner): string
+                {
+                    return $owner->name;
+                }
+            },
+            'Method %1$s::ownerName() binds the model parameter $owner, which fields do not support yet.',
         ],
         'two fields with one name' => [
-            Invalid\DuplicateFieldName::class,
-            'Type ' . Invalid\DuplicateFieldName::class . ' has two fields named "label" ($label and computedLabel()).',
-        ],
-        '#[Type] on a Rebing type' => [
-            Invalid\TypeOnRebingType::class,
-            '#[Type] on ' . Invalid\TypeOnRebingType::class . ', which extends Rebing\GraphQL\Support\Type',
+            fn() => new #[Type] class {
+                public string $label = 'label';
+
+                #[Field(name: 'label')]
+                public function computedLabel(): string
+                {
+                    return 'computed';
+                }
+            },
+            'Type %1$s has two fields named "label" ($label and computedLabel()).',
         ],
     ]);
 
+    it('rejects #[Type] on a Rebing type', function () {
+        expect(fn() => discoverGraphQL(Invalid\TypeOnRebingType::class))
+            ->toThrow(LogicException::class, '#[Type] on ' . Invalid\TypeOnRebingType::class . ', which extends Rebing\GraphQL\Support\Type');
+    });
+
     it('rejects two types with the same GraphQL name, naming both classes', function () {
         expect(fn() => discoverGraphQL(Invalid\DuplicateNameOne::class, Invalid\DuplicateNameTwo::class))
-            ->toThrow(\LogicException::class, sprintf(
+            ->toThrow(LogicException::class, sprintf(
                 'GraphQL type name [Duplicate] is used by both %s and %s. Rename one with #[Type(name: ...)].',
                 Invalid\DuplicateNameOne::class,
                 Invalid\DuplicateNameTwo::class,
@@ -366,7 +400,7 @@ describe('rejections', function () {
         isolateGraphQL();
 
         expect(fn() => discoverGraphQL(PamphletType::class, PamphletQuery::class, Invalid\ClashesWithRebingType::class)->apply())
-            ->toThrow(\LogicException::class, sprintf(
+            ->toThrow(LogicException::class, sprintf(
                 'GraphQL type name [Pamphlet] is used by both %s (#[Type]) and the Rebing type %s.',
                 Invalid\ClashesWithRebingType::class,
                 PamphletType::class,

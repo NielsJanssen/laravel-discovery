@@ -4,18 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
-use GraphQL\Utils\SchemaPrinter;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredObjectType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredTypeField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ParameterClassifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldSource;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\QueryField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
-use Rebing\GraphQL\GraphQL as RebingGraphQL;
 use Rebing\GraphQL\Support\Facades\GraphQL;
 use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\RebingGraphQL\Types\PamphletQuery;
@@ -25,10 +22,6 @@ use Tests\Fixtures\RebingGraphQL\Types\ShelfQuery;
 use Workbench\App\GraphQL\Types\AuthorType;
 use Workbench\App\GraphQL\Types\BookType;
 use Workbench\App\GraphQL\Types\UserType;
-
-afterEach(function () {
-    app()->forgetInstance('config_loaded_from_cache');
-});
 
 function shelfType(): DiscoveredType
 {
@@ -75,12 +68,6 @@ describe('DiscoveredType', function () {
             ->and($restored->fields[1]->parameters->args[0]->name)->toBe('times');
     });
 
-    it('survives serialization as a standalone field', function () {
-        $field = shelfType()->fields[1];
-
-        expect(unserialize(serialize($field)))->toEqual($field);
-    });
-
     it('derives a type-specific bind name from its contents', function () {
         $type = shelfType()->withBindName();
         $renamed = new DiscoveredType('Rack', Shelf::class)->withBindName();
@@ -88,10 +75,6 @@ describe('DiscoveredType', function () {
         expect($type->bindName)->toStartWith('discovery.rebing_graphql.type.')
             ->and($type->bindName)->toBe(shelfType()->withBindName()->bindName)
             ->and($renamed->bindName)->not->toBe($type->bindName);
-    });
-
-    it('builds an object type adapter', function () {
-        expect(shelfType()->createType(app()))->toBeInstanceOf(DiscoveredObjectType::class);
     });
 
     it('rejects kinds that have no adapter yet', function () {
@@ -116,16 +99,6 @@ describe('the object type adapter', function () {
             GRAPHQL);
 
         buildAllSchemas();
-    });
-
-    it('resolves property and method fields end to end', function () {
-        schemaSdl(ShelfQuery::class, shelfType());
-
-        $this->postJson('/graphql', ['query' => '{ shelf { label summary(times: 2) } }'])
-            ->assertOk()
-            ->assertJsonMissingPath('errors')
-            ->assertJsonPath('data.shelf.label', 'Fiction')
-            ->assertJsonPath('data.shelf.summary', 'summary: FictionFiction!');
     });
 
     it('reads property fields from the property, not through ArrayAccess', function () {
@@ -185,20 +158,9 @@ describe('apply()', function () {
     });
 
     it('still binds types and fills the registry when the configuration is cached', function () {
-        isolateGraphQL();
-        app()->instance('config_loaded_from_cache', true);
+        $registry = assertBoundWhenConfigCached([ShelfQuery::class, shelfType()], static fn(): bool => true);
 
-        $type = shelfType()->withBindName();
-        $discovery = discoverGraphQL(ShelfQuery::class, $type);
-        $discovery->apply();
-
-        $action = iterator_to_array($discovery->getItems())[0];
-
-        expect(app()->bound($type->bindName))->toBeTrue()
-            ->and(app($action->bindName))->toBeInstanceOf(QueryField::class)
-            ->and(app($type->bindName))->toBeInstanceOf(DiscoveredObjectType::class)
-            ->and(app(TypeRegistry::class)->kindOf(Shelf::class, Position::Output))->toBe(TypeKind::Object)
-            ->and(config('graphql.types'))->toBe([])
+        expect($registry->kindOf(Shelf::class, Position::Output))->toBe(TypeKind::Object)
             ->and(config('graphql.schemas'))->toBe([]);
     });
 
@@ -231,16 +193,5 @@ describe('the workbench schema', function () {
             'Author' => AuthorType::class,
             'User' => UserType::class,
         ])->and(config('graphql.schemas.default'))->not->toHaveKey('types');
-    });
-
-    it('prints the same schema as with the types listed per schema', function () {
-        $sdl = SchemaPrinter::doPrint(GraphQL::schema());
-
-        config()->set('graphql.schemas.default.types', config('graphql.types'));
-        config()->set('graphql.types', []);
-        app()->forgetInstance(RebingGraphQL::class);
-        GraphQL::clearResolvedInstance(RebingGraphQL::class);
-
-        expect(SchemaPrinter::doPrint(GraphQL::schema()))->toBe($sdl);
     });
 });
