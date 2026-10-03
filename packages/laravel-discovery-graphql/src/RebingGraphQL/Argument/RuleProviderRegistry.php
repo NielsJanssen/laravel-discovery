@@ -44,6 +44,10 @@ final class RuleProviderRegistry
             $set = $this->rulesForInput($flattened->type->class, $flattened->toProperties($args));
 
             foreach ($set->rules as $property => $contributed) {
+                if ($flattened->skipsRulesOf($property, $args)) {
+                    continue;
+                }
+
                 $path = $flattened->toArgPath($property);
 
                 $rules[$path] = [

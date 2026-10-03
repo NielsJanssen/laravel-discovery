@@ -25,6 +25,10 @@ final readonly class InputAuthorization
     {
         foreach ($this->inputs->inArgs($definitions, $args) as [$type, $values]) {
             foreach ($type->fields as $field) {
+                if ($field->bindsNothingIn($values)) {
+                    continue;
+                }
+
                 $denied = $field->binding?->deniedBy($this->app, $values[$field->name] ?? null, $args, $context, $info);
 
                 if ($denied !== null) {

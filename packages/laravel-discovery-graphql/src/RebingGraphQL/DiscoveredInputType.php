@@ -99,8 +99,8 @@ final class DiscoveredInputType extends RebingInputType
      */
     private function rules(DiscoveredTypeField $field, array $values, array $request): array
     {
-        return [
-            ...self::fieldRules($this->discoveredType->class, $field, $this->discoveredType->toProperties($values), $request),
+        return $field->omittedRules($values) ?? [
+            ...self::ownRules($this->discoveredType->class, $field, $this->discoveredType->toProperties($values), $request),
             ...$this->providedRules($values)[$field->phpName] ?? [],
         ];
     }
@@ -109,11 +109,23 @@ final class DiscoveredInputType extends RebingInputType
      * A field's own rules: the `exists` rule of a required model binding, then #[Field(rules:)].
      *
      * @param  class-string  $class
+     * @param  array<array-key, mixed>  $args  the input's values, keyed by field name
      * @param  array<string, mixed>  $values  the input's values, keyed by property name
      * @param  array<string, mixed>  $request  the field's args as the client sent them, keyed by GraphQL arg name
      * @return list<mixed>
      */
-    public static function fieldRules(string $class, DiscoveredTypeField $field, array $values, array $request): array
+    public static function fieldRules(string $class, DiscoveredTypeField $field, array $args, array $values, array $request): array
+    {
+        return $field->omittedRules($args) ?? self::ownRules($class, $field, $values, $request);
+    }
+
+    /**
+     * @param  class-string  $class
+     * @param  array<string, mixed>  $values
+     * @param  array<string, mixed>  $request
+     * @return list<mixed>
+     */
+    private static function ownRules(string $class, DiscoveredTypeField $field, array $values, array $request): array
     {
         $rules = [];
 

@@ -108,6 +108,9 @@ The same `rulesForInput()` is asked for an input flattened with
 [`#[AsArgs]`](graphql.md#flattening-an-input-with-asargs); its rules and messages are then reported at the top-level
 argument name, such as `year`.
 
+A provider may return rules for an [`Omitted`](graphql.md#partial-updates-with-omitted) property whatever its value;
+they are dropped when the field is left out, or sent as a `null` its PHP type rejects.
+
 `DiscoveredAction` gives you what you need to speak the boundary's language:
 
 | Member | Use |

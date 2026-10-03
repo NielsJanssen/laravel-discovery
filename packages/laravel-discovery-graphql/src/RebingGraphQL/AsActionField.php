@@ -112,10 +112,11 @@ trait AsActionField
      */
     private function flattenedArg(TypeRegistry $registry, DiscoveredFlattenedInput $flattened, DiscoveredTypeField $field): array
     {
-        $rules = $field->hasRules || ($field->binding !== null && ! $field->binding->nullable)
+        $rules = $field->hasRules || $field->omittable || ($field->binding !== null && ! $field->binding->nullable)
             ? static fn(array $args, array $request = []): array => DiscoveredInputType::fieldRules(
                 $flattened->type->class,
                 $field,
+                $args,
                 $flattened->toProperties($args),
                 array_filter($request, is_string(...), ARRAY_FILTER_USE_KEY),
             )
@@ -327,6 +328,10 @@ trait AsActionField
 
         foreach ($this->discoveredAction->flattenedInputs as $flattened) {
             foreach ($flattened->type->fields as $field) {
+                if ($field->bindsNothingIn($args)) {
+                    continue;
+                }
+
                 $denied = $field->binding?->deniedBy($this->app, $args[$field->name] ?? null, $args, $context, $resolveInfo);
 
                 if ($denied !== null) {

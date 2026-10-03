@@ -17,6 +17,8 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\NamingStrategy;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\OmittableType;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Omitted;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
@@ -202,9 +204,16 @@ final readonly class InputCollector
             return $field === null ? null : throw new LogicException("$member has #[Field] but no set hook, so an input cannot fill it.");
         }
 
-        [$hasDefault, $default] = $this->defaultOf($reflection);
+        $defaults = $this->defaultOf($reflection);
+        [$hasDefault, $default] = $defaults;
         $name = $field->name ?? $this->names->name($naming, $property->getName(), $member);
         $type = $reflection->getType();
+        $omittable = OmittableType::of($type);
+
+        if ($omittable !== null) {
+            $type = $this->omittableInner($class, $member, (string) $type, $omittable, $shared, $defaults);
+        }
+
         $nullable = ($field !== null && $field->nullable) || $hasDefault || ($type?->allowsNull() ?? false);
         $authorizations = array_values($property->getAttributes(Authorize::class));
         $modelClass = $type instanceof ReflectionNamedType && ! $type->isBuiltin() && is_a($type->getName(), EloquentModel::class, true)
@@ -218,7 +227,7 @@ final readonly class InputCollector
                 paramName: $property->getName(),
                 argName: $name,
                 modelClass: $modelClass,
-                nullable: $nullable,
+                nullable: $omittable === null ? $nullable : $omittable->allowsNull,
                 type: $field?->type,
                 hasUserRules: $this->hasRules($field),
                 authorizations: $this->authorizations($authorizations, $member, $shared),
@@ -256,8 +265,47 @@ final readonly class InputCollector
             hasRules: $this->hasRules($field),
             binding: $binding,
             hasDefault: $hasDefault,
-            defaultValue: $this->isPrintable($default) ? $default : null,
+            defaultValue: $omittable === null && $this->isPrintable($default) ? $default : null,
+            omittable: $omittable !== null,
+            rejectsNull: $omittable !== null && ! $omittable->allowsNull,
         );
+    }
+
+    /**
+     * The one type an Omitted property makes optional; every other shape is rejected.
+     *
+     * @param  ClassReflector<object>  $class
+     * @param  array{0: bool, 1: mixed}  $default  from defaultOf()
+     */
+    private function omittableInner(ClassReflector $class, string $member, string $type, OmittableType $omittable, bool $shared, array $default): ReflectionNamedType
+    {
+        [$hasDefault, $value] = $default;
+
+        if ($shared) {
+            throw new LogicException(sprintf(
+                '%s is typed %s, but %s is both a #[Type] and an #[Input], and Omitted has no meaning in output position. Remove Omitted, or declare the partial update as its own #[Input] class.',
+                $member,
+                $type,
+                $class->getShortName(),
+            ));
+        }
+
+        if ($omittable->inner === null) {
+            throw new LogicException($omittable->others === []
+                ? sprintf('%s is typed %s, which leaves no value to send besides Omitted. Name the type Omitted makes optional, as in string|Omitted.', $member, $type)
+                : sprintf('%s is typed %s, but Omitted makes exactly one type optional, as in string|Omitted or string|Omitted|null. Keep one type besides Omitted and null.', $member, $type));
+        }
+
+        if (! $hasDefault || $value !== Omitted::Value) {
+            throw new LogicException(sprintf(
+                '%s is typed %s, but %s, so a field the caller leaves out has nothing to hydrate to. Give it the default Omitted::Value.',
+                $member,
+                $type,
+                $hasDefault ? 'its default is not Omitted::Value' : 'it has no default',
+            ));
+        }
+
+        return $omittable->inner;
     }
 
     /**

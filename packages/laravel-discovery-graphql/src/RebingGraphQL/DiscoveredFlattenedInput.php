@@ -26,17 +26,39 @@ final readonly class DiscoveredFlattenedInput
         return $this->type->toProperties($args);
     }
 
+    /**
+     * Whether a property's rules stay out because its Omitted field was left out or sent as a rejected null.
+     *
+     * @param  array<array-key, mixed>  $args
+     */
+    public function skipsRulesOf(string $propertyPath, array $args): bool
+    {
+        $field = $this->fieldOf(explode('.', $propertyPath, 2)[0]);
+
+        return $field !== null && $field->omittedRules($args) !== null;
+    }
+
     /** Translates a property path, `title` or `title.min`, to the arg path a validator reports against. */
     public function toArgPath(string $propertyPath): string
     {
         $segments = explode('.', $propertyPath, 2);
+        $field = $this->fieldOf($segments[0]);
 
+        if ($field === null) {
+            return $propertyPath;
+        }
+
+        return isset($segments[1]) ? "{$field->name}.{$segments[1]}" : $field->name;
+    }
+
+    private function fieldOf(string $property): ?DiscoveredTypeField
+    {
         foreach ($this->type->fields as $field) {
-            if ($field->phpName === $segments[0]) {
-                return isset($segments[1]) ? "{$field->name}.{$segments[1]}" : $field->name;
+            if ($field->phpName === $property) {
+                return $field;
             }
         }
 
-        return $propertyPath;
+        return null;
     }
 }
