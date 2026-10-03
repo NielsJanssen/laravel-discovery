@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Fixtures\RebingGraphQL\Skipped;
 
+use Illuminate\Bus\Queueable;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
 use Tests\Fixtures\RebingGraphQL\ThirdParty\Acme\HasAudit;
 use Tests\Fixtures\RebingGraphQL\ThirdParty\Acme\Resource;
@@ -12,6 +13,7 @@ use Tests\Fixtures\RebingGraphQL\ThirdParty\Acme\Resource;
 final class Article extends Resource
 {
     use HasAudit;
+    use Queueable;
 
     public string $vendorId = 'redeclared';
 

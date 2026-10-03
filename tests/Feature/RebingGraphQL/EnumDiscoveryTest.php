@@ -7,38 +7,14 @@ namespace Tests\Feature\RebingGraphQL;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredEnumType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredEnumValue;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Enum;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
-use Tempest\Discovery\DiscoveryItems;
 use Tests\Fixtures\RebingGraphQL\Enums;
 use Tests\Fixtures\RebingGraphQL\Types\Shelf;
-
-/**
- * @return list<DiscoveredType>
- */
-function discoveredEnums(string ...$classes): array
-{
-    $items = iterator_to_array(discoverGraphQL(...$classes)->getItems(), false);
-
-    return array_values(array_filter($items, static fn(mixed $item): bool => $item instanceof DiscoveredType && $item->kind === TypeKind::Enum));
-}
-
-/** Discover the classes and pass the items through serialize(), as the discovery cache does. */
-function cachedItems(string ...$classes): DiscoveryItems
-{
-    $items = unserialize(serialize(discoverGraphQL(...$classes)->getItems()));
-
-    return $items instanceof DiscoveryItems ? $items : throw new \RuntimeException('Items did not survive serialization.');
-}
-
-function applyItems(DiscoveryItems $items): void
-{
-    $discovery = app(GraphQLDiscovery::class);
-    $discovery->setItems($items);
-    $discovery->apply();
-}
 
 const HAND_REGISTRATION_HINT = 'or register the enum by hand with NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry::register() in a service provider that boots before NielsJanssen\Laravel\Discovery\DiscoveryServiceProvider.';
 
@@ -70,7 +46,7 @@ describe('the enum schema', function () {
     });
 
     it('registers a referenced enum without #[Enum], from a field, a field arg and an action arg', function () {
-        expect(schemaSdl(Enums\DiaryQuery::class, Enums\Diary::class, Enums\MoodArgQuery::class))
+        expect(schemaSdl(Enums\MoodArgQuery::class, Enums\DiaryQuery::class, Enums\Diary::class))
             ->toContain(<<<'GRAPHQL'
                 type Diary {
                   mood: Mood!
@@ -91,19 +67,21 @@ describe('the enum schema', function () {
 
         buildAllSchemas();
 
-        expect(app(TypeRegistry::class)->kindOf(Enums\Mood::class, Position::Output))->toBe(TypeKind::Enum);
+        $registry = app(TypeRegistry::class);
+
+        expect($registry->kindOf(Enums\Mood::class, Position::Output))->toBe(TypeKind::Enum)
+            ->and($registry->nameOf(Enums\Mood::class, Position::Input))->toBe('Mood')
+            ->and($registry->nameOf(Enums\Mood::class, Position::Output))->toBe('Mood')
+            ->and(config('graphql.types'))->toHaveKey('Mood');
     });
 
-    it('registers an enum used only as an action arg, in both positions', function () {
-        expect(schemaSdl(Enums\MoodArgQuery::class))->toContain('enum Mood {');
-
-        buildAllSchemas();
+    it('registers an enum used only as an action arg in both positions', function () {
+        schemaSdl(Enums\MoodRuleQuery::class);
 
         $registry = app(TypeRegistry::class);
 
         expect($registry->nameOf(Enums\Mood::class, Position::Input))->toBe('Mood')
-            ->and($registry->nameOf(Enums\Mood::class, Position::Output))->toBe('Mood')
-            ->and(config('graphql.types'))->toHaveKey('Mood');
+            ->and($registry->nameOf(Enums\Mood::class, Position::Output))->toBe('Mood');
     });
 
     it('registers an #[Enum] that nothing references', function () {
@@ -138,7 +116,7 @@ describe('the enum schema', function () {
 
         isolateGraphQL();
 
-        expect(array_map(static fn(DiscoveredType $enum): array => [$enum->name, $enum->implicit], discoveredEnums(...$order)))
+        expect(array_map(static fn(DiscoveredType $enum): array => [$enum->name, $enum->implicit], discoveredTypesOf(TypeKind::Enum, ...$order)))
             ->toBe($order[0] === Enums\ColorQuery::class ? [['Colour', true], ['Colour', false]] : [['Colour', false]]);
     })->with([
         'reference first' => [[Enums\ColorQuery::class, Enums\Color::class]],
@@ -153,14 +131,14 @@ describe('the enum schema', function () {
 
         buildAllSchemas();
     })->with([
-        'references first' => [[Enums\GenreQuery::class, Enums\DiaryQuery::class, Enums\Diary::class, Enums\Genre::class]],
-        '#[Enum] first' => [[Enums\Genre::class, Enums\Diary::class, Enums\DiaryQuery::class, Enums\GenreQuery::class]],
+        'references first' => [[Enums\GenreQuery::class, Enums\MoodArgQuery::class, Enums\DiaryQuery::class, Enums\Diary::class, Enums\Genre::class]],
+        '#[Enum] first' => [[Enums\Genre::class, Enums\DiaryQuery::class, Enums\Diary::class, Enums\MoodArgQuery::class, Enums\GenreQuery::class]],
     ]);
 
     it('leaves an enum registered by hand to its hand-written type', function () {
         isolateGraphQL();
         app(TypeRegistry::class)->register(Enums\Mood::class, 'Mood', TypeKind::Enum);
-        discoverGraphQL(Enums\HandWrittenMoodType::class, Enums\MoodArgQuery::class)->apply();
+        discoverGraphQL(Enums\HandWrittenMoodType::class, Enums\MoodArgQuery::class, Enums\DiaryQuery::class, Enums\Diary::class)->apply();
 
         expect(config('graphql.types.Mood'))->toBe(Enums\HandWrittenMoodType::class);
 
@@ -168,12 +146,13 @@ describe('the enum schema', function () {
     });
 
     it('leaves a hand-registered enum to its hand-written type when the items come from the cache', function () {
-        isolateGraphQL();
-        $items = cachedItems(Enums\HandWrittenMoodType::class, Enums\MoodArgQuery::class);
+        $items = cachedGraphQLItems(Enums\HandWrittenMoodType::class, Enums\MoodArgQuery::class, Enums\DiaryQuery::class, Enums\Diary::class);
 
         isolateGraphQL();
         app(TypeRegistry::class)->register(Enums\Mood::class, 'Mood', TypeKind::Enum);
-        applyItems($items);
+        $discovery = app(GraphQLDiscovery::class);
+        $discovery->setItems($items);
+        $discovery->apply();
 
         expect(config('graphql.types.Mood'))->toBe(Enums\HandWrittenMoodType::class);
 
@@ -183,11 +162,9 @@ describe('the enum schema', function () {
 
 describe('the discovery cache', function () {
     it('writes the bind names of the cached items, so the config and the container agree', function () {
-        isolateGraphQL();
-        $items = cachedItems(Enums\GenreQuery::class, Enums\DiaryQuery::class, Enums\Diary::class, Enums\Genre::class, Enums\MoodArgQuery::class);
+        $items = cachedGraphQLItems(Enums\GenreQuery::class, Enums\DiaryQuery::class, Enums\Diary::class, Enums\Genre::class, Enums\MoodArgQuery::class);
 
-        isolateGraphQL();
-        applyItems($items);
+        applyGraphQLItems($items);
 
         $bindNames = [];
 
@@ -236,7 +213,7 @@ describe('validation rules on enum args', function () {
 
 describe('enum resolution', function () {
     it('resolves enum properties and returns to their case names, for backed and pure enums', function () {
-        schemaSdl(Enums\GenreQuery::class, Enums\DiaryQuery::class, Enums\Diary::class);
+        schemaSdl(Enums\GenreQuery::class, Enums\MoodArgQuery::class, Enums\DiaryQuery::class, Enums\Diary::class);
 
         $this->postJson('/graphql', ['query' => '{ genre genres diary { mood genre feels(mood: Cheerful) other: feels(mood: Gloomy) feelsLike gloomy: feelsLike(mood: Gloomy) } }'])
             ->assertOk()
@@ -258,7 +235,7 @@ describe('enum resolution', function () {
     });
 
     it('passes a pure enum arg to the resolver as its case, from a literal or a variable', function () {
-        schemaSdl(Enums\MoodArgQuery::class);
+        schemaSdl(Enums\MoodArgQuery::class, Enums\DiaryQuery::class, Enums\Diary::class);
 
         $this->postJson('/graphql', [
             'query' => 'query ($fallback: Mood) { mood(mood: Gloomy, fallback: $fallback) }',
@@ -291,7 +268,7 @@ describe('discovery', function () {
     });
 
     it('collects an enum that survives serialization, keeping case order', function () {
-        [$enum] = discoveredEnums(Enums\Genre::class);
+        [$enum] = discoveredTypesOf(TypeKind::Enum, Enums\Genre::class);
 
         expect(unserialize(serialize($enum)))->toEqual($enum)
             ->and($enum->bindName)->toStartWith('discovery.rebing_graphql.type.')
@@ -305,10 +282,6 @@ describe('discovery', function () {
                 new DiscoveredEnumValue('Saga', deprecationReason: 'Use Fiction (since 2.0)'),
             ])
             ->and($enum->createType(app()))->toBeInstanceOf(DiscoveredEnumType::class);
-    });
-
-    it('uses the case instances as internal values', function () {
-        [$enum] = discoveredEnums(Enums\Genre::class);
 
         $values = $enum->createType(app())->toArray()['values'];
 
@@ -316,27 +289,30 @@ describe('discovery', function () {
             ->and(array_column($values, 'value'))->toBe(Enums\Genre::cases());
     });
 
-    it('rejects #[Enum] on a class that is not an enum', function () {
-        expect(fn() => discoverGraphQL(Enums\EnumOnClass::class))->toThrow(\LogicException::class, sprintf(
-            '#[Enum] on %s, which is not a PHP enum: only an enum becomes a GraphQL enum. Declare EnumOnClass as an enum, or use #[Type] for an object type.',
-            Enums\EnumOnClass::class,
-        ));
-    });
+    it('rejects an enum shape at discovery', function (object $shape, string $format) {
+        expectRejected($shape, $format);
+    })->with([
+        '#[Enum] on a class that is not an enum' => [
+            fn() => new #[Enum] class {},
+            '#[Enum] on %1$s, which is not a PHP enum: only an enum becomes a GraphQL enum. Declare %2$s as an enum, or use #[Type] for an object type.',
+        ],
+        'two referenced enums that share a short name' => [
+            fn() => new class {
+                #[Query]
+                public function both(Enums\Mood $here, Enums\Clash\Mood $there): string
+                {
+                    return $here->name . $there->name;
+                }
+            },
+            'GraphQL type name [Mood] is used by both ' . Enums\Mood::class . ' and ' . Enums\Clash\Mood::class . '. Rename one with #[Enum(name: ...)], ' . HAND_REGISTRATION_HINT,
+        ],
+    ]);
 
     it('rejects two enums with the same GraphQL name, pointing at #[Enum(name:)]', function () {
         expect(fn() => discoverGraphQL(Enums\Color::class, Enums\DuplicateColour::class))->toThrow(\LogicException::class, sprintf(
             'GraphQL type name [Colour] is used by both %s and %s. Rename one with #[Enum(name: ...)], %s',
             Enums\Color::class,
             Enums\DuplicateColour::class,
-            HAND_REGISTRATION_HINT,
-        ));
-    });
-
-    it('rejects two referenced enums that share a short name, pointing at #[Enum(name:)]', function () {
-        expect(fn() => discoverGraphQL(Enums\ClashingMoodsQuery::class))->toThrow(\LogicException::class, sprintf(
-            'GraphQL type name [Mood] is used by both %s and %s. Rename one with #[Enum(name: ...)], %s',
-            Enums\Mood::class,
-            Enums\Clash\Mood::class,
             HAND_REGISTRATION_HINT,
         ));
     });
@@ -356,7 +332,7 @@ describe('discovery', function () {
     it('rejects a referenced enum named like a hand-written Rebing type', function () {
         isolateGraphQL();
 
-        expect(fn() => discoverGraphQL(Enums\HandWrittenMoodType::class, Enums\MoodArgQuery::class)->apply())
+        expect(fn() => discoverGraphQL(Enums\HandWrittenMoodType::class, Enums\MoodArgQuery::class, Enums\DiaryQuery::class, Enums\Diary::class)->apply())
             ->toThrow(\LogicException::class, sprintf(
                 'GraphQL type name [Mood] is used by both %s (#[Enum]) and the Rebing type %s. Rename one with #[Enum(name: ...)], %s',
                 Enums\Mood::class,

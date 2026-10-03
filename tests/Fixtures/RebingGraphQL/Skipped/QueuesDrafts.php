@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Tests\Fixtures\RebingGraphQL\Types\Eloquent\Concerns;
+namespace Tests\Fixtures\RebingGraphQL\Skipped;
 
 use Illuminate\Bus\Queueable;
 
-trait QueuesDigests
+trait QueuesDrafts
 {
     use Queueable;
 }

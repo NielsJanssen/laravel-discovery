@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
+use Illuminate\Config\Repository;
 use LogicException;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\SkippedMembers;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
+use Tempest\Reflection\PropertyReflector;
 use Tests\Fixtures\RebingGraphQL\Inputs\QueuedReport;
 use Tests\Fixtures\RebingGraphQL\Skipped;
 
@@ -24,13 +25,9 @@ function skipNamespaces(mixed $namespaces): void
  */
 function fieldNamesOf(string $class, TypeKind $kind): array
 {
-    foreach (discoverGraphQL($class)->getItems() as $item) {
-        if ($item instanceof DiscoveredType && $item->kind === $kind) {
-            return array_map(static fn($field) => $field->name, $item->fields);
-        }
-    }
+    [$type] = discoveredTypesOf($kind, $class);
 
-    throw new \RuntimeException("No $kind->value type for $class.");
+    return array_map(static fn($field) => $field->name, $type->fields);
 }
 
 const THIRD_PARTY_NAMESPACE = 'Tests\\Fixtures\\RebingGraphQL\\ThirdParty\\Acme';
@@ -41,12 +38,21 @@ it('skips only Laravel by default', function () {
         ->and(fieldNamesOf(Skipped\Article::class, TypeKind::Object))->toEqualCanonicalizing(['vendorId', 'title', 'vendorLabel', 'auditedBy', 'vendorStatus']);
 });
 
-it('leaves out the public, hooked and #[Field] members of a configured namespace, and a property redeclared from it', function (string $namespace) {
-    skipNamespaces(['Illuminate\\', $namespace]);
+it('leaves out the public, hooked and #[Field] members of a configured namespace, and a property redeclared from it', function () {
+    skipNamespaces(['Illuminate\\', THIRD_PARTY_NAMESPACE]);
 
     expect(fieldNamesOf(Skipped\Article::class, TypeKind::Object))->toBe(['title'])
         ->and(fieldNamesOf(Skipped\ArticleDraft::class, TypeKind::Input))->toBe(['title'])
         ->and(fieldNamesOf(QueuedReport::class, TypeKind::Input))->toBe(['title']);
+});
+
+it('reads a namespace prefix with or without a leading or trailing backslash', function (string $namespace) {
+    $config = new Repository([SkippedMembers::CONFIG => [$namespace]]);
+
+    $skipped = new SkippedMembers($config);
+
+    expect($skipped->skips(PropertyReflector::fromParts(Skipped\Article::class, 'vendorId')))->toBeTrue()
+        ->and($skipped->skips(PropertyReflector::fromParts(Skipped\Article::class, 'title')))->toBeFalse();
 })->with([
     'without a trailing backslash' => [THIRD_PARTY_NAMESPACE],
     'with a trailing backslash' => [THIRD_PARTY_NAMESPACE . '\\'],
