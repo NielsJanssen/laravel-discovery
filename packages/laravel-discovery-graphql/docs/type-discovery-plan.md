@@ -1,6 +1,6 @@
 # Type discovery: implementation plan
 
-Status: Phases 0–4 are done and merged into `main`, WP5.1 is done on branch `feat/type-factory`, and a simplification audit has landed on top of them (see
+Status: Phases 0–4 are done and merged into `main`, WP5.1 is done and merged, WP5.2 is done on branch `feat/type-provider`, and a simplification audit has landed on top of them (see
 [Progress](#progress) and [Simplification audit](#simplification-audit)); the rest of Phase 5, Phase 6, WP6.3 and Phase 7 remain.
 Written 2 October 2026, against API proposal draft 3. Revised the same day after a review that verified the plan
 against the codebase and vendor code (see [Review changes](#review-changes)). Progress last updated 3 October 2026.
@@ -55,7 +55,7 @@ rebase-merged into `main` as one commit per WP (Phase 0 as one commit per WP ins
 | WP4.2 Eloquent models | Done | `8ea8d08` | #13 |
 | WP4.3 Batch loading | Done | `1331636` | #15 |
 | Simplification audit ([details](#simplification-audit)) | Done | Commits `fix: Keep the exists rule for closure rules on bindings` to `docs: Document the test helpers and fixture convention` (hashes pending a rewrite) | |
-| WP5.1 TypeFactory | Done | `ef77549`, `f26b0ef`, `48c0ce3`, `f036051` (branch `feat/type-factory`) | |
+| WP5.1 TypeFactory | Done | `479da11`, `64c6ac0`, `cf1b77d`, `9510728`, docs `a5103c1` | #22 |
 | WP5.2 TypeProvider | To do | | |
 | WP5.3 `replace: true` | To do | | |
 | WP5.4 `#[ExtendType]` | To do | | |
@@ -742,7 +742,7 @@ args are part of the batch key; already loaded relations aren't reloaded; `KeyLo
 
 ### WP5.1 TypeFactory
 
-**Status:** Done, `ef77549`, `f26b0ef`, `48c0ce3` and `f036051` (branch `feat/type-factory`). The two deferred refactors landed first, as their own commits: `DiscoveredArg` holds one `TypeRef` (S13) and `DiscoveredAction` holds `ClassifiedParameters`. The input variant is deferred; see Deviations.
+**Status:** Done, `479da11`, `64c6ac0`, `cf1b77d`, `9510728` and docs `a5103c1` (#22). The two deferred refactors landed first, as their own commits: `DiscoveredArg` holds one `TypeRef` (S13) and `DiscoveredAction` holds `ClassifiedParameters`. The input variant is deferred; see Deviations.
 
 **Depends on:** WP1.1, and WP2.1 for the input variant.
 
