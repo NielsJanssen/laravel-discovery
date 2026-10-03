@@ -5,15 +5,21 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Attribute;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\FieldCase;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\NamingStrategy;
 use ReflectionClass;
 
 /** Marks a class as a GraphQL input object type; its public properties become input fields. */
 #[Attribute(Attribute::TARGET_CLASS)]
 final readonly class Input
 {
+    /**
+     * @param  FieldCase|class-string<NamingStrategy>|null  $naming  names this input's fields instead of the configured strategy
+     */
     public function __construct(
         public ?string $name = null,
         public ?string $description = null,
+        public FieldCase|string|null $naming = null,
     ) {}
 
     /** Whether the class carries #[Input]. */

@@ -18,6 +18,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\LoadersExecutionMiddlew
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\ScalarMap;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapper;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
 use NielsJanssen\Laravel\Validation\RuleCompiler;
 use RuntimeException;
 
@@ -57,6 +58,7 @@ final class GraphQLDiscoveryServiceProvider extends ServiceProvider
         }
 
         $this->app->singleton(TypeRegistry::class);
+        $this->app->singleton(Naming::class);
 
         $this->app->singleton(
             HydratorRegistry::class,

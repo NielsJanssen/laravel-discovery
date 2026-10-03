@@ -26,17 +26,6 @@ final readonly class DiscoveredFlattenedInput
         return $this->type->toProperties($args);
     }
 
-    /**
-     * The request args that belong to this input, keyed by arg name.
-     *
-     * @param  array<array-key, mixed>  $args
-     * @return array<string, mixed>
-     */
-    public function ownArgs(array $args): array
-    {
-        return array_intersect_key($args, array_flip(array_map(static fn(DiscoveredTypeField $field): string => $field->name, $this->type->fields)));
-    }
-
     /** Translates a property path, `title` or `title.min`, to the arg path a validator reports against. */
     public function toArgPath(string $propertyPath): string
     {

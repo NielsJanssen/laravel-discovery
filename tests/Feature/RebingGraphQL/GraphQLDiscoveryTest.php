@@ -114,7 +114,7 @@ describe('resolution and return-type inference', function () {
 
     it('throws during discovery when an #[Arg(name:)] collides with another parameter name', function () {
         expect(fn() => discoverGraphQL(CollidingArgNameQuery::class))
-            ->toThrow(\LogicException::class, 'collides with the parameter $name');
+            ->toThrow(\LogicException::class, 'takes the arg "name", which collides with the arg of the parameter $title. Rename one with #[Arg(name: ...)].');
     });
 
     it('throws during discovery when type is missing and return type is non-scalar', function () {

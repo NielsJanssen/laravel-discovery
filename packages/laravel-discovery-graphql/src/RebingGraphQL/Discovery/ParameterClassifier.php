@@ -18,12 +18,16 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Context;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredArg;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredFlattenedInput;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredModelBinding;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\NamingStrategy;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Root;
+use ReflectionProperty;
 use RuntimeException;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
@@ -39,14 +43,17 @@ final readonly class ParameterClassifier
         private HydratorRegistry $hydrators,
         private TypeMapperRegistry $mappers,
         private InputCollector $inputs,
+        private Naming $names,
     ) {}
 
     /**
      * @param  ClassReflector<object>  $class
      * @param  list<ActionArgProvider>  $argProviders
+     * @param  NamingStrategy|null  $naming  names the args instead of the configured argument strategy
      */
-    public function classify(ClassReflector $class, MethodReflector $method, array $argProviders = []): ClassifiedParameters
+    public function classify(ClassReflector $class, MethodReflector $method, array $argProviders = [], ?NamingStrategy $naming = null): ClassifiedParameters
     {
+        $naming ??= $this->names->arguments();
         $providerArgs = $this->providerArgOwners($argProviders, $class, $method);
         $valueObjectClasses = $this->collectValueObjectClasses($argProviders);
 
@@ -67,7 +74,7 @@ final readonly class ParameterClassifier
             $argAttr = $param->getAttribute(Arg::class);
 
             if ($param->getAttribute(AsArgs::class) !== null) {
-                $flattenedInputs[] = $this->discoverFlattenedInput($argAttr, $param, $class, $method);
+                $flattenedInputs[] = $this->discoverFlattenedInput($argAttr, $param, $class, $method, $naming);
                 continue;
             }
 
@@ -85,7 +92,7 @@ final readonly class ParameterClassifier
 
                 $modelBindings[] = new DiscoveredModelBinding(
                     paramName: $param->getName(),
-                    argName: $argAttr !== null && $argAttr->name !== null ? $argAttr->name : $param->getName(),
+                    argName: $this->argName($argAttr, $param, $naming, $class, $method),
                     modelClass: $type->getName(),
                     nullable: $type->isNullable() || $param->hasDefaultValue(),
                     type: $argAttr?->type,
@@ -99,7 +106,7 @@ final readonly class ParameterClassifier
             $this->assertNoParameterAuthorization($param, $class, $method);
 
             if (! $type->isScalar() && $this->isInput($type->getName())) {
-                $args[] = $this->discoverInputArg($argAttr, $param, $class, $method);
+                $args[] = $this->discoverInputArg($argAttr, $param, $class, $method, $naming);
                 continue;
             }
 
@@ -119,11 +126,11 @@ final readonly class ParameterClassifier
                 }
             }
 
-            $args[] = $this->discoverArg($argAttr, $param, $class, $method);
+            $args[] = $this->discoverArg($argAttr, $param, $class, $method, $naming);
         }
 
-        $this->assertNoArgNameCollisions($args, $class, $method);
-        $this->assertNoFlattenedArgCollisions($flattenedInputs, $args, $modelBindings, $providerArgs, $class, $method);
+        $this->assertUniqueArgNames($args, $modelBindings, $flattenedInputs, $providerArgs, $class, $method);
+        $this->assertNoArgNameCollisions($args, $modelBindings, $class, $method);
 
         return new ClassifiedParameters(
             args: $args,
@@ -138,7 +145,7 @@ final readonly class ParameterClassifier
     /**
      * @param ClassReflector<object> $class
      */
-    private function discoverFlattenedInput(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method): DiscoveredFlattenedInput
+    private function discoverFlattenedInput(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method, NamingStrategy $naming): DiscoveredFlattenedInput
     {
         $where = sprintf('#[AsArgs] on the parameter $%s in %s::%s', $param->getName(), $class->getName(), $method->getName());
         $type = $param->getType();
@@ -168,7 +175,7 @@ final readonly class ParameterClassifier
         /** @var Input $attribute */
         $attribute = $input->getAttribute(Input::class);
 
-        return new DiscoveredFlattenedInput($param->getName(), $this->inputs->collect($input, $attribute));
+        return new DiscoveredFlattenedInput($param->getName(), $this->inputs->collect($input, $attribute, $naming));
     }
 
     /**
@@ -192,50 +199,86 @@ final readonly class ParameterClassifier
     }
 
     /**
-     * Every flattened field must own its arg name: no other arg, model binding, arg provider or #[AsArgs] may take it.
+     * Every GraphQL arg name has one owner: an arg, a model binding, an arg provider's arg or a flattened field.
      *
-     * @param  list<DiscoveredFlattenedInput>  $flattenedInputs
      * @param  list<DiscoveredArg>  $args
      * @param  list<DiscoveredModelBinding>  $modelBindings
+     * @param  list<DiscoveredFlattenedInput>  $flattenedInputs
      * @param  array<string, string>  $providerArgs  how to name each arg provider's arg, keyed by arg name
      * @param  ClassReflector<object>  $class
      */
-    private function assertNoFlattenedArgCollisions(array $flattenedInputs, array $args, array $modelBindings, array $providerArgs, ClassReflector $class, MethodReflector $method): void
+    private function assertUniqueArgNames(array $args, array $modelBindings, array $flattenedInputs, array $providerArgs, ClassReflector $class, MethodReflector $method): void
     {
-        if ($flattenedInputs === []) {
-            return;
-        }
-
-        $owners = $providerArgs;
+        $explicit = $this->explicitArgNames($method);
+        $claims = [];
 
         foreach ($args as $arg) {
-            $owners[$arg->name] = "the arg of the parameter \${$arg->paramName}";
+            $claims[] = [$arg->name, "the arg of the parameter \${$arg->paramName}", "The parameter \${$arg->paramName}", 'takes the arg', $arg->name !== $arg->paramName && ! $explicit[$arg->paramName], false];
         }
 
         foreach ($modelBindings as $binding) {
-            $owners[$binding->argName] = "the arg of the model-bound parameter \${$binding->paramName}";
+            $claims[] = [$binding->argName, "the arg of the model-bound parameter \${$binding->paramName}", "The model-bound parameter \${$binding->paramName}", 'takes the arg', $binding->argName !== $binding->paramName && ! $explicit[$binding->paramName], false];
         }
 
         foreach ($flattenedInputs as $flattened) {
             foreach ($flattened->type->fields as $field) {
-                $owner = $owners[$field->name] ?? null;
-
-                if ($owner !== null) {
-                    throw new LogicException(sprintf(
-                        '#[AsArgs] on the parameter $%s in %s::%s flattens %s::$%s into the arg "%s", which collides with %s. Rename the field with #[Field(name: ...)], or rename the other arg.',
-                        $flattened->paramName,
-                        $class->getName(),
-                        $method->getName(),
-                        $flattened->type->class,
-                        $field->phpName,
-                        $field->name,
-                        $owner,
-                    ));
-                }
-
-                $owners[$field->name] = sprintf('%s::$%s, flattened by #[AsArgs] on $%s', $flattened->type->class, $field->phpName, $flattened->paramName);
+                $claims[] = [
+                    $field->name,
+                    sprintf('%s::$%s, flattened by #[AsArgs] on $%s', $flattened->type->class, $field->phpName, $flattened->paramName),
+                    "#[AsArgs] on the parameter \${$flattened->paramName}",
+                    sprintf('flattens %s::$%s into the arg', $flattened->type->class, $field->phpName),
+                    $field->name !== $field->phpName && ! $this->hasExplicitFieldName($flattened->type->class, $field->phpName),
+                    true,
+                ];
             }
         }
+
+        $owners = array_map(static fn(string $owner): array => [$owner, false], $providerArgs);
+
+        foreach ($claims as [$name, $owner, $claimant, $verb, $byStrategy, $flattened]) {
+            $previous = $owners[$name] ?? null;
+
+            if ($previous !== null) {
+                throw new LogicException(sprintf(
+                    '%s in %s::%s %s "%s", which collides with %s. %s',
+                    $claimant,
+                    $class->getName(),
+                    $method->getName(),
+                    $verb,
+                    $name,
+                    $previous[0],
+                    match (true) {
+                        $byStrategy || $previous[1] => 'The argument naming strategy made one of these names: give one an explicit name with #[Arg(name: ...)] or #[Field(name: ...)], or rename a parameter.',
+                        $flattened => 'Rename the field with #[Field(name: ...)], or rename the other arg.',
+                        default => 'Rename one with #[Arg(name: ...)].',
+                    },
+                ));
+            }
+
+            $owners[$name] = [$owner, $byStrategy];
+        }
+    }
+
+    /**
+     * @return array<string, bool>  whether each parameter carries #[Arg(name:)], keyed by parameter name
+     */
+    private function explicitArgNames(MethodReflector $method): array
+    {
+        $explicit = [];
+
+        foreach ($method->getParameters() as $param) {
+            $explicit[$param->getName()] = $param->getAttribute(Arg::class)?->name !== null;
+        }
+
+        return $explicit;
+    }
+
+    /**
+     * @param  class-string  $class
+     */
+    private function hasExplicitFieldName(string $class, string $property): bool
+    {
+        return (new ReflectionProperty($class, $property)->getAttributes(Field::class)[0] ?? null)?->newInstance()->name !== null;
     }
 
     /**
@@ -389,32 +432,42 @@ final readonly class ParameterClassifier
     }
 
     /**
+     * A renamed arg may not take another parameter's PHP name, since args are mapped back onto parameters by name.
+     *
      * @param  list<DiscoveredArg>  $args
+     * @param  list<DiscoveredModelBinding>  $modelBindings
      * @param  ClassReflector<object>  $class
      */
-    private function assertNoArgNameCollisions(array $args, ClassReflector $class, MethodReflector $method): void
+    private function assertNoArgNameCollisions(array $args, array $modelBindings, ClassReflector $class, MethodReflector $method): void
     {
-        $paramNames = [];
+        $explicit = $this->explicitArgNames($method);
+        $renamed = [
+            ...array_map(static fn(DiscoveredArg $arg): array => [$arg->paramName, $arg->name], $args),
+            ...array_map(static fn(DiscoveredModelBinding $binding): array => [$binding->paramName, $binding->argName], $modelBindings),
+        ];
 
-        foreach ($method->getParameters() as $param) {
-            $paramNames[$param->getName()] = true;
-        }
-
-        foreach ($args as $arg) {
-            if ($arg->name === $arg->paramName) {
+        foreach ($renamed as [$paramName, $name]) {
+            if ($name === $paramName || ! isset($explicit[$name])) {
                 continue;
             }
 
-            if (isset($paramNames[$arg->name])) {
-                throw new LogicException(sprintf(
+            throw new LogicException($explicit[$paramName]
+                ? sprintf(
                     'Argument #[Arg(name: \'%s\')] on %s::%s($%s) collides with the parameter $%s. Rename the arg or the parameter.',
-                    $arg->name,
+                    $name,
                     $class->getName(),
                     $method->getName(),
-                    $arg->paramName,
-                    $arg->name,
+                    $paramName,
+                    $name,
+                )
+                : sprintf(
+                    'The argument naming strategy names the parameter $%s in %s::%s "%s", which collides with the parameter $%s. Name one with #[Arg(name: ...)], or rename a parameter.',
+                    $paramName,
+                    $class->getName(),
+                    $method->getName(),
+                    $name,
+                    $name,
                 ));
-            }
         }
     }
 
@@ -426,7 +479,7 @@ final readonly class ParameterClassifier
     /**
      * @param ClassReflector<object> $class
      */
-    private function discoverInputArg(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method): DiscoveredArg
+    private function discoverInputArg(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method, NamingStrategy $naming): DiscoveredArg
     {
         if ($argAttr?->type !== null) {
             throw new LogicException(sprintf(
@@ -441,7 +494,7 @@ final readonly class ParameterClassifier
         $hasDefault = $param->hasDefaultValue();
 
         return new DiscoveredArg(
-            name: $argAttr !== null && $argAttr->name !== null ? $argAttr->name : $param->getName(),
+            name: $this->argName($argAttr, $param, $naming, $class, $method),
             paramName: $param->getName(),
             type: $param->getType()->getName(),
             nullable: $param->getType()->isNullable() || $hasDefault,
@@ -457,7 +510,7 @@ final readonly class ParameterClassifier
     /**
      * @param ClassReflector<object> $class
      */
-    private function discoverArg(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method): DiscoveredArg
+    private function discoverArg(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method, NamingStrategy $naming): DiscoveredArg
     {
         $typeReflector = $param->getType();
         $hasDefault = $param->hasDefaultValue();
@@ -493,7 +546,7 @@ final readonly class ParameterClassifier
         $hasRules = $argAttr !== null && ! empty($argAttr->rules);
 
         return new DiscoveredArg(
-            name: $argAttr !== null && $argAttr->name !== null ? $argAttr->name : $param->getName(),
+            name: $this->argName($argAttr, $param, $naming, $class, $method),
             paramName: $param->getName(),
             type: $typeName,
             nullable: $nullable,
@@ -504,6 +557,20 @@ final readonly class ParameterClassifier
             deprecationReason: $argAttr?->deprecationReason,
             typeRef: $mapped,
         );
+    }
+
+    /**
+     * The GraphQL name of a parameter's arg: an explicit #[Arg(name:)], or the strategy's name for the parameter.
+     *
+     * @param  ClassReflector<object>  $class
+     */
+    private function argName(?Arg $argAttr, ParameterReflector $param, NamingStrategy $naming, ClassReflector $class, MethodReflector $method): string
+    {
+        if ($argAttr !== null && $argAttr->name !== null) {
+            return $argAttr->name;
+        }
+
+        return $this->names->name($naming, $param->getName(), sprintf('the parameter $%s in %s::%s', $param->getName(), $class->getName(), $method->getName()));
     }
 
     private function member(ParameterReflector $param, MethodReflector $method): Member

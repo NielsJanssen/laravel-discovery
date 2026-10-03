@@ -25,6 +25,8 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\BatchLoader;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\VerifiesLoadOptions;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\NamingStrategy;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
@@ -46,6 +48,7 @@ final readonly class TypeCollector
         private ParameterClassifier $parameters,
         private TypeInferrer $inferrer,
         private SkippedMembers $skipped,
+        private Naming $names,
     ) {}
 
     /**
@@ -78,12 +81,16 @@ final readonly class TypeCollector
             ));
         }
 
+        $source = sprintf('#[Type(naming:)] on %s', $class->getName());
+        $fieldNaming = $this->names->fields($type->naming, $source);
+        $argumentNaming = $this->names->arguments($type->naming, $source);
+
         return new DiscoveredType(
             name: $type->name ?? $this->typeName($class),
             class: $class->getName(),
             kind: TypeKind::Object,
             description: $type->description,
-            fields: $this->fields($class),
+            fields: $this->fields($class, $fieldNaming, $argumentNaming),
         );
     }
 
@@ -91,12 +98,12 @@ final readonly class TypeCollector
      * @param  ClassReflector<object>  $class
      * @return list<DiscoveredTypeField>
      */
-    private function fields(ClassReflector $class): array
+    private function fields(ClassReflector $class, NamingStrategy $fieldNaming, NamingStrategy $argumentNaming): array
     {
         $fields = [];
 
         foreach ($class->getProperties() as $property) {
-            $field = $this->includes($property) ? $this->propertyField($class, $property) : null;
+            $field = $this->includes($property) ? $this->propertyField($class, $property, $fieldNaming) : null;
 
             if ($field === null) {
                 $this->assertUndecorated($property);
@@ -108,7 +115,7 @@ final readonly class TypeCollector
         foreach ($class->getReflection()->getMethods() as $reflection) {
             $method = new MethodReflector($reflection);
 
-            $field = $this->includes($method) ? $this->methodField($class, $method) : null;
+            $field = $this->includes($method) ? $this->methodField($class, $method, $fieldNaming, $argumentNaming) : null;
 
             if ($field === null) {
                 $this->assertUndecorated($method);
@@ -125,7 +132,7 @@ final readonly class TypeCollector
     /**
      * @param  ClassReflector<object>  $class
      */
-    private function propertyField(ClassReflector $class, PropertyReflector $property): ?DiscoveredTypeField
+    private function propertyField(ClassReflector $class, PropertyReflector $property, NamingStrategy $naming): ?DiscoveredTypeField
     {
         $reflection = $property->getReflection();
         $field = $property->getAttribute(Field::class);
@@ -169,7 +176,7 @@ final readonly class TypeCollector
 
         return $this->decorate($label, $property, new DiscoveredTypeField(
             phpName: $property->getName(),
-            name: $field->name ?? $this->fieldName($property),
+            name: $field->name ?? $this->names->name($naming, $property->getName(), $label),
             type: $this->inferType($reflection->getType(), $class, $label, $field, $member),
             source: FieldSource::Property,
             description: $field?->description,
@@ -181,7 +188,7 @@ final readonly class TypeCollector
     /**
      * @param  ClassReflector<object>  $class
      */
-    private function methodField(ClassReflector $class, MethodReflector $method): ?DiscoveredTypeField
+    private function methodField(ClassReflector $class, MethodReflector $method, NamingStrategy $naming, NamingStrategy $argumentNaming): ?DiscoveredTypeField
     {
         $field = $method->getAttribute(Field::class);
 
@@ -210,7 +217,7 @@ final readonly class TypeCollector
             throw new LogicException("$label has #[Field(rules:)], but rules only apply to a property of an #[Input]. Remove rules:.");
         }
 
-        $parameters = $this->parameters->classify($class, $method);
+        $parameters = $this->parameters->classify($class, $method, naming: $argumentNaming);
 
         $this->assertResolvableParameters($label, $parameters);
 
@@ -218,7 +225,7 @@ final readonly class TypeCollector
 
         return $this->decorate($label, $method, new DiscoveredTypeField(
             phpName: $method->getName(),
-            name: $field->name ?? $this->fieldName($method),
+            name: $field->name ?? $this->names->name($naming, $method->getName(), $label),
             type: $this->inferType($reflection->getReturnType(), $class, $label, $field, $member),
             source: FieldSource::Method,
             parameters: $parameters,
@@ -248,14 +255,6 @@ final readonly class TypeCollector
         }
 
         return false;
-    }
-
-    /**
-     * The GraphQL name of a field without an explicit name.
-     */
-    private function fieldName(PropertyReflector|MethodReflector $member): string
-    {
-        return $member->getName();
     }
 
     /**

@@ -43,7 +43,8 @@ class BookQueries
 ```
 
 Rules are keyed by **GraphQL arg name**, so `#[Arg('nickname')] string $name` reports under
-`nickname`. `#[Each]` validates every element at its own path, so a bad third recipient is reported
+`nickname`, and under a snake_case [argument naming strategy](graphql.md#naming) `string $fullName` reports under
+`full_name`. `#[Each]` validates every element at its own path, so a bad third recipient is reported
 as `notify.2` rather than as a failure of the whole list.
 
 Parameter type inference applies as it does anywhere else in that package: a nullable parameter adds
@@ -88,7 +89,8 @@ never silently replaces them.
 An `#[Input]` is validated on its own fields instead, before anything is hydrated, and Rebing prefixes the paths
 (`input.shipTo.city`). A provider joins that by also implementing `InputRuleProvider`, which is asked per input object
 with its values keyed by property name. It returns `ArgumentRules` with rules keyed by property name and messages keyed
-by property name and rule (`title.min`); both are reported at the full path, such as `input.title`:
+by property name and rule (`title.min`); both are reported at the full GraphQL path, such as `input.title`, or
+`input.ship_to.city` when a naming strategy renames the fields:
 
 ```php
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\{ArgumentRules, InputRuleProvider};
