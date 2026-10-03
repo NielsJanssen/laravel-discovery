@@ -81,6 +81,8 @@ final readonly class TypeCollector
             ));
         }
 
+        Replacements::assertDeclarable($class, TypeKind::Object, $type->replace, $type->name !== null);
+
         $source = sprintf('#[Type(naming:)] on %s', $class->getName());
         $fieldNaming = $this->names->fields($type->naming, $source);
         $argumentNaming = $this->names->arguments($type->naming, $source);
@@ -93,6 +95,7 @@ final readonly class TypeCollector
             fields: $this->fields($class, $fieldNaming, $argumentNaming),
             factory: $this->factory($class, $type),
             naming: $type->naming,
+            replace: $type->replace,
         );
     }
 

@@ -10,6 +10,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\DeprecationReason;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\EnumCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\InputCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ParameterClassifier;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\Replacements;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ReturnTypeResolver;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\SchemaValidator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeCollector;
@@ -208,10 +209,11 @@ final class GraphQLDiscovery implements Discovery
 
     public function apply(): void
     {
-        $types = $this->usage->typesToRegister($this->discoveryItems);
+        $replacements = Replacements::from($this->discoveryItems);
+        $types = $this->usage->typesToRegister($this->discoveryItems, $replacements);
 
         $this->bindSingletons($types);
-        $this->registerTypes($types);
+        $this->registerTypes($types, $replacements);
         $this->registerProviders();
         $this->validator->validate($this->discoveryItems, $types);
 
@@ -239,13 +241,17 @@ final class GraphQLDiscovery implements Discovery
     /**
      * @param  list<DiscoveredType>  $types
      */
-    private function registerTypes(array $types): void
+    private function registerTypes(array $types, Replacements $replacements): void
     {
         $registry = $this->app->make(TypeRegistry::class);
 
         foreach ($types as $type) {
             $registry->register($type->class, $type->name, $type->kind);
             $registry->describe($type);
+        }
+
+        foreach ($replacements->pairs() as [$replaced, $replacement, $kind]) {
+            $registry->replace($replaced, $replacement, $kind);
         }
     }
 
@@ -270,16 +276,15 @@ final class GraphQLDiscovery implements Discovery
 
         $schemas = [];
         $types = [];
-        $kept = array_flip(array_map(spl_object_id(...), $registered));
+
+        foreach ($registered as $type) {
+            $types[$type->name] = (string) $type->bindName;
+        }
 
         foreach ($this->discoveryItems as $item) {
             if ($item instanceof DiscoveredAction && $item->bindName !== null) {
                 $fieldName = $item->action->name ?? $item->method;
                 $schemas[$item->action->schema ?? $defaultSchema][$item->fieldType][$fieldName] = $item->bindName;
-            } elseif ($item instanceof DiscoveredType) {
-                if (isset($kept[spl_object_id($item)])) {
-                    $types[$item->name] = (string) $item->bindName;
-                }
             } elseif ($item instanceof DiscoveredField && ($fieldName = $item->getName()) !== null) {
                 if ($item->fieldType === 'types') {
                     $types[$fieldName] = $item->class;

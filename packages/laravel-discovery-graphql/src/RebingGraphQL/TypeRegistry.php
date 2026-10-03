@@ -24,6 +24,9 @@ final class TypeRegistry
     /** @var array<string, DiscoveredType> */
     private array $types = [];
 
+    /** @var array<string, array<class-string, class-string>> the class that replaces a class, keyed by kind */
+    private array $replacements = [];
+
     /** @var array<class-string, class-string> */
     private array $providers = [];
 
@@ -49,6 +52,33 @@ final class TypeRegistry
 
         $this->names[$class][$kind->value] = $name;
         $this->classes[$name] = $class;
+    }
+
+    /**
+     * Makes a replaced class resolve to the GraphQL type of its replacement.
+     *
+     * @param class-string $replaced
+     * @param class-string $replacement
+     */
+    public function replace(string $replaced, string $replacement, TypeKind $kind): void
+    {
+        $this->replacements[$kind->value][$replaced] = $replacement;
+        $name = $this->names[$replacement][$kind->value] ?? null;
+
+        if ($name !== null) {
+            $this->names[$replaced][$kind->value] = $name;
+        }
+    }
+
+    /**
+     * The class to build for a class: its most specific replacement, or itself.
+     *
+     * @param class-string $class
+     * @return class-string
+     */
+    public function effective(string $class, TypeKind $kind): string
+    {
+        return $this->replacements[$kind->value][$class] ?? $class;
     }
 
     /** Keeps a discovered type's description, so a request can read the fields behind its GraphQL name. */

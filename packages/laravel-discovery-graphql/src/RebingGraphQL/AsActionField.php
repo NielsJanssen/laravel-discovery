@@ -149,12 +149,13 @@ trait AsActionField
         $mappedArgs = [];
 
         $hydrators = $this->app->make(HydratorRegistry::class);
+        $registry = $this->app->make(TypeRegistry::class);
 
         foreach ($this->discoveredAction->parameters->args as $discovered) {
             $value = $args[$discovered->name] ?? null;
 
             if ($discovered->input && is_array($value) && $discovered->type->class !== null) {
-                $value = $hydrators->hydrate($discovered->type->class, array_filter($value, is_string(...), ARRAY_FILTER_USE_KEY));
+                $value = $hydrators->hydrate($registry->effective($discovered->type->class, TypeKind::Input), array_filter($value, is_string(...), ARRAY_FILTER_USE_KEY));
             }
 
             $mappedArgs[$discovered->paramName] = $value ?? $discovered->defaultValue;
