@@ -16,8 +16,8 @@ describe('ActionArgProvider hook', function () {
     it('lets #[Paginated] declare page+limit args and binds a Pagination value object to a method parameter', function () {
         $item = discoveredActions(PaginatedActions::class)['valueObject'];
 
-        expect($item->argCompositions)->toBe(['pagination' => Pagination::class])
-            ->and($item->args)->toBeEmpty();
+        expect($item->parameters->argCompositions)->toBe(['pagination' => Pagination::class])
+            ->and($item->parameters->args)->toBeEmpty();
 
         $fieldArgs = $item->createType(app())->args();
 

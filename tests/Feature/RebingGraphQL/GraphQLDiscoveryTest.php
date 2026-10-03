@@ -98,7 +98,7 @@ describe('resolution and return-type inference', function () {
     });
 
     it('stores default values and widens nullable for optional arguments during discovery', function () {
-        [$a, $b] = discoveredActions(ScalarActions::class)['add']->args;
+        [$a, $b] = discoveredActions(ScalarActions::class)['add']->parameters->args;
 
         expect($a->type->nullable)->toBeTrue()
             ->and($a->hasDefault)->toBeTrue()
@@ -179,7 +179,7 @@ describe('resolution and return-type inference', function () {
     it('honours #[Arg(type: ...)] as an explicit GraphQL type override', function () {
         $item = discoveredActions(ExplicitTypeArgQuery::class)['resolve'];
 
-        expect($item->args[0]->type)->toEqual(TypeRef::named('CustomFilter'));
+        expect($item->parameters->args[0]->type)->toEqual(TypeRef::named('CustomFilter'));
     });
 });
 
@@ -315,7 +315,7 @@ describe('deprecation', function () {
         $field = $item->createType(app());
 
         expect($item->deprecationReason)->toBe('Use newGreet instead (since 2.0.0)')
-            ->and($item->args[0]->deprecationReason)->toBe('Pass name via context')
+            ->and($item->parameters->args[0]->deprecationReason)->toBe('Pass name via context')
             ->and($field->attributes())->toHaveKey('deprecationReason', 'Use newGreet instead (since 2.0.0)')
             ->and($field->args()['name'])->toHaveKey('deprecationReason', 'Pass name via context');
     });

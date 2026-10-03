@@ -10,7 +10,7 @@ use Workbench\App\Models\User;
 
 describe('#[Authorize] discovery on a model-bound parameter', function () {
     it('records the abilities on the binding', function () {
-        $binding = discoveredActions(AuthorizedBindingQuery::class)['twiceAuthorized']->modelBindings[0];
+        $binding = discoveredActions(AuthorizedBindingQuery::class)['twiceAuthorized']->parameters->modelBindings[0];
 
         expect(array_map(fn($a) => $a->ability, $binding->authorizations))->toBe(['view', 'update']);
     });

@@ -36,7 +36,7 @@ final class LaravelValidationRules implements InputRuleProvider, RuleProvider
         // Hydrated value objects: their properties are named after the flat args that feed them
         // (Pagination's $page/$limit against #[Paginated]'s page/limit args), so their rules key
         // straight onto those arg names with no prefix.
-        foreach ($action->argCompositions as $valueObjectClass) {
+        foreach ($action->parameters->argCompositions as $valueObjectClass) {
             $this->collect($this->compiler->forValues($valueObjectClass, $args), $action, $rules, $messages);
         }
 

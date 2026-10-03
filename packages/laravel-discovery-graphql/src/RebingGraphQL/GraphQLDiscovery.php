@@ -174,21 +174,16 @@ final class GraphQLDiscovery implements Discovery
         Authorize::verifyOnAction($authorizations, $class->getName(), $method->getName(), class_basename($action::class));
 
         $discovered = new DiscoveredAction(
-            $action,
-            $class->getName(),
-            $method->getName(),
-            $parameters->args,
-            $parameters->injections,
-            $middleware,
-            DeprecationReason::from($method->getAttribute(Deprecated::class)),
-            $authorizations,
-            $return->typeBuilder,
-            $parameters->containerInjections,
-            $argProviders,
-            $parameters->argCompositions,
-            $parameters->modelBindings,
-            $return->typeRef($action),
-            $parameters->flattenedInputs,
+            action: $action,
+            class: $class->getName(),
+            method: $method->getName(),
+            parameters: $parameters,
+            middleware: $middleware,
+            deprecationReason: DeprecationReason::from($method->getAttribute(Deprecated::class)),
+            authorizations: $authorizations,
+            typeBuilder: $return->typeBuilder,
+            argProviders: $argProviders,
+            returnType: $return->typeRef($action),
         );
 
         $this->addImplicitEnums($location, $this->usage->ofAction($discovered));

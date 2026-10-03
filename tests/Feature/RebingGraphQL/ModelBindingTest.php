@@ -12,10 +12,10 @@ describe('model binding discovery', function () {
     it('records a model binding for a model-typed parameter and keeps it out of the regular args', function () {
         $item = discoveredActions(ModelBindingQuery::class)['requiredById'];
 
-        expect($item->args)->toBe([])
-            ->and($item->modelBindings)->toHaveCount(1);
+        expect($item->parameters->args)->toBe([])
+            ->and($item->parameters->modelBindings)->toHaveCount(1);
 
-        $binding = $item->modelBindings[0];
+        $binding = $item->parameters->modelBindings[0];
 
         expect($binding->paramName)->toBe('user')
             ->and($binding->argName)->toBe('id')
@@ -36,16 +36,16 @@ describe('model binding discovery', function () {
     it('treats a model type alone as the trigger, even without an attribute', function () {
         $item = discoveredActions(ModelBindingQuery::class)['bareUser'];
 
-        expect($item->modelBindings)->toHaveCount(1)
-            ->and($item->modelBindings[0]->argName)->toBe('user')
-            ->and($item->modelBindings[0]->nullable)->toBeFalse()
-            ->and($item->containerInjections)->toBe([]);
+        expect($item->parameters->modelBindings)->toHaveCount(1)
+            ->and($item->parameters->modelBindings[0]->argName)->toBe('user')
+            ->and($item->parameters->modelBindings[0]->nullable)->toBeFalse()
+            ->and($item->parameters->containerInjections)->toBe([]);
     });
 
     it('makes a nullable binding an optional ID arg with no exists rule', function () {
         $item = discoveredActions(ModelBindingQuery::class)['optionalUser'];
 
-        expect($item->modelBindings[0]->nullable)->toBeTrue();
+        expect($item->parameters->modelBindings[0]->nullable)->toBeTrue();
 
         $arg = $item->createType(app())->args()['user'];
 

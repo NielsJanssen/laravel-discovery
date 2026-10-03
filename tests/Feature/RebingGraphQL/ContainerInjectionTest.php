@@ -12,14 +12,14 @@ describe('container injection of resolve parameters', function () {
     it('records class-typed unattributed parameters as container injections during discovery', function () {
         $item = discoveredActions(ContainerInjectionQuery::class)['resolve'];
 
-        expect($item->args)->toHaveCount(1)
-            ->and($item->args[0]->paramName)->toBe('name')
-            ->and($item->injections)->toBe([
+        expect($item->parameters->args)->toHaveCount(1)
+            ->and($item->parameters->args[0]->paramName)->toBe('name')
+            ->and($item->parameters->injections)->toBe([
                 'root' => 'root',
                 'context' => 'context',
                 'info' => 'info',
             ])
-            ->and($item->containerInjections)->toBe([
+            ->and($item->parameters->containerInjections)->toBe([
                 'service' => ContainerService::class,
             ]);
     });

@@ -35,7 +35,7 @@ final class RuleProviderRegistry
             $messages = [...$messages, ...$set->messages];
         }
 
-        foreach ($action->flattenedInputs as $flattened) {
+        foreach ($action->parameters->flattenedInputs as $flattened) {
             $set = $this->rulesForInput($flattened->type->class, $flattened->toProperties($args));
 
             $rules = $set->appendTo(

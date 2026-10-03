@@ -75,9 +75,9 @@ describe('the Hydrator hook', function () {
 
         $action = discoveredActions(HydratedCursorQuery::class)['resolve'];
 
-        expect($action->argCompositions)->toBe(['cursor' => PlainCursor::class]);
+        expect($action->parameters->argCompositions)->toBe(['cursor' => PlainCursor::class]);
 
-        expect($action->args)->toBeEmpty();
+        expect($action->parameters->args)->toBeEmpty();
 
         $resolved = $action->createType(app())->resolve(null, ['cursor' => 'abc'], null, null);
 
@@ -91,15 +91,15 @@ describe('the Hydrator hook', function () {
 
         $action = discoveredActions(HydratedCursorQuery::class)['resolve'];
 
-        expect($action->argCompositions)->toBe([]);
+        expect($action->parameters->argCompositions)->toBe([]);
 
-        expect($action->containerInjections)->toBe(['cursor' => PlainCursor::class]);
+        expect($action->parameters->containerInjections)->toBe(['cursor' => PlainCursor::class]);
     });
 
     it('still hydrates ComposedFromArgs value objects through the built-in hydrator', function () {
         $action = discoveredActions(ValueObjectValidatedQuery::class)['resolve'];
 
-        expect($action->argCompositions)->toBe(['page' => TestPage::class]);
+        expect($action->parameters->argCompositions)->toBe(['page' => TestPage::class]);
 
         expect($action->createType(app())->resolve(null, ['offset' => 7], null, null))->toBe('offset 7');
     });

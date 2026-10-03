@@ -656,7 +656,7 @@ describe('the discovery cache', function () {
         $action = discoveredActions(...PATCH_SOURCES)['assignFlat'];
 
         expect(unserialize(serialize($action)))->toEqual($action)
-            ->and($action->flattenedInputs[0]->type->fields[0]->omittable)->toBeTrue();
+            ->and($action->parameters->flattenedInputs[0]->type->fields[0]->omittable)->toBeTrue();
     });
 
     it('resolves, validates and authorizes from serialized items', function () {

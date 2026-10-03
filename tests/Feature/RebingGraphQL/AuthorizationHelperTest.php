@@ -80,15 +80,15 @@ describe('Authorization injection', function () {
     it('is hydrated as a value object when #[Authorize] provides it', function () {
         $item = discoveredActions(AuthorizationHelperQuery::class)['composedHelper'];
 
-        expect($item->argCompositions)->toBe(['auth' => Authorization::class])
-            ->and($item->containerInjections)->toBe([]);
+        expect($item->parameters->argCompositions)->toBe(['auth' => Authorization::class])
+            ->and($item->parameters->containerInjections)->toBe([]);
     });
 
     it('falls back to the container when no #[Authorize] is present', function () {
         $item = discoveredActions(AuthorizationHelperQuery::class)['injectedHelper'];
 
-        expect($item->containerInjections)->toBe(['auth' => Authorization::class])
-            ->and($item->argCompositions)->toBe([]);
+        expect($item->parameters->containerInjections)->toBe(['auth' => Authorization::class])
+            ->and($item->parameters->argCompositions)->toBe([]);
     });
 
     it('exposes no GraphQL arg for either route', function () {

@@ -197,7 +197,7 @@ describe('mapped types', function () {
         );
 
         expect($action)->toBeInstanceOf(DiscoveredAction::class)
-            ->and($action->args[0]->type)->toEqual(TypeRef::named('Money'))
+            ->and($action->parameters->args[0]->type)->toEqual(TypeRef::named('Money'))
             ->and($action->returnType)->toEqual(TypeRef::named('Money'));
 
         app()->instance(TypeMapperRegistry::class, new TypeMapperRegistry());
@@ -254,12 +254,12 @@ describe('what mappers never claim', function () {
 
         $action = discoveredActions(Mappers\NotPreemptedQuery::class)['owner'];
 
-        expect($action->modelBindings)->toHaveCount(1)
-            ->and($action->modelBindings[0]->paramName)->toBe('user')
-            ->and($action->containerInjections)->toBe(['service' => ContainerService::class])
-            ->and($action->argCompositions)->toBe(['auth' => Authorization::class])
-            ->and($action->injections)->toBe(['root' => 'root', 'context' => 'context', 'info' => 'info'])
-            ->and(array_map(static fn($arg) => [$arg->paramName, $arg->type], $action->args))->toEqual([['note', TypeRef::scalar('String')]])
+        expect($action->parameters->modelBindings)->toHaveCount(1)
+            ->and($action->parameters->modelBindings[0]->paramName)->toBe('user')
+            ->and($action->parameters->containerInjections)->toBe(['service' => ContainerService::class])
+            ->and($action->parameters->argCompositions)->toBe(['auth' => Authorization::class])
+            ->and($action->parameters->injections)->toBe(['root' => 'root', 'context' => 'context', 'info' => 'info'])
+            ->and(array_map(static fn($arg) => [$arg->paramName, $arg->type], $action->parameters->args))->toEqual([['note', TypeRef::scalar('String')]])
             ->and($action->returnType)->toEqual(TypeRef::scalar('String'));
 
         expect(schemaSdlWith(MAPPED_SCALARS, Mappers\NotPreemptedQuery::class))->toContain('owner(note: String!, id: ID!): String!');
@@ -270,10 +270,10 @@ describe('what mappers never claim', function () {
 
         $action = discoveredActions(Mappers\ContainerMoneyQuery::class)['charge'];
 
-        expect($action->containerInjections)->toBe(['amount' => Mappers\Money::class])
-            ->and($action->args)->toHaveCount(1)
-            ->and($action->args[0]->paramName)->toBe('other')
-            ->and($action->args[0]->type)->toEqual(TypeRef::named('Money'));
+        expect($action->parameters->containerInjections)->toBe(['amount' => Mappers\Money::class])
+            ->and($action->parameters->args)->toHaveCount(1)
+            ->and($action->parameters->args[0]->paramName)->toBe('other')
+            ->and($action->parameters->args[0]->type)->toEqual(TypeRef::named('Money'));
     });
 
     it('still reports an untyped or mixed member, even with a mapper that claims everything', function (object $shape, string $format, string $exception) {
