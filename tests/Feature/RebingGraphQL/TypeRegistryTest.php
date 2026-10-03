@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
-use GraphQL\Type\Definition\Type as GraphQLType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\NullType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
@@ -215,8 +214,7 @@ describe('type: and of: on actions', function () {
         $action = discoveredActions(ClassTypedPaginatedQuery::class)['resolve'];
         $type = $action->createType(app())->type();
 
-        expect($type)->toBeInstanceOf(GraphQLType::class)
-            ->and($type->name)->toBe('BookPagination')
+        expect((string) $type)->toBe('BookPagination!')
             ->and($action->action->type)->toBe(Book::class);
     });
 });

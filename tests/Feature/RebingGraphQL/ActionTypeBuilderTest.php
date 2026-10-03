@@ -12,6 +12,7 @@ use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\RebingGraphQL\CustomBuilderQuery;
 use Tests\Fixtures\RebingGraphQL\DuplicateBuilderQuery;
+use Tests\Fixtures\RebingGraphQL\NonNullBuilderQuery;
 use Tests\Fixtures\RebingGraphQL\PaginatedBookQuery;
 use Tests\Fixtures\RebingGraphQL\PaginatedContractReturnQuery;
 use Tests\Fixtures\RebingGraphQL\PaginatedScalarReturnQuery;
@@ -52,7 +53,7 @@ describe('ActionTypeBuilder hook', function () {
 
         $field = $item->createType(app());
 
-        expect((string) $field->type())->toBe('[String!]');
+        expect((string) $field->type())->toBe('[String!]!');
     });
 
     it('throws during discovery when more than one ActionTypeBuilder is attached to a method', function () {
@@ -72,6 +73,12 @@ describe('ActionTypeBuilder hook', function () {
             ->assertJsonCount(2, 'data.paginatedBooks.data')
             ->assertJsonPath('data.paginatedBooks.data.0.title', 'The Great Gatsby')
             ->assertJsonPath('data.paginatedBooks.data.1.title', '1984');
+    });
+
+    it('leaves a builder-built type that is already non-null as it is', function () {
+        $item = discoveredActions(NonNullBuilderQuery::class)['resolve'];
+
+        expect((string) $item->createType(app())->type())->toBe('[String!]!');
     });
 
     it('points #[Paginated] without type: on a paginator return at type:, not at #[Type]', function () {

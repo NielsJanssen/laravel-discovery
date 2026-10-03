@@ -54,6 +54,22 @@ final class NovelQuery
         return collect([new Novel('God Emperor of Dune')]);
     }
 
+    /** @return LengthAwarePaginator<int, Novel>|null */
+    #[Query(type: Novel::class)]
+    #[Paginated]
+    public function optionalNovelPage(Pagination $pagination): ?LengthAwarePaginator
+    {
+        return $this->novelPage($pagination);
+    }
+
+    /** @return LengthAwarePaginator<int, Novel> */
+    #[Query(type: Novel::class, nullable: true)]
+    #[Paginated]
+    public function maybeNovelPage(Pagination $pagination): LengthAwarePaginator
+    {
+        return $this->novelPage($pagination);
+    }
+
     /** @return LengthAwarePaginator<int, Novel> */
     #[Query(type: Novel::class)]
     #[Paginated]

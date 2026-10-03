@@ -352,8 +352,9 @@ These are Rebing's own middleware (`Rebing\GraphQL\Support\Middleware`), running
 ## Pagination and sorting
 
 `#[Paginated]` turns a field into a Rebing paginated type and provides `page` and `limit` arguments. It requires an
-explicit object type on the action, since there is nothing to paginate over otherwise. The matching `Pagination` value
-object is injectable and is invokable on a query builder.
+explicit object type on the action, since there is nothing to paginate over otherwise. The paginated type is non-null,
+unless the action sets `nullable: true` or returns a nullable type. The matching `Pagination` value object is
+injectable and is invokable on a query builder.
 
 ```php
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Paginated;
