@@ -7,6 +7,7 @@ namespace Tests\Feature\RebingGraphQL;
 use GraphQL\Utils\SchemaPrinter;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use Rebing\GraphQL\Support\Facades\GraphQL;
+use Tests\Fixtures\RebingGraphQL\Types\Inference\ExplicitArgTypesQuery;
 use Tests\Fixtures\RebingGraphQL\Types\Inference\Invalid;
 use Tests\Fixtures\RebingGraphQL\Types\Inference\Novel;
 use Tests\Fixtures\RebingGraphQL\Types\Inference\NovelQuery;
@@ -134,17 +135,32 @@ describe('return type inference', function () {
     });
 });
 
+describe('explicit arg types', function () {
+    it('resolves #[Arg(type:)] scalar and list names, nullable when the parameter is', function () {
+        expect(schemaSdl(ExplicitArgTypesQuery::class))->toContain(
+            'explicit(id: ID!, maybeId: ID, label: String!, maybeLabel: String, tags: [String!]!, maybeTags: [String!]): String!',
+        );
+
+        buildAllSchemas();
+
+        $this->postJson('/graphql', ['query' => '{ explicit(id: 7, label: "x", tags: ["a", "b"]) }'])
+            ->assertOk()
+            ->assertJsonMissingPath('errors')
+            ->assertExactJson(['data' => ['explicit' => '7,-,x,-,a+b,']]);
+    });
+});
+
 describe('unsupported returns', function () {
     it('names the method and the ways to give it a type', function (string $class, string $message) {
         expect(fn() => discoverGraphQL($class))->toThrow(\RuntimeException::class, $message);
     })->with([
         'a PHP union' => [
             Invalid\UnionReturnQuery::class,
-            'Method ' . Invalid\UnionReturnQuery::class . '::key has the union type string|int, which has no GraphQL type. Name one with #[Query(type: ...)]; union output types need a #[Union] marker. A scalar, void or #[Type] class return type is inferred.',
+            'Method ' . Invalid\UnionReturnQuery::class . '::key has the union type string|int, which has no GraphQL type. Name one with #[Query(type: ...)]; union output types need a #[Union] marker. A scalar, void, enum or #[Type] class return type is inferred.',
         ],
         'mixed' => [
             Invalid\MixedReturnQuery::class,
-            'Method ' . Invalid\MixedReturnQuery::class . '::anything declares the type mixed. Add a PHP type, or name the GraphQL type with #[Query(type: ...)]. A scalar, void or #[Type] class return type is inferred.',
+            'Method ' . Invalid\MixedReturnQuery::class . '::anything declares the type mixed. Add a PHP type, or name the GraphQL type with #[Query(type: ...)]. A scalar, void, enum or #[Type] class return type is inferred.',
         ],
     ]);
 });
@@ -174,6 +190,18 @@ describe('unregistered class references', function () {
         'a type field' => [
             [Invalid\UnregisteredField::class],
             'Field UnregisteredField.thing references ' . Invalid\Unregistered::class . ', which is not a registered GraphQL output type. Add #[Type] to Unregistered, or name a registered GraphQL type with type: (or of: for a list) on #[Field].',
+        ],
+        'an object type as an action arg' => [
+            [Invalid\ObjectTypeArgQuery::class, Novel::class],
+            'Argument novel of method ' . Invalid\ObjectTypeArgQuery::class . '::review references ' . Novel::class . ', which is not a registered GraphQL input type (it is registered as object type [Novel]). Use a scalar or an enum, or name a registered GraphQL input type with #[Arg(type: ...)].',
+        ],
+        'an unregistered class as an action arg' => [
+            [Invalid\UnregisteredArgQuery::class],
+            'Argument thing of method ' . Invalid\UnregisteredArgQuery::class . '::find references ' . Invalid\Unregistered::class . ', which is not a registered GraphQL input type. Use a scalar or an enum, or name a registered GraphQL input type with #[Arg(type: ...)].',
+        ],
+        'an unregistered class as a field arg' => [
+            [Invalid\UnregisteredFieldArg::class],
+            'Argument thing of field UnregisteredFieldArg.label references ' . Invalid\Unregistered::class . ', which is not a registered GraphQL input type. Use a scalar or an enum, or name a registered GraphQL input type with #[Arg(type: ...)].',
         ],
     ])->with([
         'config written' => [false],

@@ -17,6 +17,8 @@ class DiscoveredType
      * @param  list<DiscoveredTypeField>  $fields
      * @param  class-string|null  $factory
      * @param  list<class-string>  $interfaces
+     * @param  list<DiscoveredEnumValue>  $values  the cases of an enum, in declaration order
+     * @param  bool  $implicit  registered because something references it, not by its own attribute
      */
     public function __construct(
         public string $name,
@@ -27,12 +29,15 @@ class DiscoveredType
         public ?string $factory = null,
         public bool $replace = false,
         public array $interfaces = [],
+        public array $values = [],
+        public bool $implicit = false,
     ) {}
 
     public function createType(Application $app): RebingType
     {
         return match ($this->kind) {
             TypeKind::Object => new DiscoveredObjectType($app, $this),
+            TypeKind::Enum => new DiscoveredEnumType($this),
             default => throw new LogicException(sprintf(
                 'Cannot build GraphQL type [%s] for %s: %s types are not supported yet.',
                 $this->name,

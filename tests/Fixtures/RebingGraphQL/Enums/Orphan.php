@@ -2,13 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Tests\Fixtures\RebingGraphQL\Types\Reference;
+namespace Tests\Fixtures\RebingGraphQL\Enums;
 
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Enum;
 
 #[Enum]
-enum Genre
+enum Orphan
 {
-    case Fiction;
-    case Poetry;
+    case Alone;
 }

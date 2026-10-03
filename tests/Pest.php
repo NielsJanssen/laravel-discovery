@@ -71,6 +71,19 @@ function isolateGraphQL(): void
 }
 
 /**
+ * The schema's top-level definitions, sorted, since the printer follows registration order.
+ *
+ * @return list<string>
+ */
+function sdlDefinitions(string $sdl): array
+{
+    $definitions = preg_split('/\n\n(?=\S)/', trim($sdl)) ?: [];
+    sort($definitions);
+
+    return $definitions;
+}
+
+/**
  * Print the default schema built from only the given sources; it needs at least one query.
  *
  * @param  class-string|DiscoveredType  ...$sources

@@ -83,7 +83,7 @@ final readonly class ParameterClassifier
 
             $this->assertNoParameterAuthorization($param, $class, $method);
 
-            if (!$argAttr && !$type->isScalar()) {
+            if (!$argAttr && !$type->isScalar() && ! enum_exists($type->getName())) {
                 $typeName = $type->getName();
 
                 $valueObject = $valueObjectClasses[$typeName] ?? null;
@@ -284,11 +284,11 @@ final readonly class ParameterClassifier
 
         if ($argAttr !== null && $argAttr->type !== null) {
             $typeName = $argAttr->type;
-        } elseif ($typeReflector->isScalar()) {
+        } elseif ($typeReflector->isScalar() || enum_exists($typeReflector->getName())) {
             $typeName = $typeReflector->getName();
         } else {
             throw new RuntimeException(sprintf(
-                'Parameter $%s in %s::%s is not a scalar type. Use #[Arg(type: \'GraphQLTypeName\')] to specify the GraphQL type.',
+                'Parameter $%s in %s::%s is not a scalar or enum type. Use #[Arg(type: \'GraphQLTypeName\')] to specify the GraphQL type.',
                 $param->getName(),
                 $class->getName(),
                 $method->getName(),

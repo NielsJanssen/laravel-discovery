@@ -119,7 +119,7 @@ describe('resolution and return-type inference', function () {
 
     it('throws during discovery when type is missing and return type is non-scalar', function () {
         expect(fn() => discoverGraphQL(MissingTypeQuery::class))
-            ->toThrow(\RuntimeException::class, 'Method ' . MissingTypeQuery::class . '::resolve has type array, which needs #[Query(of: ...)] to name the type of its items, or #[Query(type: ...)] to name its GraphQL type. A scalar, void or #[Type] class return type is inferred.');
+            ->toThrow(\RuntimeException::class, 'Method ' . MissingTypeQuery::class . '::resolve has type array, which needs #[Query(of: ...)] to name the type of its items, or #[Query(type: ...)] to name its GraphQL type. A scalar, void, enum or #[Type] class return type is inferred.');
     });
 
     it('maps void return type to the Null scalar type', function () {

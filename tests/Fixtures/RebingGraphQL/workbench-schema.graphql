@@ -86,6 +86,13 @@ type Query {
   notifyAll(recipients: [String!]): [String!]!
   add(a: Int, b: Int): Int!
   paginatedBooks(page: Int = 1, limit: Int = 20, sortBy: String, sortDirection: String = "asc"): BookPagination!
+  mood(mood: Mood): Mood!
+}
+
+enum Mood {
+  Calm
+  Cheerful
+  Gloomy
 }
 
 type Mutation {
