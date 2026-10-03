@@ -122,7 +122,9 @@ trait AsActionField
         if ($this->discoveredAction->typeBuilder !== null) {
             $resolved = $ref === null ? $action : clone($action, ['type' => $registry->name($ref, Position::Output)]);
 
-            return $this->discoveredAction->typeBuilder->buildType($resolved);
+            $type = $this->discoveredAction->typeBuilder->buildType($resolved);
+
+            return ! $action->nullable && $type instanceof NullableType ? GraphQLType::nonNull($type) : $type;
         }
 
         if ($ref === null) {

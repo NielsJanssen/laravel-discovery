@@ -66,10 +66,12 @@ const INFERRED_SDL = <<<'GRAPHQL'
 
     type Query {
       maybeNovel: Novel
+      maybeNovelPage(limit: Int = 20, page: Int = 1): NovelPagination
       novel: Novel!
       novelCollection: [Novel!]
-      novelPage(limit: Int = 20, page: Int = 1): NovelPagination
+      novelPage(limit: Int = 20, page: Int = 1): NovelPagination!
       novels: [Novel!]!
+      optionalNovelPage(limit: Int = 20, page: Int = 1): NovelPagination
       sparseNovels: [Novel]!
       widenedNovel: Novel
     }

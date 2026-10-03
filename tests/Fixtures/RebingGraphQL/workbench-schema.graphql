@@ -85,7 +85,7 @@ type Query {
   optionalHello(name: String): String!
   notifyAll(recipients: [String!]): [String!]!
   add(a: Int, b: Int): Int!
-  paginatedBooks(page: Int = 1, limit: Int = 20, sortBy: String, sortDirection: String = "asc"): BookPagination
+  paginatedBooks(page: Int = 1, limit: Int = 20, sortBy: String, sortDirection: String = "asc"): BookPagination!
 }
 
 type Mutation {
