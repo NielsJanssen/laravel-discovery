@@ -580,7 +580,8 @@ final readonly class AcmeCustomFields implements TypeFactory
 - The factory is resolved from the container when Rebing builds the type, so it takes constructor dependencies. It
   never runs during discovery, and what it yields is never written to the discovery cache: only the class name is.
 - `TypeContext` holds `name` and `class` of the type, `kind` (`Position::Output`), `naming` (the strategy for the type's
-  own fields) and `declaredFields`, the GraphQL names of the fields the class declares.
+  own fields) and `declaredFields`, the GraphQL names of the fields the class declares and the `#[Field]` methods
+  `#[TypeExtension]` contributors add.
 - A factory field is a `Field` with a `name` and a `type:` (or `of:` for a list). `description`, `deprecationReason`,
   `nullable` and `nullableItems` apply. Without `resolve`, it reads the property of an object root or the key of an array
   root. A `resolve` closure receives `($root, array $args, $context, ResolveInfo $info)`.
@@ -686,6 +687,57 @@ class AcmeCreateUser extends \Vendor\Accounts\CreateUser
 **Missing fields.** A `#[Type]` field whose property or method the returned object does not have now resolves to `null`
 instead of throwing `Cannot resolve …`; an object with `__get` is still read through it. A non-null field then fails as
 GraphQL's own non-null error.
+
+### Extending a type
+
+To add fields to an output type without subclassing it, such as a type a package ships, put `#[TypeExtension]`
+on a class of your own. Its `#[Field]` methods become fields of the target, named by class or by GraphQL name.
+
+```php
+#[TypeExtension(User::class)]
+final readonly class UserBilling
+{
+    public function __construct(private Billing $billing) {}
+
+    #[Field(of: Invoice::class)]
+    public function invoices(#[Root] User $user, int $limit = 10): array
+    {
+        return $this->billing->invoicesFor($user, $limit);
+    }
+}
+```
+
+`User` now has `invoices(limit: Int = 10): [Invoice!]!`.
+
+- The contributor is resolved from the container when the field resolves, so it takes constructor dependencies.
+  `#[Root]` receives the parent object. Other parameters become args, or are injected as in a `#[Type]` field method
+  (`#[Context]`, `ResolveInfo`, container services); the same limits apply: no `#[Input]` args, no `rules:`, no model
+  bindings and no `#[AsArgs]`.
+- Field decorators work as on the target's own fields, against the parent object. `#[Authorize('ability')]` checks
+  `Gate::allows('ability', $user)`, and `#[Load]` and `#[Relation]` batch over the parents. `#[Relation('invoices')]`
+  loads the target's relation, so it needs a target whose class is an Eloquent model.
+- Field names follow the target's `#[Type(naming:)]` when you name the target by class. A target named by its GraphQL
+  name is only known once all types are, so its fields follow the configured strategy; set `#[Field(name:)]` when that
+  differs.
+- A contributor that implements `TypeFactory` adds the fields its `fields()` yields too. Its `TypeContext` describes the
+  target: its name, its class (the replacer, if the type is replaced), and in `declaredFields` every field name the type
+  has before this contributor's factory runs.
+- Contributors are attached at `apply()`, whatever the discovery order, in the order of their class names. The type
+  lists its declared fields, then the contributors' `#[Field]` methods, then its own factory fields, then the
+  contributors' factory fields. The discovery cache stores what each contributor adds, never the merged type.
+- Naming a replaced type or its replacer extends the one type both share.
+- A type from a `TypeProvider` can be extended too, by its GraphQL name or by the `class:` of its `TypeDefinition`. The
+  contributor is attached when the provider registers its types, as `GraphQL` is resolved. `#[Root]` then receives what
+  the resolver returned, which is an array for a class-less type, and `#[Relation]` works only when `class:` is a model.
+
+**Errors.** Discovery throws a `LogicException` for a contributor that adds no fields and is no `TypeFactory`, one that
+is also a `#[Type]` or `#[Input]`, cannot be instantiated or extends a Rebing class, `#[Field]` on a property, a field
+decorator on the contributor class, two fields with one name, and a target class that is an enum or an `#[Input]`
+(extend an input with `#[Input(replace: true)]`). `apply()` rejects a target that is no discovered type, an input or enum
+named by GraphQL name, a hand-written Rebing type, and a field name the target or another contributor already has. With
+a provider present, a target that matches no discovered type waits for the providers; when `GraphQL` is resolved, a
+target no provider yields, a provided input, and a field name the provided type already has are rejected then. A factory
+field that repeats a name fails when the type is built.
 
 ## Enums
 
