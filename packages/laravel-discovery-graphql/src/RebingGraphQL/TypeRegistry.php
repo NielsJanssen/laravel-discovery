@@ -23,6 +23,9 @@ final class TypeRegistry
     /** @var array<string, DiscoveredType> */
     private array $types = [];
 
+    /** @var array<class-string, class-string> */
+    private array $providers = [];
+
     /**
      * @param class-string $class
      */
@@ -48,6 +51,22 @@ final class TypeRegistry
     public function describe(DiscoveredType $type): void
     {
         $this->types[$type->name] = $type;
+    }
+
+    /**
+     * @param class-string $class
+     */
+    public function addProvider(string $class): void
+    {
+        $this->providers[$class] = $class;
+    }
+
+    /**
+     * @return list<class-string>
+     */
+    public function providers(): array
+    {
+        return array_values($this->providers);
     }
 
     public function typeNamed(string $name): ?DiscoveredType

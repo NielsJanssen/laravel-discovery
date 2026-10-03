@@ -20,6 +20,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapper;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
 use NielsJanssen\Laravel\Validation\RuleCompiler;
+use Rebing\GraphQL\GraphQL;
 use RuntimeException;
 
 /**
@@ -58,6 +59,7 @@ final class GraphQLDiscoveryServiceProvider extends ServiceProvider
         }
 
         $this->app->singleton(TypeRegistry::class);
+        $this->app->afterResolving(GraphQL::class, fn(GraphQL $graphQL) => $this->app->make(ProvidedTypes::class)->register($graphQL));
         $this->app->singleton(Naming::class);
 
         $this->app->singleton(

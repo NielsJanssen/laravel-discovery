@@ -74,6 +74,10 @@ final readonly class FactoryFields
     {
         $path = "{$owner->name}.$name";
 
+        if ($position === Position::Input) {
+            return $this->inputDefinition($owner, $name, $field);
+        }
+
         $args = $this->args($owner, $name, $field);
         $definition = [
             'type' => $this->registry->resolve($this->typeRef($owner, 'Field', $name, $field), $position),
@@ -85,6 +89,22 @@ final readonly class FactoryFields
         }
 
         return $this->described($definition, $field);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function inputDefinition(FactoryOwner $owner, string $name, Field $field): array
+    {
+        if ($field->isFactoryOnly()) {
+            throw new LogicException(sprintf('Field "%s" from the %s for %s sets resolve: or args:, which an input field cannot use. Remove them.', $name, $owner->origin, $owner->subject));
+        }
+
+        if ($field->hasRules()) {
+            throw new LogicException(sprintf('Field "%s" from the %s for %s sets rules:, which are not applied to a field yielded for an input type. Remove rules:.', $name, $owner->origin, $owner->subject));
+        }
+
+        return $this->described(['type' => $this->registry->resolve($this->typeRef($owner, 'Field', $name, $field), Position::Input)], $field);
     }
 
     /**

@@ -58,6 +58,10 @@ final class GraphQLDiscovery implements Discovery
             return;
         }
 
+        if ($class->is(TypeProvider::class)) {
+            $this->discoveryItems->add($location, new DiscoveredTypeProvider($class->getName()));
+        }
+
         $fieldType = $this->rebingFieldType($class);
 
         if ($fieldType !== null) {
@@ -208,6 +212,7 @@ final class GraphQLDiscovery implements Discovery
 
         $this->bindSingletons($types);
         $this->registerTypes($types);
+        $this->registerProviders();
         $this->validator->validate($this->discoveryItems, $types);
 
         if (! $this->app->configurationIsCached()) {
@@ -241,6 +246,17 @@ final class GraphQLDiscovery implements Discovery
         foreach ($types as $type) {
             $registry->register($type->class, $type->name, $type->kind);
             $registry->describe($type);
+        }
+    }
+
+    private function registerProviders(): void
+    {
+        $registry = $this->app->make(TypeRegistry::class);
+
+        foreach ($this->discoveryItems as $item) {
+            if ($item instanceof DiscoveredTypeProvider) {
+                $registry->addProvider($item->class);
+            }
         }
     }
 
