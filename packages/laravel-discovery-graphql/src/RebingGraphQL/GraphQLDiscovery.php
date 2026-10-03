@@ -15,6 +15,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeInferrer;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
 use Rebing\GraphQL\GraphQL;
 use Rebing\GraphQL\Support\Mutation as RebingMutation;
 use Rebing\GraphQL\Support\Query as RebingQuery;
@@ -38,6 +39,7 @@ final class GraphQLDiscovery implements Discovery
         private readonly TypeInferrer $inferrer,
         private readonly EnumCollector $enums,
         private readonly InputCollector $inputs,
+        private readonly Naming $names,
     ) {}
 
     /**
@@ -138,6 +140,11 @@ final class GraphQLDiscovery implements Discovery
 
             foreach ($decorators as $decorator) {
                 $decorator->decorate($action);
+            }
+
+            if ($action->name === null) {
+                $operation = $this->names->name($this->names->operations(), $method->getName(), sprintf('the method %s::%s', $class->getName(), $method->getName()));
+                $action->name = $operation === $method->getName() ? null : $operation;
             }
 
             $argProviders = array_values([
@@ -493,8 +500,47 @@ final class GraphQLDiscovery implements Discovery
             }
         }
 
+        $this->assertUniqueOperations();
         $this->assertNoInputFieldArgs();
         $this->assertClassReferencesRegistered($this->app->make(TypeRegistry::class), $types);
+    }
+
+    /**
+     * Two #[Query] or two #[Mutation] methods would otherwise silently share one field of a schema.
+     */
+    private function assertUniqueOperations(): void
+    {
+        $defaultSchema = $this->app->make('config')->string('graphql.default_schema', 'default');
+        $seen = [];
+
+        foreach ($this->discoveryItems as $item) {
+            if (! $item instanceof DiscoveredAction || $item->bindName === null) {
+                continue;
+            }
+
+            $schema = $item->action->schema ?? $defaultSchema;
+            $name = $item->action->name ?? $item->method;
+            $key = "$schema\0{$item->fieldType}\0$name";
+            $previous = $seen[$key] ?? null;
+
+            if ($previous !== null) {
+                $attribute = class_basename($item->action::class);
+
+                throw new LogicException(sprintf(
+                    'The %s [%s] in schema [%s] is declared by both %s::%s and %s::%s. Rename one with #[%s(name: ...)].',
+                    $item->fieldType,
+                    $name,
+                    $schema,
+                    $previous->class,
+                    $previous->method,
+                    $item->class,
+                    $item->method,
+                    $attribute,
+                ));
+            }
+
+            $seen[$key] = $item;
+        }
     }
 
     /**

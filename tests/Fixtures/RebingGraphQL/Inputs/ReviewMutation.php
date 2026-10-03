@@ -22,7 +22,7 @@ final class ReviewMutation
     }
 
     #[Query]
-    public function ping(): string
+    public function reviewPing(): string
     {
         return 'pong';
     }

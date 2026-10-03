@@ -15,6 +15,8 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Ignore;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\NamingStrategy;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
@@ -34,12 +36,14 @@ final readonly class InputCollector
     public function __construct(
         private TypeInferrer $inferrer,
         private SkippedMembers $skipped,
+        private Naming $names,
     ) {}
 
     /**
      * @param  ClassReflector<object>  $class
+     * @param  NamingStrategy|null  $naming  names the fields instead of #[Input(naming:)] and the field strategy, as for #[AsArgs]
      */
-    public function collect(ClassReflector $class, Input $input): DiscoveredType
+    public function collect(ClassReflector $class, Input $input, ?NamingStrategy $naming = null): DiscoveredType
     {
         $reflection = $class->getReflection();
 
@@ -79,7 +83,8 @@ final readonly class InputCollector
             $this->assertNoMethodFields($class);
         }
 
-        $fields = $this->fields($class, $shared);
+        $naming ??= $this->names->fields($input->naming, sprintf('#[Input(naming:)] on %s', $class->getName()));
+        $fields = $this->fields($class, $shared, $naming);
 
         $this->assertConstructible($class, $fields);
 
@@ -137,13 +142,13 @@ final readonly class InputCollector
      * @param  ClassReflector<object>  $class
      * @return list<DiscoveredTypeField>
      */
-    private function fields(ClassReflector $class, bool $shared): array
+    private function fields(ClassReflector $class, bool $shared, NamingStrategy $naming): array
     {
         $fields = [];
         $seen = [];
 
         foreach ($class->getProperties() as $property) {
-            $field = $this->skipped->skips($property) ? null : $this->propertyField($class, $property, $shared);
+            $field = $this->skipped->skips($property) ? null : $this->propertyField($class, $property, $shared, $naming);
 
             if ($field === null) {
                 continue;
@@ -171,7 +176,7 @@ final readonly class InputCollector
     /**
      * @param  ClassReflector<object>  $class
      */
-    private function propertyField(ClassReflector $class, PropertyReflector $property, bool $shared): ?DiscoveredTypeField
+    private function propertyField(ClassReflector $class, PropertyReflector $property, bool $shared, NamingStrategy $naming): ?DiscoveredTypeField
     {
         $reflection = $property->getReflection();
         $field = $property->getAttribute(Field::class);
@@ -198,7 +203,7 @@ final readonly class InputCollector
         }
 
         [$hasDefault, $default] = $this->defaultOf($reflection);
-        $name = $field->name ?? $property->getName();
+        $name = $field->name ?? $this->names->name($naming, $property->getName(), $member);
         $type = $reflection->getType();
         $nullable = ($field !== null && $field->nullable) || $hasDefault || ($type?->allowsNull() ?? false);
         $authorizations = array_values($property->getAttributes(Authorize::class));

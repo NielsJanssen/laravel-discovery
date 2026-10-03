@@ -116,7 +116,7 @@ trait AsActionField
             ? static fn(array $args, array $request = []): array => DiscoveredInputType::fieldRules(
                 $flattened->type->class,
                 $field,
-                $flattened->ownArgs($args),
+                $flattened->toProperties($args),
                 array_filter($request, is_string(...), ARRAY_FILTER_USE_KEY),
             )
             : null;

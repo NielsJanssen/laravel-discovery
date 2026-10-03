@@ -7,6 +7,7 @@ use GraphQL\Utils\SchemaPrinter;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
 use Rebing\GraphQL\GraphQL as RebingGraphQL;
 use Rebing\GraphQL\Support\Facades\GraphQL;
@@ -68,6 +69,7 @@ function isolateGraphQL(): void
     app()->forgetInstance(RebingGraphQL::class);
     GraphQL::clearResolvedInstance(RebingGraphQL::class);
     app()->forgetInstance(TypeRegistry::class);
+    app()->forgetInstance(Naming::class);
 }
 
 /**

@@ -48,18 +48,26 @@ php artisan vendor:publish --tag=discovery-graphql-config
 
 ```php
 // config/discovery-graphql.php
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\FieldCase;
+
 return [
     'scalars' => [],                                   // see "The scalar map" below
     'skip_namespaces' => ['Illuminate\\', 'Acme\\'],
+    'naming' => [                                      // see "Naming" below
+        'fields' => FieldCase::Preserve,
+        'arguments' => FieldCase::Preserve,
+        'operations' => FieldCase::Preserve,
+    ],
 ];
 ```
 
 A `graphql` key in `config/discovery.php` works too, and wins over the published file.
 
-| Key               | Default            | Purpose                                                                                      |
-|-------------------|--------------------|----------------------------------------------------------------------------------------------|
-| `scalars`         | `[]`               | GraphQL scalar or type names for PHP classes; see [the scalar map](#the-scalar-map).          |
-| `skip_namespaces` | `['Illuminate\\']` | Namespace prefixes whose members never become fields of a `#[Type]` or `#[Input]`.            |
+| Key               | Default             | Purpose                                                                                      |
+|-------------------|---------------------|----------------------------------------------------------------------------------------------|
+| `scalars`         | `[]`                | GraphQL scalar or type names for PHP classes; see [the scalar map](#the-scalar-map).          |
+| `skip_namespaces` | `['Illuminate\\']`  | Namespace prefixes whose members never become fields of a `#[Type]` or `#[Input]`.            |
+| `naming`          | `Preserve` for all  | How PHP names become field, argument and operation names; see [Naming](#naming).              |
 
 `skip_namespaces` covers anything declared in a class or trait under one of the prefixes, also when an application
 class redeclares the property. Add a package your types extend, so its base model's public members stay out of the
@@ -82,7 +90,7 @@ Both attributes target methods and take the same arguments.
 
 | Parameter       | Type      | Default                  | Purpose                                                                        |
 |-----------------|-----------|--------------------------|--------------------------------------------------------------------------------|
-| `name`          | `?string` | the method name          | The field name in the schema.                                                  |
+| `name`          | `?string` | the method name          | The field name in the schema, used as written. See [Naming](#naming).          |
 | `type`          | `?string` | inferred                 | The GraphQL type returned. Required unless the return type can be inferred.    |
 | `schema`        | `?string` | `graphql.default_schema` | The schema this field is registered in. See [Schemas](#schemas).               |
 | `description`   | `?string` | `null`                   | Surfaced as the field description in GraphiQL.                                 |
@@ -150,7 +158,9 @@ public function shelf(): array
 ## Object types
 
 `#[Type]` on a plain class makes it a GraphQL object type. Its public properties become fields, and so do methods that
-carry `#[Field]`. Return an instance from a query, and the return type tells discovery which GraphQL type it is:
+carry `#[Field]`. `#[Type]` takes `name:`, `description:` and `naming:`, a [naming strategy](#naming) for this type's
+fields and `#[Field]` method args. Return an instance from a query, and the return type tells discovery which GraphQL
+type it is:
 
 ```php
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
@@ -699,7 +709,8 @@ that caches discovery.
 
 `#[Input]` on a class makes it a GraphQL input object. Its public properties become the input fields, typed the way
 `#[Type]` fields are, but in input position. A parameter typed as an `#[Input]` class becomes one argument of that
-input type, named after the parameter, and the resolver receives an instance of the class.
+input type, named after the parameter, and the resolver receives an instance of the class. `#[Input]` takes `name:`,
+`description:` and `naming:`, a [naming strategy](#naming) for this input's fields.
 
 ```php
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Arg;
@@ -785,7 +796,8 @@ from. An absent optional field keeps the constructor or property default. A hydr
 **Validation.** Rules sit on the input type's own fields, so Rebing validates them before the resolver runs and reports
 them at their full path: `input.title`, `input.shipTo.city`, `batch.reviews.1.body`. A field's rules are the
 `nielsjanssen/laravel-validation` attributes on its property, `#[Field(rules:)]` (an array, or a closure that receives
-the input object's values), and the automatic `exists` rule of a model field. An attribute's custom `message:` is
+the input object's values keyed by PHP property name, and as a second argument `$request`, the field's arguments as the
+client sent them, keyed by GraphQL argument name), and the automatic `exists` rule of a model field. An attribute's custom `message:` is
 reported at the same path. Nested laravel-validation rules (`#[Valid]`, `#[ListOf]`, `#[Each]`) on an input property
 are not applied yet.
 
@@ -793,7 +805,8 @@ are not applied yet.
 
 | Consumer                                    | Keys                                                  |
 |---------------------------------------------|-------------------------------------------------------|
-| a `#[Field(rules:)]` closure                | GraphQL field names (`fullName`), before aliasing      |
+| a `#[Field(rules:)]` closure, its first argument | PHP property names (`name`)                     |
+| a `#[Field(rules:)]` closure, its `$request` | the field's GraphQL argument names, as sent      |
 | the hydrator, and a `#[Arg(type: 'XInput')] array` parameter | PHP property names (`name`), after Rebing's aliasing |
 | an `InputRuleProvider`                      | PHP property names                                    |
 
@@ -849,7 +862,9 @@ description and deprecation, and a scalar, enum or list default. A nested `#[Inp
 argument, and a model property is an `ID` argument with the automatic `exists` rule, its `#[Authorize('ability')]`
 checked before validation. Validation reports at the top-level argument name (`year`, `shipTo.city`), since the
 fields are the field's own arguments; laravel-validation attributes, their custom messages and `#[Field(rules:)]` all
-apply, and a `#[Field(rules:)]` closure receives the values of that input's own arguments. Hydration builds the class
+apply, and a `#[Field(rules:)]` closure receives the values of that input's own arguments, keyed by PHP property
+name. Flattened arguments are named by the [argument naming strategy](#naming), not by the field strategy or
+`#[Input(naming:)]`; an explicit `#[Field(name:)]` still wins. Hydration builds the class
 from only its own arguments, with the same defaults as a nested input, including an explicit `null` for a property
 that takes none keeping its default.
 
@@ -857,8 +872,8 @@ A class used only through `#[AsArgs]` is not registered as an input type; one al
 elsewhere is. Discovery rejects `#[AsArgs]` on a parameter that is not an `#[Input]` class, together with `#[Arg]` or
 `#[Authorize]` (put `#[Authorize('ability')]` on the input's model property instead), on a nullable parameter or one with a default (flattened arguments have no way to say the whole input is absent; take it
 as a nullable input argument instead), and on a `#[Field]` method. A flattened argument whose name another argument,
-model binding, arg provider such as `#[Paginated]`, or other `#[AsArgs]` field already takes is rejected as well;
-rename one with `#[Field(name:)]` or `#[Arg(name:)]`.
+model binding, arg provider such as `#[Paginated]`, or other `#[AsArgs]` field already takes is rejected as well,
+naming both owners; rename one with `#[Field(name:)]` or `#[Arg(name:)]`.
 
 ## Arguments
 
@@ -966,6 +981,105 @@ public function invoices(#[Root] mixed $customer, #[Context] mixed $context, Res
 Class-typed parameters that are none of the above are resolved from the service container, so a resolver can take its
 dependencies directly. Laravel's own contextual attributes (`#[CurrentUser]`, `#[Config]`, and friends) are left alone
 at discovery so the container resolves them through their own hooks.
+
+## Naming
+
+By default every name in the schema is the PHP name: a property `$publishedAt` is the field `publishedAt`, a parameter
+`$maxWidth` the argument `maxWidth`, and a method `latestBooks()` the query `latestBooks`. An app that uses snake_case
+in its API sets a naming strategy per kind of name, under `naming` in the [configuration](#configuration):
+
+```php
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\FieldCase;
+
+// config/discovery-graphql.php
+return [
+    'naming' => [
+        'fields' => FieldCase::Snake,          // fields of a #[Type] or an #[Input]
+        'arguments' => FieldCase::Snake,       // #[Query]/#[Mutation] args, #[Field] method args, model bindings, #[AsArgs]
+        'operations' => FieldCase::Preserve,   // #[Query] and #[Mutation] field names
+    ],
+];
+```
+
+```php
+#[Type]
+final class Book
+{
+    public function __construct(
+        public string $title,
+        public ?CarbonImmutable $publishedAt,          // DateTime through the scalar map
+        #[Field(name: 'ISBN')] public string $isbnCode,
+    ) {}
+
+    #[Field]
+    public function coverUrl(int $maxWidth = 100): string { /* ... */ }
+}
+
+#[Input]
+final readonly class ShelveBook
+{
+    public function __construct(public string $shelfLabel, public ?int $rowNumber = null) {}
+}
+
+class Books
+{
+    #[Mutation]
+    public function shelveBook(ShelveBook $shelveRequest, User $bookOwner): Book { /* ... */ }
+}
+```
+
+```graphql
+type Book {
+  title: String!
+  published_at: DateTime
+  ISBN: String!
+  cover_url(max_width: Int = 100): String!
+}
+
+input ShelveBookInput {
+  shelf_label: String!
+  row_number: Int
+}
+
+type Mutation {
+  shelveBook(shelve_request: ShelveBookInput!, book_owner: ID!): Book!
+}
+```
+
+Each setting takes a `FieldCase` case, its string value (`'preserve'`, `'camel'`, `'snake'`), or the class-string of
+your own `NamingStrategy`, whose `name(string $phpName): string` turns a PHP name into a GraphQL name; it is resolved
+from the container. `Camel` and `Snake` use Laravel's `Str::camel()` and `Str::snake()`. A setting you leave out is
+`Preserve`.
+
+- **An explicit name wins.** `#[Field(name:)]`, `#[Arg(name:)]`, `#[Query(name:)]` and `#[Mutation(name:)]` are used as
+  written, whatever the strategy.
+- **Type names and enum values never change.** `#[Type]`, `#[Input]` and `#[Enum]` names, and the values of an enum,
+  which stay its case names.
+- **One type can differ.** `#[Type(naming: FieldCase::Preserve)]` names that type's fields and the args of its
+  `#[Field]` methods with its own strategy, and `#[Input(naming: ...)]` does the same for an input's fields. A
+  `#[Query]` or `#[Mutation]` on a `#[Type]` class still follows the configured settings.
+- **Some args keep their names.** The args an attribute such as `#[Paginated]` or `#[Sortable]` adds, and everything a
+  hand-written Rebing class declares.
+- **PHP keeps its own names.** A field reads its property or calls its method, and every argument reaches the parameter
+  it came from. A renamed input field carries Rebing's `alias`, so the hydrator and an `#[Arg(type: 'XInput')] array`
+  parameter receive property names. `#[Relation]` loads the relation the PHP method names.
+- **Validation speaks GraphQL.** Errors, and the custom `message:` of a validation attribute, are reported at the
+  GraphQL path: `shelve_request.shelf_label`, `author_name`. A `#[Field(rules:)]` closure still receives the input's
+  values under their PHP property names.
+- **`#[AsArgs]` fields are arguments.** The fields an [`#[AsArgs]`](#flattening-an-input-with-asargs) parameter
+  flattens follow the `arguments` setting, not `fields` or the input's own `#[Input(naming:)]`.
+- **Acronyms split.** `Str::snake('userID')` is `user_i_d` and `Str::camel('URL')` is `uRL`. Give such a member its
+  name with `#[Field(name:)]` or `#[Arg(name:)]`.
+
+Discovery throws a `LogicException` for a naming setting it cannot use: a key other than `fields`, `arguments` and
+`operations`, a value that is no `FieldCase` or `NamingStrategy`, a strategy class the container resolves to something
+else, and a strategy that returns something that is not a valid GraphQL name. Two owners of one argument name (two
+parameters, a model binding, an `#[AsArgs]` field or an argument `#[Paginated]` adds) are rejected with both named, and
+so are two queries or two mutations that end up with one name in one schema; rename one with `#[Query(name:)]` or
+`#[Mutation(name:)]`.
+
+Names are decided at discovery and cached with it, so run `php artisan discovery:clear` (or `php artisan optimize`)
+after changing a strategy.
 
 ## Schemas
 
@@ -1094,7 +1208,8 @@ Discovered actions are cached with the rest of discovery. See [Installation](ins
 One detail is specific to GraphQL: when the application's configuration is cached
 (`php artisan config:cache`), the schema configuration is not rewritten, so the cached configuration wins. The field
 bindings themselves are still registered, so a cached configuration and freshly discovered actions stay consistent.
-Rebuild both when you change a field:
+Field, argument and operation names are part of the cached items, so a changed [naming strategy](#naming) only shows
+once discovery is cleared. Rebuild both when you change a field or a strategy:
 
 ```bash
 php artisan optimize
