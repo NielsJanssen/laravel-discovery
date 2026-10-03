@@ -15,6 +15,7 @@ final readonly class DiscoveredTypeField
      * @param  class-string|null  $typeClass  the #[Type] class the field belongs to
      * @param  bool  $hasRules  #[Field(rules:)] is set, and read again by reflection when the input type is built
      * @param  DiscoveredModelBinding|null  $binding  the model an input field looks up by its route key
+     * @param  class-string|null  $host  the #[TypeExtension] class whose method resolves the field, instead of the parent object
      */
     public function __construct(
         public string $phpName,
@@ -32,6 +33,7 @@ final readonly class DiscoveredTypeField
         public mixed $defaultValue = null,
         public bool $omittable = false,
         public bool $rejectsNull = false,
+        public ?string $host = null,
     ) {}
 
     /**
@@ -61,6 +63,22 @@ final readonly class DiscoveredTypeField
     public function bindsNothingIn(array $values): bool
     {
         return $this->omittable && ($values[$this->name] ?? null) === null;
+    }
+
+    /** How errors point at the member behind the field, e.g. "Acme\\UserBilling::invoices()". */
+    public function member(): string
+    {
+        $class = $this->host ?? $this->typeClass ?? '';
+
+        return $this->source === FieldSource::Method ? "$class::{$this->phpName}()" : "$class::\$$this->phpName";
+    }
+
+    /**
+     * @param  class-string|null  $class
+     */
+    public function withTypeClass(?string $class): self
+    {
+        return clone($this, ['typeClass' => $class]);
     }
 
     /**

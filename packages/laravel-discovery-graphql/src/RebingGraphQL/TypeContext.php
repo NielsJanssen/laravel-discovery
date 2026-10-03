@@ -12,7 +12,7 @@ final readonly class TypeContext
     /**
      * @param  class-string|null  $class  null for a type provided without a class
      * @param  NamingStrategy  $naming  the strategy that names the type's own fields
-     * @param  list<string>  $declaredFields  the GraphQL names of the fields the class declares itself
+     * @param  list<string>  $declaredFields  the GraphQL names of the fields the type has before the factory runs: its own, and those an #[TypeExtension] adds
      */
     public function __construct(
         public string $name,
