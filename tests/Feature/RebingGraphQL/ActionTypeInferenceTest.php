@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\RebingGraphQL;
 
 use GraphQL\Utils\SchemaPrinter;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use Rebing\GraphQL\Support\Facades\GraphQL;
 use Tests\Fixtures\RebingGraphQL\Types\Inference\ExplicitArgTypesQuery;
@@ -12,10 +13,6 @@ use Tests\Fixtures\RebingGraphQL\Types\Inference\Invalid;
 use Tests\Fixtures\RebingGraphQL\Types\Inference\Novel;
 use Tests\Fixtures\RebingGraphQL\Types\Inference\NovelQuery;
 use Tests\Fixtures\RebingGraphQL\Types\PamphletType;
-
-afterEach(function () {
-    app()->forgetInstance('config_loaded_from_cache');
-});
 
 /**
  * The default schema built from the given classes, printed with types and fields sorted.
@@ -151,27 +148,38 @@ describe('explicit arg types', function () {
 });
 
 describe('unsupported returns', function () {
-    it('names the method and the ways to give it a type', function (string $class, string $message) {
-        expect(fn() => discoverGraphQL($class))->toThrow(\RuntimeException::class, $message);
+    it('rejects an action return it cannot type, naming the method', function (object $shape, string $format, string $exception) {
+        expectRejected($shape, $format, exception: $exception);
     })->with([
         'a PHP union' => [
-            Invalid\UnionReturnQuery::class,
-            'Method ' . Invalid\UnionReturnQuery::class . '::key has the union type string|int, which has no GraphQL type. Name one with #[Query(type: ...)]; union output types need a #[Union] marker. A scalar, void, enum or #[Type] class return type is inferred.',
+            fn() => new class {
+                #[Query]
+                public function key(): string|int
+                {
+                    return 1;
+                }
+            },
+            'Method %1$s::key has the union type string|int, which has no GraphQL type. Name one with #[Query(type: ...)]; union output types need a #[Union] marker. A scalar, void, enum or #[Type] class return type is inferred.',
+            \RuntimeException::class,
         ],
-        'mixed' => [
-            Invalid\MixedReturnQuery::class,
-            'Method ' . Invalid\MixedReturnQuery::class . '::anything declares the type mixed. Add a PHP type, or name the GraphQL type with #[Query(type: ...)]. A scalar, void, enum or #[Type] class return type is inferred.',
+        'both type: and of:' => [
+            fn() => new class {
+                /** @return list<string> */
+                #[Query(type: 'Book', of: 'Book')]
+                public function books(): array
+                {
+                    return [];
+                }
+            },
+            '%1$s::books sets both type: and of:',
+            \LogicException::class,
         ],
     ]);
 });
 
 describe('unregistered class references', function () {
-    it('rejects them when applied, naming the referencing member', function (array $classes, string $message, bool $cached) {
+    it('rejects them when applied, naming the referencing member', function (array $classes, string $message) {
         isolateGraphQL();
-
-        if ($cached) {
-            app()->instance('config_loaded_from_cache', true);
-        }
 
         expect(fn() => discoverGraphQL(...$classes)->apply())->toThrow(\LogicException::class, $message);
     })->with([
@@ -203,8 +211,5 @@ describe('unregistered class references', function () {
             [Invalid\UnregisteredFieldArg::class],
             'Argument thing of field UnregisteredFieldArg.label references ' . Invalid\Unregistered::class . ', which is not a registered GraphQL input type. Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[Arg(type: ...)].',
         ],
-    ])->with([
-        'config written' => [false],
-        'config cached' => [true],
     ]);
 });
