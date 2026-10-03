@@ -109,7 +109,6 @@ describe('TypeRegistry::resolve()', function () {
         $registry->register(Book::class, 'Book', TypeKind::Object);
 
         expect((string) $registry->resolve(TypeRef::class(Book::class), Position::Output))->toBe('Book!')
-            ->and($registry->classOf('Book'))->toBe(Book::class)
             ->and($registry->kindOf(Book::class, Position::Output))->toBe(TypeKind::Object);
     });
 

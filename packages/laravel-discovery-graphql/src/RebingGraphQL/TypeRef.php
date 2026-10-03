@@ -68,11 +68,6 @@ final readonly class TypeRef
         };
     }
 
-    public function asNullable(): self
-    {
-        return clone($this, ['nullable' => true]);
-    }
-
     /** A copy that is nullable when either this reference or the given flag is; nullability only widens. */
     public function orNullable(bool $nullable): self
     {
@@ -91,14 +86,4 @@ final readonly class TypeRef
         return (string) ($this->class ?? $this->scalar ?? $this->name);
     }
 
-    public static function fromAction(Action $action): self
-    {
-        $type = $action->of ?? $action->type;
-
-        if ($type === null) {
-            throw new InvalidArgumentException('Cannot reference the type of an action whose type was not resolved.');
-        }
-
-        return self::from($type, $action->list, $action->nullable, $action->nullableItems);
-    }
 }

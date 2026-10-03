@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
-use Exception;
 use Illuminate\Foundation\Application;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
 use Rebing\GraphQL\Support\Field as RebingField;
@@ -15,7 +14,7 @@ class DiscoveredAction
     public private(set) ?string $bindName = null;
 
     public function __construct(
-        public Action $action,
+        public Query|Mutation $action,
         /** @var class-string */
         public string $class,
         public string $method,
@@ -44,18 +43,16 @@ class DiscoveredAction
 
     public function createType(Application $app): RebingField
     {
-        return match ($this->action::class) {
-            Query::class => new QueryField($app, $this),
-            Mutation::class => new MutationField($app, $this),
-            default => throw new Exception('Unexpected action type'),
+        return match (true) {
+            $this->action instanceof Query => new QueryField($app, $this),
+            $this->action instanceof Mutation => new MutationField($app, $this),
         };
     }
 
     public string $fieldType {
-        get => match ($this->action::class) {
-            Query::class => 'query',
-            Mutation::class => 'mutation',
-            default => throw new Exception('Unexpected action type'),
+        get => match (true) {
+            $this->action instanceof Query => 'query',
+            $this->action instanceof Mutation => 'mutation',
         };
     }
 
