@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Closure;
-use GraphQL\Type\Definition\NonNull;
 use GraphQL\Type\Definition\NullableType;
 use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Type\Definition\Type as GraphQLType;
@@ -17,7 +16,6 @@ use Illuminate\Validation\Rule;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ArgumentRules;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
-use Rebing\GraphQL\Support\Facades\GraphQL;
 use Rebing\GraphQL\Support\Field as RebingField;
 use ReflectionMethod;
 use RuntimeException;
@@ -59,15 +57,10 @@ trait AsActionField
     public function args(): array
     {
         $args = [];
+        $registry = $this->app->make(TypeRegistry::class);
 
         foreach ($this->discoveredAction->args as $arg) {
-            $graphqlType = $this->scalarType($arg->type);
-
-            if (! $arg->nullable) {
-                $graphqlType = GraphQLType::nonNull($graphqlType);
-            }
-
-            $entry = ['type' => $graphqlType];
+            $entry = ['type' => $registry->resolve(TypeRef::from($arg->type, nullable: $arg->nullable), Position::Input)];
 
             if ($arg->description !== null) {
                 $entry['description'] = $arg->description;
@@ -85,15 +78,7 @@ trait AsActionField
         }
 
         foreach ($this->discoveredAction->modelBindings as $binding) {
-            $graphqlType = $binding->type === null
-                ? GraphQLType::id()
-                : $this->scalarType($binding->type);
-
-            if (! $binding->nullable) {
-                $graphqlType = GraphQLType::nonNull($graphqlType);
-            }
-
-            $entry = ['type' => $graphqlType];
+            $entry = ['type' => $registry->resolve(TypeRef::from($binding->type ?? 'ID', nullable: $binding->nullable), Position::Input)];
 
             $rules = $this->resolveModelBindingRules($binding);
 
@@ -306,23 +291,6 @@ trait AsActionField
     public function getAuthorizationMessage(): string
     {
         return $this->failedAuthorize->message ?? parent::getAuthorizationMessage();
-    }
-
-    /**
-     * Map a scalar type name to its GraphQL type, falling back to the Rebing
-     * type registry for anything non-scalar.
-     *
-     * @return (NullableType&GraphQLType)|NonNull
-     */
-    private function scalarType(string $type): GraphQLType
-    {
-        return match ($type) {
-            'string' => GraphQLType::string(),
-            'int' => GraphQLType::int(),
-            'float' => GraphQLType::float(),
-            'bool' => GraphQLType::boolean(),
-            default => GraphQL::type($type),
-        };
     }
 
     /**

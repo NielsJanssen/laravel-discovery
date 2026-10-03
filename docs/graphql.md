@@ -80,7 +80,8 @@ A scalar return type is mapped for you: `string`, `int`, `float`, and `bool` bec
 
 A return type that is a [`#[Type]` class](#object-types) is inferred as that type, so `public function book(): Book`
 needs no `type:`. The class only has to be discovered somewhere; the order in which classes are discovered does not
-matter. `array`, `iterable` and `Collection` returns need `of:` to name the type of their items.
+matter. A PHP enum return type is inferred as a [GraphQL enum](#enums). `array`, `iterable` and `Collection` returns
+need `of:` to name the type of their items.
 
 Anything else needs `type:` naming a registered GraphQL type. Discovery throws a `RuntimeException` when it cannot infer
 a type and none was given (`mixed`, a PHP union, `array` without `of:`), so a missing type is reported at boot rather
@@ -102,10 +103,11 @@ Note that `type:` describes the GraphQL type, and the PHP return type stays what
 
 `type:` and `of:` take a GraphQL type name (`'Product'`), a scalar name (`'string'`, `'ID'`) or a class-string
 (`Product::class`). A class-string resolves to the GraphQL type that class is registered as in the
-`NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry`, which every `#[Type]` class is added to. A class-string that
+`NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry`, which every `#[Type]` class and every enum is added to. A class-string that
 is not registered, whether given or inferred, on a query, a mutation or a `#[Type]` field, makes discovery throw a
-`LogicException` naming the method or field and the class. The check runs when discovery boots, whether or not the
-configuration is cached.
+`LogicException` naming the method or field and the class. The same goes for a class-string in `#[Arg(type:)]`, which
+must be registered as an input type (an enum is; a `#[Type]` class is not). The check runs when discovery boots,
+whether or not the configuration is cached.
 
 ```php
 #[Query(of: 'Product', nullableItems: true)]
@@ -180,7 +182,7 @@ overrides it. Two types with the same name, including a hand-written Rebing type
 
 **Fields.** Every public, non-static property is a field: promoted, plain, and hooked properties with a `get` hook.
 `#[Ignore]` leaves one out. A public method is a field only with `#[Field]`; its parameters work as they do on a query:
-scalars become arguments (with their defaults), `#[Root]`, `#[Context]` and `ResolveInfo` are injected, and any other
+scalars and enums become arguments (with their defaults), `#[Root]`, `#[Context]` and `ResolveInfo` are injected, and any other
 class is resolved from the container. The method is called on the object being resolved, never on a fresh instance.
 
 `#[Field]` takes:
@@ -195,7 +197,8 @@ class is resolved from the container. The method is called on the object being r
 | `description`       | `?string` | `null`          | The field description.                                                         |
 | `deprecationReason` | `?string` | `null`          | Marks the field deprecated. On methods, native `#[\Deprecated]` works too.     |
 
-**Inferred types.** `string`, `int`, `float` and `bool` map to their scalars. A class maps to the GraphQL type it is
+**Inferred types.** `string`, `int`, `float` and `bool` map to their scalars. A PHP enum maps to a
+[GraphQL enum](#enums). A class maps to the GraphQL type it is
 registered as, which is looked up when the schema is built, so classes can reference each other in any order. A class
 that is not registered is reported at boot. `?T` makes a field nullable; a default value does not. `array`, `iterable`
 and `Collection` need `of:` (or `type:`), and so does anything without a GraphQL counterpart: `mixed`, no type, a
@@ -206,11 +209,78 @@ union, `void`.
 `#[Arg(rules:)]` all throw a `LogicException` naming the class, the member and the fix. Field arguments are not
 validated yet, so validate inside the method.
 
+## Enums
+
+Any PHP enum, backed or not, becomes a GraphQL enum as soon as a query, a mutation, a `#[Type]` field or an argument
+uses it. It is named after the enum, and its values are the case names. `#[Enum]` on the enum renames or describes it,
+and registers it even when nothing references it. `#[EnumValue]` describes a case, and a native `#[\Deprecated]` on a
+case deprecates that value.
+
+```php
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Enum;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\EnumValue;
+
+#[Enum(description: 'Shelf a book is filed under')]
+enum Genre: string
+{
+    case Fiction = 'fiction';
+    #[EnumValue(description: 'Biographies, essays, history')]
+    case NonFiction = 'non_fiction';
+    #[\Deprecated('Use Fiction')]
+    case Novel = 'novel';
+}
+
+class Books
+{
+    #[Query(of: Book::class)]
+    public function byGenre(Genre $genre): array  // byGenre(genre: Genre!): [Book!]!
+    {
+        return Book::query()->where('genre', $genre)->get()->all();
+    }
+}
+```
+
+```graphql
+"Shelf a book is filed under"
+enum Genre {
+  Fiction
+  "Biographies, essays, history"
+  NonFiction
+  Novel @deprecated(reason: "Use Fiction")
+}
+```
+
+| Attribute      | Target    | Parameters                | Purpose                                                   |
+|----------------|-----------|---------------------------|-----------------------------------------------------------|
+| `#[Enum]`      | enum      | `name`, `description`     | Renames or describes the enum; registers it unreferenced. |
+| `#[EnumValue]` | enum case | `description`             | Describes one value.                                      |
+
+The GraphQL value is always the case name, also for a backed enum: `Genre::NonFiction` is `NonFiction`, not
+`non_fiction`. In both directions the PHP side is the case itself: a resolver or a property returns `Genre::Fiction`,
+and an enum argument reaches the resolver as a `Genre` case, never as a string. Values keep the order of the cases.
+`#[\Deprecated(message:, since:)]` becomes `"{message} (since {since})"`, as it does on a query.
+
+An enum is registered once, however many places use it and whichever is discovered first. `#[Enum]` on a class that
+is not an enum, or an enum name that another type already uses (two enums called `Status` in different namespaces,
+say), throws a `LogicException` when discovery boots. Rename one with `#[Enum(name: ...)]`.
+
+To keep a hand-written Rebing `EnumType` for an enum instead, register the enum in the `TypeRegistry` yourself, under
+the name of that type. Discovery then leaves the enum to it. The registration has to run before discovery boots: in the
+`boot()` of a service provider that boots before `NielsJanssen\Laravel\Discovery\DiscoveryServiceProvider`, or in a
+`register()` method.
+
+```php
+public function boot(): void
+{
+    $this->app->make(TypeRegistry::class)->register(Genre::class, 'Genre', TypeKind::Enum);
+}
+```
+
 ## Arguments
 
-Every parameter becomes a GraphQL argument unless it is one of the injections described below. A scalar parameter needs
-no attribute; its GraphQL type comes from the PHP type, and the argument is nullable when the parameter is nullable or
-has a default value.
+Every parameter becomes a GraphQL argument unless it is one of the injections described below. A scalar or enum
+parameter needs no attribute; its GraphQL type comes from the PHP type, and the argument is nullable when the parameter
+is nullable or has a default value. An enum parameter becomes an argument of that [enum](#enums) and receives the case.
 
 ```php
 #[Query(type: 'Order', list: true)]
@@ -225,7 +295,7 @@ public function orders(string $status, int $limit = 25): array
 | Parameter           | Type                            | Purpose                                                                 |
 |---------------------|---------------------------------|--------------------------------------------------------------------------|
 | `name`              | `?string`                       | The argument name, when it should differ from the parameter name.        |
-| `type`              | `?string`                       | The GraphQL type. Required for a parameter that is not scalar.           |
+| `type`              | `?string`                       | The GraphQL type. Required for a parameter that is not scalar or enum.   |
 | `rules`             | `array\|Closure\|null`          | Validation rules, evaluated per request when a closure is given.         |
 | `description`       | `?string`                       | Surfaced in GraphiQL.                                                    |
 | `deprecationReason` | `?string`                       | Marks the argument deprecated.                                           |
@@ -244,6 +314,20 @@ public function updateOrderStatus(
 
 Rules given here are merged with anything contributed by a rules provider, so `#[Arg(rules:)]` and attribute-based
 validation coexist. See [GraphQL argument validation and hydration](graphql-arguments.md).
+
+Rules on an enum argument see the case, not its name, because GraphQL has already turned the value into a case by the
+time validation runs. String rules such as `in:Calm,Cheerful` therefore fail. Use `Rule::enum()`, which accepts a case.
+It is a method call, so it goes in a closure:
+
+```php
+#[Query]
+public function calmOnly(
+    #[Arg(rules: static fn(): array => [Rule::enum(Mood::class)->only([Mood::Calm, Mood::Cheerful])])]
+    Mood $mood,
+): string {
+    return $mood->name;
+}
+```
 
 ## Model binding
 

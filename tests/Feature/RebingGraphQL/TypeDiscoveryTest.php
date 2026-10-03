@@ -27,34 +27,6 @@ use Tests\Fixtures\RebingGraphQL\Types\Reference\AuthorSummary;
 use Tests\Fixtures\RebingGraphQL\Types\Reference\Book;
 use Tests\Fixtures\RebingGraphQL\Types\Reference\BookQuery;
 use Tests\Fixtures\RebingGraphQL\Types\Reference\Genre;
-use Tests\Fixtures\RebingGraphQL\Types\Reference\GenreType;
-
-/**
- * The reference schema; Genre is mapped by hand until enums are discovered.
- *
- * @param  class-string  ...$classes
- */
-function referenceSchemaSdl(string ...$classes): string
-{
-    isolateGraphQL();
-    app(TypeRegistry::class)->register(Genre::class, 'Genre', TypeKind::Enum);
-    discoverGraphQL(...$classes)->apply();
-
-    return SchemaPrinter::doPrint(GraphQL::schema());
-}
-
-/**
- * The schema's top-level definitions, sorted, since the printer follows registration order.
- *
- * @return list<string>
- */
-function sdlDefinitions(string $sdl): array
-{
-    $definitions = preg_split('/\n\n(?=\S)/', trim($sdl)) ?: [];
-    sort($definitions);
-
-    return $definitions;
-}
 
 /**
  * @return list<DiscoveredType>
@@ -104,21 +76,22 @@ const REFERENCE_SDL = <<<'GRAPHQL'
 
 describe('the reference Book type', function () {
     it('prints exactly the reference SDL', function () {
-        expect(referenceSchemaSdl(BookQuery::class, Book::class, AuthorSummary::class, GenreType::class))
+        expect(schemaSdl(BookQuery::class, Book::class, AuthorSummary::class, Genre::class))
             ->toBe(REFERENCE_SDL);
 
         buildAllSchemas();
     });
 
     it('prints the same definitions whatever order the classes are discovered in', function (array $order) {
-        expect(sdlDefinitions(referenceSchemaSdl(...$order)))->toBe(sdlDefinitions(REFERENCE_SDL));
+        expect(sdlDefinitions(schemaSdl(...$order)))->toBe(sdlDefinitions(REFERENCE_SDL));
     })->with([
-        'type before its reference' => [[BookQuery::class, Book::class, AuthorSummary::class, GenreType::class]],
-        'reference before the type' => [[AuthorSummary::class, GenreType::class, Book::class, BookQuery::class]],
+        'type before its reference' => [[BookQuery::class, Book::class, AuthorSummary::class, Genre::class]],
+        'reference before the type' => [[AuthorSummary::class, Genre::class, Book::class, BookQuery::class]],
+        'enum only through its reference' => [[BookQuery::class, Book::class, AuthorSummary::class]],
     ]);
 
     it('resolves a query that returns instances end to end', function () {
-        referenceSchemaSdl(BookQuery::class, Book::class, AuthorSummary::class, GenreType::class);
+        schemaSdl(BookQuery::class, Book::class, AuthorSummary::class, Genre::class);
 
         $this->postJson('/graphql', ['query' => <<<'GRAPHQL'
             {
@@ -161,7 +134,7 @@ describe('the reference Book type', function () {
     });
 
     it('registers the discovered types as object types', function () {
-        referenceSchemaSdl(BookQuery::class, Book::class, AuthorSummary::class, GenreType::class);
+        schemaSdl(BookQuery::class, Book::class, AuthorSummary::class, Genre::class);
 
         $registry = app(TypeRegistry::class);
 

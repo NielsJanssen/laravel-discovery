@@ -8,6 +8,7 @@ use Deprecated;
 use Illuminate\Foundation\Application;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\DeprecationReason;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\EnumCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ParameterClassifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeInferrer;
@@ -32,6 +33,7 @@ final class GraphQLDiscovery implements Discovery
         private readonly ParameterClassifier $parameters,
         private readonly TypeCollector $types,
         private readonly TypeInferrer $inferrer,
+        private readonly EnumCollector $enums,
     ) {}
 
     /**
@@ -43,10 +45,17 @@ final class GraphQLDiscovery implements Discovery
             return;
         }
 
+        if ($class->hasAttribute(Enum::class)) {
+            $this->addType($location, $this->enums->collect($class->getName()));
+        }
+
         $type = $class->getAttribute(Type::class);
 
         if ($type !== null) {
-            $this->addType($location, $this->types->collect($class, $type));
+            $collected = $this->types->collect($class, $type);
+
+            $this->addType($location, $collected);
+            $this->addReferencedEnums($location, $this->fieldTypeReferences($collected));
         }
 
         if (! $class->isInstantiable()) {
@@ -131,6 +140,13 @@ final class GraphQLDiscovery implements Discovery
                 ...$method->getAttributes(Authorize::class),
             ]);
 
+            $returnType = $action->type === null && $action->of === null ? null : TypeRef::fromAction($action);
+
+            $this->addReferencedEnums($location, [
+                $returnType?->class,
+                ...array_map(static fn(DiscoveredArg $arg): string => $arg->type, $parameters->args),
+            ]);
+
             $this->discoveryItems->add($location, new DiscoveredAction(
                 $action,
                 $class->getName(),
@@ -145,40 +161,116 @@ final class GraphQLDiscovery implements Discovery
                 $argProviders,
                 $parameters->argCompositions,
                 $parameters->modelBindings,
-                $action->type === null && $action->of === null ? null : TypeRef::fromAction($action),
+                $returnType,
             )->withBindName());
         }
     }
 
     public function apply(): void
     {
-        $types = $this->bindSingletons();
+        $types = $this->typesToRegister();
 
+        $this->bindSingletons($types);
         $this->registerTypes($types);
         $this->validate($types);
 
         if (! $this->app->configurationIsCached()) {
-            $this->writeConfig();
+            $this->writeConfig($types);
         }
     }
 
     /**
+     * The discovered types, without implicit enums that an #[Enum], an earlier item or a hand registration covers.
+     *
      * @return list<DiscoveredType>
      */
-    private function bindSingletons(): array
+    private function typesToRegister(): array
     {
-        $types = [];
+        $explicit = [];
 
         foreach ($this->discoveryItems as $item) {
-            if ($item instanceof DiscoveredAction && $item->bindName !== null) {
-                $this->app->singleton($item->bindName, $item->createType(...));
-            } elseif ($item instanceof DiscoveredType && $item->bindName !== null) {
-                $this->app->singleton($item->bindName, $item->createType(...));
-                $types[] = $item;
+            if ($item instanceof DiscoveredType && ! $item->implicit) {
+                $explicit[$item->class] = true;
             }
         }
 
+        $registry = $this->app->make(TypeRegistry::class);
+        $seen = [];
+        $types = [];
+
+        foreach ($this->discoveryItems as $item) {
+            if (! $item instanceof DiscoveredType || $item->bindName === null) {
+                continue;
+            }
+
+            if ($item->implicit && (isset($explicit[$item->class]) || isset($seen[$item->class]) || $registry->has($item->class))) {
+                continue;
+            }
+
+            $seen[$item->class] = true;
+            $types[] = $item;
+        }
+
         return $types;
+    }
+
+    /**
+     * @param  list<DiscoveredType>  $types
+     */
+    private function bindSingletons(array $types): void
+    {
+        foreach ($this->discoveryItems as $item) {
+            if ($item instanceof DiscoveredAction && $item->bindName !== null) {
+                $this->app->singleton($item->bindName, $item->createType(...));
+            }
+        }
+
+        foreach ($types as $type) {
+            $this->app->singleton((string) $type->bindName, $type->createType(...));
+        }
+    }
+
+    /**
+     * Register an implicit enum for every enum class among the references, unless one is already known.
+     *
+     * @param  iterable<string|null>  $references
+     */
+    private function addReferencedEnums(DiscoveryLocation $location, iterable $references): void
+    {
+        $registry = $this->app->make(TypeRegistry::class);
+
+        foreach ($references as $class) {
+            if ($class === null || ! enum_exists($class) || $registry->has($class) || $this->hasTypeFor($class)) {
+                continue;
+            }
+
+            $this->addType($location, $this->enums->collect($class, implicit: true));
+        }
+    }
+
+    private function hasTypeFor(string $class): bool
+    {
+        foreach ($this->discoveryItems as $item) {
+            if ($item instanceof DiscoveredType && $item->class === $class) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return iterable<string|null>
+     */
+    private function fieldTypeReferences(DiscoveredType $type): iterable
+    {
+        foreach ($type->fields as $field) {
+            yield $field->type->class;
+
+            foreach ($field->parameters->args as $arg) {
+                yield $arg->type;
+            }
+        }
     }
 
     /**
@@ -213,10 +305,12 @@ final class GraphQLDiscovery implements Discovery
 
             if ($taken !== null) {
                 throw new LogicException(sprintf(
-                    'GraphQL type name [%s] is used by both %s (#[Type]) and the Rebing type %s. Rename one with #[Type(name: ...)].',
+                    'GraphQL type name [%s] is used by both %s (#[%s]) and the Rebing type %s. %s',
                     $type->name,
                     $type->class,
+                    $this->attributeOf($type),
                     $taken,
+                    $this->renameHint($type),
                 ));
             }
         }
@@ -225,15 +319,25 @@ final class GraphQLDiscovery implements Discovery
     }
 
     /**
-     * Every class-string an action return or a type field points at must be a registered output type.
+     * Every class-string an action return or a type field points at must be a registered output type, and every
+     * class-string an argument points at a registered input type.
      *
      * @param  list<DiscoveredType>  $types
      */
     private function assertClassReferencesRegistered(TypeRegistry $registry, array $types): void
     {
-        foreach ($this->classReferences($types) as [$class, $referrer, $attribute]) {
-            if ($registry->has($class, Position::Output)) {
+        foreach ($this->classReferences($types) as [$class, $referrer, $attribute, $position]) {
+            if ($registry->has($class, $position)) {
                 continue;
+            }
+
+            if ($position === Position::Input) {
+                throw new LogicException(sprintf(
+                    '%s references %s, which is not a registered GraphQL input type%s. Use a scalar or an enum, or name a registered GraphQL input type with #[Arg(type: ...)].',
+                    $referrer,
+                    $class,
+                    $registry->has($class) ? ' (it is registered as ' . $registry->kindOf($class, Position::Output)->value . ' type [' . $registry->nameOf($class, Position::Output) . '])' : '',
+                ));
             }
 
             if (is_a($class, RebingType::class, true)) {
@@ -257,25 +361,48 @@ final class GraphQLDiscovery implements Discovery
 
     /**
      * @param  list<DiscoveredType>  $types
-     * @return iterable<array{0: class-string, 1: string, 2: string}> [class, referrer, attribute]
+     * @return iterable<array{0: class-string, 1: string, 2: string, 3: Position}> [class, referrer, attribute, position]
      */
     private function classReferences(array $types): iterable
     {
         foreach ($this->discoveryItems as $item) {
-            if ($item instanceof DiscoveredAction && $item->returnType?->class !== null) {
-                yield [
-                    $item->returnType->class,
-                    "Method {$item->class}::{$item->method}",
-                    class_basename($item->action::class),
-                ];
+            if (! $item instanceof DiscoveredAction) {
+                continue;
             }
+
+            $method = "Method {$item->class}::{$item->method}";
+
+            if ($item->returnType?->class !== null) {
+                yield [$item->returnType->class, $method, class_basename($item->action::class), Position::Output];
+            }
+
+            yield from $this->argClassReferences($item->args, $method);
         }
 
         foreach ($types as $type) {
             foreach ($type->fields as $field) {
+                $member = "Field {$type->name}.{$field->name}";
+
                 if ($field->type->class !== null) {
-                    yield [$field->type->class, "Field {$type->name}.{$field->name}", 'Field'];
+                    yield [$field->type->class, $member, 'Field', Position::Output];
                 }
+
+                yield from $this->argClassReferences($field->parameters->args, $member);
+            }
+        }
+    }
+
+    /**
+     * @param  array<DiscoveredArg>  $args
+     * @return iterable<array{0: class-string, 1: string, 2: string, 3: Position}>
+     */
+    private function argClassReferences(array $args, string $member): iterable
+    {
+        foreach ($args as $arg) {
+            $class = $arg->type;
+
+            if (class_exists($class) || interface_exists($class) || enum_exists($class)) {
+                yield [$class, "Argument {$arg->name} of " . lcfirst($member), 'Arg', Position::Input];
             }
         }
     }
@@ -285,10 +412,11 @@ final class GraphQLDiscovery implements Discovery
         foreach ($this->discoveryItems as $item) {
             if ($item instanceof DiscoveredType && $item->name === $type->name && $item->class !== $type->class) {
                 throw new LogicException(sprintf(
-                    'GraphQL type name [%s] is used by both %s and %s. Rename one with #[Type(name: ...)].',
+                    'GraphQL type name [%s] is used by both %s and %s. %s',
                     $type->name,
                     $item->class,
                     $type->class,
+                    $this->renameHint($type),
                 ));
             }
         }
@@ -296,20 +424,44 @@ final class GraphQLDiscovery implements Discovery
         $this->discoveryItems->add($location, $type->withBindName());
     }
 
-    private function writeConfig(): void
+    private function attributeOf(DiscoveredType $type): string
+    {
+        return $type->kind === TypeKind::Enum ? 'Enum' : 'Type';
+    }
+
+    private function renameHint(DiscoveredType $type): string
+    {
+        if ($type->kind !== TypeKind::Enum) {
+            return 'Rename one with #[Type(name: ...)].';
+        }
+
+        return sprintf(
+            'Rename one with #[Enum(name: ...)], or register the enum by hand with %s::register() in a service provider that boots before %s.',
+            TypeRegistry::class,
+            'NielsJanssen\\Laravel\\Discovery\\DiscoveryServiceProvider',
+        );
+    }
+
+    /**
+     * @param  list<DiscoveredType>  $registered
+     */
+    private function writeConfig(array $registered): void
     {
         $config = $this->app->make('config');
         $defaultSchema = $config->string('graphql.default_schema', 'default');
 
         $schemas = [];
         $types = [];
+        $kept = array_flip(array_map(spl_object_id(...), $registered));
 
         foreach ($this->discoveryItems as $item) {
             if ($item instanceof DiscoveredAction && $item->bindName !== null) {
                 $fieldName = $item->action->name ?? $item->method;
                 $schemas[$item->action->schema ?? $defaultSchema][$item->fieldType][$fieldName] = $item->bindName;
-            } elseif ($item instanceof DiscoveredType && $item->bindName !== null) {
-                $types[$item->name] = $item->bindName;
+            } elseif ($item instanceof DiscoveredType) {
+                if (isset($kept[spl_object_id($item)])) {
+                    $types[$item->name] = (string) $item->bindName;
+                }
             } elseif ($item instanceof DiscoveredField && ($fieldName = $item->getName()) !== null) {
                 if ($item->fieldType === 'types') {
                     $types[$fieldName] = $item->class;
@@ -385,7 +537,7 @@ final class GraphQLDiscovery implements Discovery
             );
         } catch (LogicException $e) {
             throw new RuntimeException(
-                $e->getMessage() . ' A scalar, void or #[Type] class return type is inferred.',
+                $e->getMessage() . ' A scalar, void, enum or #[Type] class return type is inferred.',
                 previous: $e,
             );
         }

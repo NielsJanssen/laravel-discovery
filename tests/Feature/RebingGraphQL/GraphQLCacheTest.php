@@ -34,6 +34,15 @@ it('queries still resolve after discovery:cache populates the discovery cache', 
         ->assertJsonPath('data.books.0.title', 'The Great Gatsby');
 });
 
+it('resolves an implicitly registered enum after discovery:cache populates the discovery cache', function () {
+    $this->artisan('discovery:cache')->assertSuccessful();
+
+    $this->postJson('/graphql', ['query' => '{ calm: mood gloomy: mood(mood: Gloomy) }'])
+        ->assertOk()
+        ->assertJsonMissingPath('errors')
+        ->assertExactJson(['data' => ['calm' => 'Calm', 'gloomy' => 'Gloomy']]);
+});
+
 it('queries still resolve after the config cache is populated and the app is refreshed', function () {
     $this->artisan('config:cache')->assertSuccessful();
 
