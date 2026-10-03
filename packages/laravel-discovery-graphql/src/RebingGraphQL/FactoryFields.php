@@ -11,7 +11,7 @@ use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
 use RuntimeException;
 
-/** Builds Rebing field definitions from the fields a TypeFactory yields for a type. */
+/** Builds Rebing field definitions from the fields a TypeFactory or a TypeDefinition yields for a type. */
 final readonly class FactoryFields
 {
     public function __construct(
@@ -33,23 +33,35 @@ final readonly class FactoryFields
         }
 
         $declared = array_column($type->fields, 'name');
-        $context = new TypeContext(
+        $owner = new FactoryOwner(
             $type->name,
-            $type->class,
-            $position,
-            $this->names->fields($type->naming, sprintf('#[Type(naming:)] on %s', $type->class)),
-            $declared,
+            "type factory $class",
+            sprintf('type [%s] (%s)', $type->name, $type->class),
+            sprintf('#[Type(naming:)] on %s', $type->class),
+            $type->naming,
         );
+        $context = new TypeContext($type->name, $type->class, $position, $this->names->fields($owner->naming, $owner->namingLabel), $declared);
+
+        return $this->build($owner, $factory->fields($context), $declared, $position);
+    }
+
+    /**
+     * @param  iterable<Field>  $fields
+     * @param  list<string>  $declared  the field names the type already has
+     * @return array<string, array<string, mixed>>
+     */
+    public function build(FactoryOwner $owner, iterable $fields, array $declared, Position $position): array
+    {
         $definitions = [];
 
-        foreach ($factory->fields($context) as $field) {
-            $name = $field->name ?? throw new LogicException(sprintf('The type factory %s yielded a field without a name for type [%s] (%s). Set name: on the Field.', $class, $type->name, $type->class));
+        foreach ($fields as $field) {
+            $name = $field->name ?? throw new LogicException(sprintf('The %s yielded a field without a name for %s. Set name: on the Field.', $owner->origin, $owner->subject));
 
             if (in_array($name, $declared, true) || isset($definitions[$name])) {
-                throw new LogicException(sprintf('The type factory %s yields a field "%s" that type [%s] (%s) already has. Rename the factory field, or drop one of the two.', $class, $name, $type->name, $type->class));
+                throw new LogicException(sprintf('The %s yields a field "%s" that %s already has. Rename the factory field, or drop one of the two.', $owner->origin, $name, $owner->subject));
             }
 
-            $definitions[$name] = $this->definition($type, $class, $name, $field, $position);
+            $definitions[$name] = $this->definition($owner, $name, $field, $position);
         }
 
         return $definitions;
@@ -58,12 +70,13 @@ final readonly class FactoryFields
     /**
      * @return array<string, mixed>
      */
-    private function definition(DiscoveredType $type, string $factory, string $name, Field $field, Position $position): array
+    private function definition(FactoryOwner $owner, string $name, Field $field, Position $position): array
     {
-        $path = "{$type->name}.$name";
-        $args = $this->args($type, $factory, $name, $field);
+        $path = "{$owner->name}.$name";
+
+        $args = $this->args($owner, $name, $field);
         $definition = [
-            'type' => $this->registry->resolve($this->typeRef($type, $factory, 'Field', $name, $field), $position),
+            'type' => $this->registry->resolve($this->typeRef($owner, 'Field', $name, $field), $position),
             'resolve' => $this->resolver($path, $name, $field->resolve, array_map(static fn(array $arg): string => $arg['key'], $args)),
         ];
 
@@ -71,6 +84,15 @@ final readonly class FactoryFields
             $definition['args'] = array_map(static fn(array $arg): array => $arg['definition'], $args);
         }
 
+        return $this->described($definition, $field);
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @return array<string, mixed>
+     */
+    private function described(array $definition, Field $field): array
+    {
         if ($field->description !== null) {
             $definition['description'] = $field->description;
         }
@@ -85,9 +107,9 @@ final readonly class FactoryFields
     /**
      * @return array<string, array{key: string, definition: array<string, mixed>}> keyed by GraphQL arg name
      */
-    private function args(DiscoveredType $type, string $factory, string $name, Field $field): array
+    private function args(FactoryOwner $owner, string $name, Field $field): array
     {
-        $naming = $this->names->arguments($type->naming, sprintf('#[Type(naming:)] on %s', $type->class));
+        $naming = $this->names->arguments($owner->naming, $owner->namingLabel);
         $args = [];
 
         foreach ($field->args as $key => $arg) {
@@ -95,36 +117,27 @@ final readonly class FactoryFields
             $label = "$name($argName)";
 
             if (isset($args[$argName])) {
-                throw new LogicException(sprintf('Field "%s" from the type factory %s for type [%s] has two args named "%s". Rename one.', $name, $factory, $type->name, $argName));
+                throw new LogicException(sprintf('Field "%s" from the %s for type [%s] has two args named "%s". Rename one.', $name, $owner->origin, $owner->name, $argName));
             }
 
             if ($arg->hasRules()) {
-                throw new LogicException(sprintf('Argument "%s" of field "%s" from the type factory %s for type [%s] sets rules:, which are not applied to the args of a type field. Remove rules:.', $argName, $name, $factory, $type->name));
+                throw new LogicException(sprintf('Argument "%s" of field "%s" from the %s for type [%s] sets rules:, which are not applied to the args of a type field. Remove rules:.', $argName, $name, $owner->origin, $owner->name));
             }
 
-            $definition = ['type' => $this->registry->resolve($this->typeRef($type, $factory, 'Argument', $label, $arg), Position::Input)];
-
-            if ($arg->description !== null) {
-                $definition['description'] = $arg->description;
-            }
-
-            if ($arg->deprecationReason !== null) {
-                $definition['deprecationReason'] = $arg->deprecationReason;
-            }
-
-            $args[$argName] = ['key' => (string) $key, 'definition' => $definition];
+            $definition = ['type' => $this->registry->resolve($this->typeRef($owner, 'Argument', $label, $arg), Position::Input)];
+            $args[$argName] = ['key' => (string) $key, 'definition' => $this->described($definition, $arg)];
         }
 
         return $args;
     }
 
-    private function typeRef(DiscoveredType $type, string $factory, string $kind, string $name, Field $field): TypeRef
+    private function typeRef(FactoryOwner $owner, string $kind, string $name, Field $field): TypeRef
     {
         if ($field->type !== null && $field->of !== null) {
-            throw new LogicException(sprintf('%s "%s" from the type factory %s for type [%s] sets both type: and of:. Use of: for a list of that type, or type: for a single value.', $kind, $name, $factory, $type->name));
+            throw new LogicException(sprintf('%s "%s" from the %s for type [%s] sets both type: and of:. Use of: for a list of that type, or type: for a single value.', $kind, $name, $owner->origin, $owner->name));
         }
 
-        $target = $field->of ?? $field->type ?? throw new LogicException(sprintf('%s "%s" from the type factory %s for type [%s] (%s) has no type. Set type:, or of: for a list.', $kind, $name, $factory, $type->name, $type->class));
+        $target = $field->of ?? $field->type ?? throw new LogicException(sprintf('%s "%s" from the %s for %s has no type. Set type:, or of: for a list.', $kind, $name, $owner->origin, $owner->subject));
 
         return TypeRef::from($target, $field->of !== null, $field->nullable, $field->nullableItems);
     }
