@@ -33,6 +33,9 @@ final class TypeRegistry
     /** @var list<TypeReference> the class references to check once the providers have registered their types */
     private array $deferred = [];
 
+    /** @var list<DiscoveredExtension> the #[TypeExtension] contributors to attach once the providers have registered their types */
+    private array $deferredExtensions = [];
+
     /**
      * @param class-string $class
      */
@@ -117,6 +120,22 @@ final class TypeRegistry
     public function deferredReferences(): array
     {
         return $this->deferred;
+    }
+
+    /**
+     * @param list<DiscoveredExtension> $extensions
+     */
+    public function deferExtensions(array $extensions): void
+    {
+        $this->deferredExtensions = $extensions;
+    }
+
+    /**
+     * @return list<DiscoveredExtension>
+     */
+    public function deferredExtensions(): array
+    {
+        return $this->deferredExtensions;
     }
 
     public function typeNamed(string $name): ?DiscoveredType
