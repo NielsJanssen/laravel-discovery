@@ -7,7 +7,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 use Attribute;
 use Closure;
 
-/** Configures a property or method of a #[Type] or #[Input] class as a GraphQL field. */
+/** Configures a member of a #[Type] or #[Input] class as a GraphQL field, or describes a field a TypeFactory yields. */
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_METHOD | Attribute::TARGET_PARAMETER)]
 final readonly class Field
 {

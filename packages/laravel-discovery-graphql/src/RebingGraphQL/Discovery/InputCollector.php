@@ -79,6 +79,10 @@ final readonly class InputCollector
             ));
         }
 
+        if ($input->factory !== null) {
+            throw new LogicException(sprintf('#[Input(factory:)] on %s is not supported yet: a type factory only contributes fields to a #[Type]. Remove factory:.', $class->getName()));
+        }
+
         $shared = $class->hasAttribute(Type::class);
 
         if (! $shared) {

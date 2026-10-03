@@ -15,11 +15,13 @@ final readonly class Input
 {
     /**
      * @param  FieldCase|class-string<NamingStrategy>|null  $naming  names this input's fields instead of the configured strategy
+     * @param  class-string<TypeFactory>|null  $factory  not supported yet: rejected at discovery
      */
     public function __construct(
         public ?string $name = null,
         public ?string $description = null,
         public FieldCase|string|null $naming = null,
+        public ?string $factory = null,
     ) {}
 
     /** Whether the class carries #[Input]. */
