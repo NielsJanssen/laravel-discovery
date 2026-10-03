@@ -8,7 +8,6 @@ use Closure;
 use GraphQL\Type\Definition\NullableType;
 use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Type\Definition\Type as GraphQLType;
-use Illuminate\Contracts\Auth\Access\Gate as GateContract;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
@@ -28,7 +27,10 @@ trait AsActionField
     /** @var \ReflectionParameter[] */
     private array $reflectionParameters;
 
-    private Authorize|DiscoveredModelAuthorization|null $failedAuthorize = null;
+    private ?Authorize $failedAuthorize = null;
+
+    /** Whether the failed check guarded a bound model, which defaults to Authorize::DEFAULT_MESSAGE. */
+    private bool $failedOnBoundModel = false;
 
     public function __construct(
         private readonly Application $app,
@@ -219,24 +221,17 @@ trait AsActionField
 
     public function authorize(mixed $root, array $args, mixed $context, ?ResolveInfo $resolveInfo = null): bool
     {
+        $this->failedOnBoundModel = false;
+
         foreach ($this->discoveredAction->authorizations as $auth) {
-            if ($auth->gate) {
-                /** @var AuthorizationGate $gate */
-                $gate = $this->app->make($auth->gate);
-
-                $passed = $gate->check($root, $args, $context, $resolveInfo);
-            } else {
-                $passed = auth()->check();
-            }
-
-            if (! $passed) {
+            if (! $auth->allows($this->app, $root, $args, $context, $resolveInfo)) {
                 $this->failedAuthorize = $auth;
 
                 return false;
             }
         }
 
-        return $this->authorizeBoundModels($args);
+        return $this->authorizeBoundModels($args, $context, $resolveInfo);
     }
 
     /**
@@ -244,10 +239,8 @@ trait AsActionField
      *
      * @param  array<string, mixed>  $args
      */
-    private function authorizeBoundModels(array $args): bool
+    private function authorizeBoundModels(array $args, mixed $context, ?ResolveInfo $resolveInfo): bool
     {
-        $gate = $this->app->make(GateContract::class);
-
         foreach ($this->discoveredAction->modelBindings as $binding) {
             if ($binding->authorizations === []) {
                 continue;
@@ -263,11 +256,12 @@ trait AsActionField
             }
 
             foreach ($binding->authorizations as $authorize) {
-                if ($model !== null && $gate->allows($authorize->ability, $model)) {
+                if ($model !== null && $authorize->allows($this->app, $model, $args, $context, $resolveInfo)) {
                     continue;
                 }
 
                 $this->failedAuthorize = $authorize;
+                $this->failedOnBoundModel = true;
 
                 return false;
             }
@@ -290,7 +284,8 @@ trait AsActionField
 
     public function getAuthorizationMessage(): string
     {
-        return $this->failedAuthorize->message ?? parent::getAuthorizationMessage();
+        return $this->failedAuthorize->message
+            ?? ($this->failedOnBoundModel ? Authorize::DEFAULT_MESSAGE : parent::getAuthorizationMessage());
     }
 
     /**

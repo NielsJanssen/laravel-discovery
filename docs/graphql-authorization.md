@@ -18,14 +18,16 @@ class Orders
 }
 ```
 
-The attribute is repeatable and targets classes, methods, and parameters. Attributes are collected class-first, then
-method, then parameter, and all of them must pass.
+The attribute is repeatable and targets classes, methods, parameters, and the fields of a `#[Type]` (see
+[Authorizing a field](#authorizing-a-field)). Attributes are collected class-first, then method, then parameter, and
+all of them must pass.
 
-| Parameter | Type      | Purpose                                                                          |
-|-----------|-----------|-----------------------------------------------------------------------------------|
-| `ability` | `?string` | A Gate ability, checked against the model a parameter binds. Parameters only.     |
-| `gate`    | `?string` | A class implementing `AuthorizationGate`. Classes and methods only.               |
-| `message` | `?string` | The message reported when this check fails.                                       |
+| Parameter  | Type      | Purpose                                                                                               |
+|------------|-----------|-------------------------------------------------------------------------------------------------------|
+| `ability`  | `?string` | A Gate ability, checked against the model a parameter binds, or against a field's parent object. Not on classes or methods. |
+| `gate`     | `?string` | A class implementing `AuthorizationGate`. Classes, methods and fields.                                |
+| `message`  | `?string` | The message reported when this check fails. On a field, only with `onDenied: Denied::Error`.          |
+| `onDenied` | `?Denied` | Fields only: `Denied::Null` (the default) resolves a denied field to `null`, `Denied::Error` reports. |
 
 ## Requiring a signed-in caller
 
@@ -76,7 +78,67 @@ is the cost of not leaking existence through validation errors.
 The validation rule `#[Can]` from `nielsjanssen/laravel-validation` cannot do this job: validation only ever sees the
 raw `ID` argument, so the Gate receives an id string where the policy expects a record. Discovery rejects that
 combination with a `LogicException` pointing at `#[Authorize]`, along with a parameter `#[Authorize]` that carries no
-ability, `#[Authorize(gate:)]` on a parameter, and an ability on a parameter that binds no model.
+ability, `#[Authorize(gate:)]` on a parameter, and an ability on a parameter that binds no model. An ability on the
+class or the method of a query or mutation is rejected as well, with or without `gate:`: there is no record there to
+check it against, so put it on the model-bound parameter or use a gate.
+
+The default `Forbidden` is `Authorize::DEFAULT_MESSAGE`.
+
+## Authorizing a field
+
+On a property or `#[Field]` method of a [`#[Type]`](graphql.md#object-types), `#[Authorize]` guards that one field. It
+takes the same three forms, run against the object the field belongs to:
+
+| Form                                  | Check                                                      |
+|---------------------------------------|------------------------------------------------------------|
+| `#[Authorize]`                        | `auth()->check()`                                          |
+| `#[Authorize('ability')]`             | `Gate::allows('ability', $root)`, `$root` being the parent |
+| `#[Authorize(gate: SomeGate::class)]` | `SomeGate::check($root, $args, $context, $info)`           |
+
+```php
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorize;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Denied;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
+
+#[Type]
+final class Member
+{
+    public string $name;
+
+    #[Authorize('viewContactDetails')]                              // MemberPolicy::viewContactDetails($user, $member)
+    public string $email;
+
+    #[Authorize(gate: StaffOnly::class, onDenied: Denied::Error)]
+    public ?string $notes = null;
+}
+```
+
+```graphql
+type Member {
+  name: String!
+  email: String
+  notes: String
+}
+```
+
+A denied field resolves to `null` without running its resolver, so a `#[Field]` method is never called. The rest of
+the object still resolves. Because of that, an authorized field is always nullable in the schema, whatever its PHP
+type says.
+
+`onDenied: Denied::Error` reports a field error instead, with the `authorization` category and the message
+`Forbidden`, or `message:` when set. The field stays nullable: a non-null field that errors would null its parent
+object too, and with it every field the caller was allowed to see.
+
+Several `#[Authorize]` on one field must all pass. Checks that resolve to `null` run before checks that report an error,
+so a field that has both and fails a `null` check is `null` without an error.
+
+`#[Authorize]` on the `#[Type]` class itself never reaches the fields. When the class also holds `#[Query]` or
+`#[Mutation]` methods, it guards those actions, as on any other class; on a class without actions it is an error.
+
+Discovery rejects, with a `LogicException` naming the class and the member: an ability together with `gate:`, a
+`gate:` class that does not implement `AuthorizationGate`, `message:` without `onDenied: Denied::Error` (a `null` has
+no message), and `#[Authorize]` on a property that is not a field or on a method without `#[Field]`, `#[Query]` or
+`#[Mutation]`. `onDenied:` on a query, a mutation or a parameter is rejected too, since those always report an error.
 
 ## Custom gates
 
@@ -145,7 +207,8 @@ and without that attribute it resolves from the container. It never appears as a
 
 Prefer `#[Authorize('ability')]` on the parameter when it fits, since it runs before validation and keeps the guard next
 to the thing being guarded. Use a gate class when the decision needs the raw arguments or the context, and
-`Authorization` when the decision depends on work the resolver has to do first.
+`Authorization` when the decision depends on work the resolver has to do first. To hide part of an object rather than
+the whole query, put `#[Authorize]` on the field.
 
 ## Where to next
 

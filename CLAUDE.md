@@ -311,7 +311,7 @@ Nullability decides what a **missing record** means:
 
 A found record is always held to its ability, nullable or not.
 
-A failed parameter-level check reports **`Forbidden`** (`DiscoveredModelAuthorization::DEFAULT_MESSAGE`) rather than
+A failed parameter-level check reports **`Forbidden`** (`Authorize::DEFAULT_MESSAGE`) rather than
 Rebing's `Unauthorized`, since the caller is authenticated but not allowed; `message:` overrides it. The class/method
 forms keep Rebing's default.
 

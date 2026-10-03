@@ -10,7 +10,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ClassifiedParameters;
 final readonly class DiscoveredTypeField
 {
     /**
-     * @param  list<object>  $decorators  attribute instances without closures
+     * @param  list<FieldDecorator|FieldDecoratorReference>  $decorators  serializable instances, or references to re-read
      */
     public function __construct(
         public string $phpName,
@@ -22,4 +22,12 @@ final readonly class DiscoveredTypeField
         public ?string $deprecationReason = null,
         public array $decorators = [],
     ) {}
+
+    /**
+     * @param  list<FieldDecorator|FieldDecoratorReference>  $decorators
+     */
+    public function withDecorators(array $decorators): self
+    {
+        return clone($this, ['decorators' => $decorators]);
+    }
 }

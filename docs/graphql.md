@@ -209,6 +209,56 @@ union, `void`.
 `#[Arg(rules:)]` all throw a `LogicException` naming the class, the member and the fix. Field arguments are not
 validated yet, so validate inside the method.
 
+**Field authorization.** `#[Authorize]` on a property or `#[Field]` method guards that one field: a denied field
+resolves to `null` and is nullable in the schema. See
+[Authorizing a field](graphql-authorization.md#authorizing-a-field).
+
+**Field decorators.** An attribute that implements `FieldDecorator` adjusts the field it sits on, as `#[Authorize]`
+does. Discovery collects every such attribute on a property or `#[Field]` method and calls `decorate()` when the type
+is built. A decorator that also implements `FieldDiscoveryVerifier` gets `verify()` called at discovery, so it can
+reject a field it does not fit:
+
+```php
+use Attribute;
+use Closure;
+use GraphQL\Type\Definition\ResolveInfo;
+use LogicException;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDiscoveryVerifier;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredTypeField;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldBlueprint;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDecorator;
+
+#[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_METHOD)]
+final readonly class Uppercase implements FieldDiscoveryVerifier, FieldDecorator
+{
+    public function verify(string $member, DiscoveredTypeField $field): void
+    {
+        if ($field->type->scalar !== 'string') {
+            throw new LogicException("$member has #[Uppercase] but is not a string.");
+        }
+    }
+
+    public function decorate(FieldBlueprint $field): void
+    {
+        $field->nullable();
+        $field->wrapResolver(static function (mixed $root, array $args, mixed $context, ?ResolveInfo $info, Closure $next): ?string {
+            $value = $next($root, $args, $context, $info);
+
+            return is_string($value) && $value !== '' ? strtoupper($value) : null;
+        });
+    }
+}
+```
+
+`FieldBlueprint` offers `nullable()` to make the field nullable, `wrapResolver()` to run code around the resolver,
+and `addPrivacy()` to add a check that resolves the field to `null` without running the resolver (Rebing's `privacy`).
+Its `app` property is the application, for resolving services. Decorators run in declaration order, which sets the
+order at resolve time: every privacy check runs first, in declaration order, and the field is `null` as soon as one
+fails. Then the resolver wrappers run, the last-declared one outermost, so it sees the call first and the result last.
+A decorator is cached with discovery when it serializes; one that holds a closure is read again from the attribute when
+the type is built. A `FieldDecorator` on a method without `#[Field]`, `#[Query]` or `#[Mutation]`, or on a property that
+is not a field, is an error.
+
 ## Enums
 
 Any PHP enum, backed or not, becomes a GraphQL enum as soon as a query, a mutation, a `#[Type]` field or an argument
@@ -514,7 +564,8 @@ php artisan optimize
 
 ## Where to next
 
-- [GraphQL authorization](graphql-authorization.md): `#[Authorize]`, gates, and authorizing a bound model.
+- [GraphQL authorization](graphql-authorization.md): `#[Authorize]`, gates, authorizing a bound model, and field
+  authorization.
 - [GraphQL argument validation and hydration](graphql-arguments.md): validating arguments and hydrating value objects,
   and the hooks for wiring in your own library.
 - [Validation](validation.md): the attribute-based rules that back argument validation.
