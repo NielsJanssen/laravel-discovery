@@ -207,6 +207,7 @@ final class GraphQLDiscovery implements Discovery
             $this->addReferencedEnums($location, [
                 $returnType?->class,
                 ...array_map(static fn(DiscoveredArg $arg): ?string => $arg->ref()->class, $parameters->args),
+                ...$this->flattenedFieldClasses($parameters->flattenedInputs),
             ]);
 
             $this->discoveryItems->add($location, new DiscoveredAction(
@@ -224,8 +225,28 @@ final class GraphQLDiscovery implements Discovery
                 $parameters->argCompositions,
                 $parameters->modelBindings,
                 $returnType,
+                $parameters->flattenedInputs,
             )->withBindName());
         }
+    }
+
+    /**
+     * The class every field of the #[AsArgs] inputs refers to, if any.
+     *
+     * @param  list<DiscoveredFlattenedInput>  $flattenedInputs
+     * @return list<string|null>
+     */
+    private function flattenedFieldClasses(array $flattenedInputs): array
+    {
+        $classes = [];
+
+        foreach ($flattenedInputs as $flattened) {
+            foreach ($flattened->type->fields as $field) {
+                $classes[] = $field->type->class;
+            }
+        }
+
+        return $classes;
     }
 
     public function apply(): void
@@ -303,6 +324,12 @@ final class GraphQLDiscovery implements Discovery
                 $byName[$item->name] = $item->class;
             } elseif ($item instanceof DiscoveredAction) {
                 $pending = [...$pending, ...array_map(static fn(DiscoveredArg $arg): string => $arg->ref()->class ?? $arg->type, $item->args)];
+
+                foreach ($item->flattenedInputs as $flattened) {
+                    foreach ($flattened->type->fields as $field) {
+                        $pending[] = (string) ($field->type->class ?? $field->type->name);
+                    }
+                }
             }
         }
 
@@ -339,7 +366,11 @@ final class GraphQLDiscovery implements Discovery
 
         foreach ($this->discoveryItems as $item) {
             if ($item instanceof DiscoveredAction) {
-                $references = [$item->returnType?->class, ...array_map(static fn(DiscoveredArg $arg): string => $arg->ref()->class ?? $arg->type, $item->args)];
+                $references = [
+                    $item->returnType?->class,
+                    ...array_map(static fn(DiscoveredArg $arg): string => $arg->ref()->class ?? $arg->type, $item->args),
+                    ...$this->flattenedFieldClasses($item->flattenedInputs),
+                ];
             } elseif ($item instanceof DiscoveredType && $item->kind !== TypeKind::Input) {
                 $references = $this->fieldTypeReferences($item);
             } else {
@@ -573,6 +604,14 @@ final class GraphQLDiscovery implements Discovery
             }
 
             yield from $this->argClassReferences($item->args, $method);
+
+            foreach ($item->flattenedInputs as $flattened) {
+                foreach ($flattened->type->fields as $field) {
+                    if ($field->type->class !== null) {
+                        yield [$field->type->class, "Property {$flattened->type->class}::\${$field->phpName}, flattened into " . lcfirst($method) . ',', 'Field', Position::Input];
+                    }
+                }
+            }
         }
 
         foreach ($types as $type) {

@@ -47,14 +47,23 @@ final class LaravelValidationRules implements InputRuleProvider, RuleProvider
     {
         $compiled = $this->compiler->forValues($class, $values);
         $rules = [];
+        $nested = [];
 
         foreach ($compiled->rules as $path => $pathRules) {
-            if (! str_contains($path, '.')) {
+            if (str_contains($path, '.')) {
+                $nested[] = $path;
+            } else {
                 $rules[$path] = array_values($pathRules);
             }
         }
 
-        return new ArgumentRules($rules, $compiled->messages);
+        $messages = array_filter(
+            $compiled->messages,
+            static fn(string $key): bool => ! array_any($nested, static fn(string $path): bool => $key === $path || str_starts_with($key, "$path.")),
+            ARRAY_FILTER_USE_KEY,
+        );
+
+        return new ArgumentRules($rules, $messages);
     }
 
     /**

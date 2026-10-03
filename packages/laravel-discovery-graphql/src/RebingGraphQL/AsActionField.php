@@ -90,6 +90,12 @@ trait AsActionField
             $args[$binding->argName] = $entry;
         }
 
+        foreach ($this->discoveredAction->flattenedInputs as $flattened) {
+            foreach ($flattened->type->fields as $field) {
+                $args[$field->name] = $this->flattenedArg($registry, $flattened, $field);
+            }
+        }
+
         foreach ($this->discoveredAction->argProviders as $provider) {
             foreach ($provider->provideArgs() as $name => $def) {
                 $args[$name] = $def;
@@ -97,6 +103,25 @@ trait AsActionField
         }
 
         return $args;
+    }
+
+    /**
+     * A field of an #[AsArgs] input as a top-level arg, defined as on the input type but without an alias.
+     *
+     * @return array<string, mixed>
+     */
+    private function flattenedArg(TypeRegistry $registry, DiscoveredFlattenedInput $flattened, DiscoveredTypeField $field): array
+    {
+        $rules = $field->hasRules || ($field->binding !== null && ! $field->binding->nullable)
+            ? static fn(array $args, array $request = []): array => DiscoveredInputType::fieldRules(
+                $flattened->type->class,
+                $field,
+                $flattened->ownArgs($args),
+                array_filter($request, is_string(...), ARRAY_FILTER_USE_KEY),
+            )
+            : null;
+
+        return DiscoveredInputType::fieldDefinition($registry, $field, $rules, alias: false);
     }
 
     public function type(): GraphQLType
@@ -149,6 +174,10 @@ trait AsActionField
 
         foreach ($this->discoveredAction->argCompositions as $paramName => $valueObjectClass) {
             $mappedArgs[$paramName] = $hydrators->hydrate($valueObjectClass, $args);
+        }
+
+        foreach ($this->discoveredAction->flattenedInputs as $flattened) {
+            $mappedArgs[$flattened->paramName] = $hydrators->hydrate($flattened->type->class, $flattened->toProperties($args));
         }
 
         foreach ($this->discoveredAction->modelBindings as $binding) {
@@ -293,6 +322,16 @@ trait AsActionField
 
             if ($denied !== null) {
                 return $denied;
+            }
+        }
+
+        foreach ($this->discoveredAction->flattenedInputs as $flattened) {
+            foreach ($flattened->type->fields as $field) {
+                $denied = $field->binding?->deniedBy($this->app, $args[$field->name] ?? null, $args, $context, $resolveInfo);
+
+                if ($denied !== null) {
+                    return $denied;
+                }
             }
         }
 

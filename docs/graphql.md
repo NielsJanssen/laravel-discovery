@@ -816,6 +816,50 @@ property that binds no model, without an ability, with `gate:`, or with `onDenie
 rejected as well, since a model in input position is always an `ID` binding. So is a constructor the hydrator could not
 call: a required parameter that no input field fills, or a required one whose field is optional.
 
+### Flattening an input with `#[AsArgs]`
+
+`#[AsArgs]` on an `#[Input]` parameter turns the class's fields into the field's own top-level arguments, and the
+resolver still receives the hydrated object. Several `#[AsArgs]` parameters and plain arguments can be mixed.
+
+```php
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\AsArgs;
+use NielsJanssen\Laravel\Validation\Rule\Between;
+
+#[Input]
+final readonly class BookSearch
+{
+    public function __construct(public ?string $term = null, public ?Genre $genre = null, #[Between(1450, 2100)] public ?int $year = null) {}
+}
+
+final class BookQueries
+{
+    #[Query(of: Book::class)] public function findBooks(#[AsArgs] BookSearch $search): array {}
+}
+```
+
+```graphql
+type Query {
+  findBooks(term: String, genre: Genre, year: Int): [Book!]!
+}
+# BookSearchInput is not emitted: nothing uses it as an input object.
+```
+
+Each field becomes an argument exactly as it would be an input field: a renamed field keeps its `#[Field(name:)]`, its
+description and deprecation, and a scalar, enum or list default. A nested `#[Input]` property stays an input-object
+argument, and a model property is an `ID` argument with the automatic `exists` rule, its `#[Authorize('ability')]`
+checked before validation. Validation reports at the top-level argument name (`year`, `shipTo.city`), since the
+fields are the field's own arguments; laravel-validation attributes, their custom messages and `#[Field(rules:)]` all
+apply, and a `#[Field(rules:)]` closure receives the values of that input's own arguments. Hydration builds the class
+from only its own arguments, with the same defaults as a nested input, including an explicit `null` for a property
+that takes none keeping its default.
+
+A class used only through `#[AsArgs]` is not registered as an input type; one also used as an input argument
+elsewhere is. Discovery rejects `#[AsArgs]` on a parameter that is not an `#[Input]` class, together with `#[Arg]` or
+`#[Authorize]` (put `#[Authorize('ability')]` on the input's model property instead), on a nullable parameter or one with a default (flattened arguments have no way to say the whole input is absent; take it
+as a nullable input argument instead), and on a `#[Field]` method. A flattened argument whose name another argument,
+model binding, arg provider such as `#[Paginated]`, or other `#[AsArgs]` field already takes is rejected as well;
+rename one with `#[Field(name:)]` or `#[Arg(name:)]`.
+
 ## Arguments
 
 Every parameter becomes a GraphQL argument unless it is one of the injections described below. A scalar or enum
@@ -823,7 +867,8 @@ parameter needs no attribute; its GraphQL type comes from the PHP type, and the 
 is nullable or has a default value. An enum parameter becomes an argument of that [enum](#enums) and receives the case.
 A [type mapper](#type-mappers) can give an argument a different type, and it can type a class parameter that carries
 `#[Arg]`, such as a date.
-An [`#[Input]`](#input-types) parameter becomes an argument of that input type and receives the hydrated object.
+An [`#[Input]`](#input-types) parameter becomes an argument of that input type and receives the hydrated object;
+with [`#[AsArgs]`](#flattening-an-input-with-asargs) its fields become arguments of their own instead.
 
 ```php
 #[Query(type: 'Order', list: true)]

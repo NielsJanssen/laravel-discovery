@@ -413,6 +413,16 @@ final readonly class TypeCollector
 
     private function assertResolvableParameters(string $member, ClassifiedParameters $parameters): void
     {
+        $flattened = $parameters->flattenedInputs[0] ?? null;
+
+        if ($flattened !== null) {
+            throw new LogicException(sprintf(
+                '%s has #[AsArgs] on $%s, which #[Field] methods do not support yet: field args are neither validated, hydrated nor authorized. Take scalar args instead, or move the operation to a #[Query] or #[Mutation].',
+                $member,
+                $flattened->paramName,
+            ));
+        }
+
         foreach ($parameters->args as $arg) {
             if ($arg->input) {
                 throw new LogicException(sprintf(
