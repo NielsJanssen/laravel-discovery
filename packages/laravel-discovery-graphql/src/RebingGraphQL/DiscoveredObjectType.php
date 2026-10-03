@@ -21,13 +21,7 @@ final class DiscoveredObjectType extends RebingType
 
     public function attributes(): array
     {
-        $attributes = ['name' => $this->discoveredType->name];
-
-        if ($this->discoveredType->description !== null) {
-            $attributes['description'] = $this->discoveredType->description;
-        }
-
-        return $attributes;
+        return $this->discoveredType->attributes();
     }
 
     public function fields(): array
@@ -147,13 +141,7 @@ final class DiscoveredObjectType extends RebingType
                 $mapped[$arg->paramName] = $args[$arg->name] ?? $arg->defaultValue;
             }
 
-            foreach ($parameters->injections as $paramName => $kind) {
-                $mapped[$paramName] = match ($kind) {
-                    'root' => $root,
-                    'context' => $context,
-                    'info' => $info,
-                };
-            }
+            $mapped = [...$mapped, ...Injections::values($parameters->injections, $root, $context, $info)];
 
             $method = [$root, $field->phpName];
 

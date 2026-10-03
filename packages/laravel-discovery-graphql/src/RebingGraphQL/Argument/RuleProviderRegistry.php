@@ -30,12 +30,7 @@ final class RuleProviderRegistry
         foreach ($this->providers as $provider) {
             $set = $provider->rulesFor($action, $args);
 
-            foreach ($set->rules as $path => $contributed) {
-                $rules[$path] = [
-                    ...$rules[$path] ?? [],
-                    ...is_array($contributed) ? $contributed : [$contributed],
-                ];
-            }
+            $rules = $set->appendTo($rules);
 
             $messages = [...$messages, ...$set->messages];
         }
@@ -43,18 +38,10 @@ final class RuleProviderRegistry
         foreach ($action->flattenedInputs as $flattened) {
             $set = $this->rulesForInput($flattened->type->class, $flattened->toProperties($args));
 
-            foreach ($set->rules as $property => $contributed) {
-                if ($flattened->skipsRulesOf($property, $args)) {
-                    continue;
-                }
-
-                $path = $flattened->toArgPath($property);
-
-                $rules[$path] = [
-                    ...$rules[$path] ?? [],
-                    ...is_array($contributed) ? $contributed : [$contributed],
-                ];
-            }
+            $rules = $set->appendTo(
+                $rules,
+                static fn(string $property): ?string => $flattened->skipsRulesOf($property, $args) ? null : $flattened->toArgPath($property),
+            );
 
             foreach ($set->messages as $key => $message) {
                 $messages[$flattened->toArgPath($key)] = $message;
@@ -82,12 +69,7 @@ final class RuleProviderRegistry
 
             $set = $provider->rulesForInput($class, $values);
 
-            foreach ($set->rules as $property => $contributed) {
-                $rules[$property] = [
-                    ...$rules[$property] ?? [],
-                    ...is_array($contributed) ? $contributed : [$contributed],
-                ];
-            }
+            $rules = $set->appendTo($rules);
 
             $messages = [...$messages, ...$set->messages];
         }

@@ -67,6 +67,26 @@ class DiscoveredType
         return $properties;
     }
 
+    /** @return array<string, mixed> the attributes every Rebing type adapter starts from */
+    public function attributes(): array
+    {
+        $attributes = ['name' => $this->name];
+
+        if ($this->description !== null) {
+            $attributes['description'] = $this->description;
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * @return array<string, string>  each field's GraphQL name, keyed by PHP name
+     */
+    public function fieldNames(): array
+    {
+        return array_column($this->fields, 'name', 'phpName');
+    }
+
     public function withBindName(): static
     {
         return clone($this, [

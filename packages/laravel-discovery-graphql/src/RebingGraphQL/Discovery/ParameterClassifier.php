@@ -10,7 +10,6 @@ use Illuminate\Database\Eloquent\Model as EloquentModel;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\ActionArgProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Arg;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgs;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\AsArgs;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorize;
@@ -28,6 +27,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\NamingStrategy;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\OmittableType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Root;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use ReflectionProperty;
 use RuntimeException;
 use Tempest\Reflection\ClassReflector;
@@ -56,7 +56,10 @@ final readonly class ParameterClassifier
     {
         $naming ??= $this->names->arguments();
         $providerArgs = $this->providerArgOwners($argProviders, $class, $method);
-        $valueObjectClasses = $this->collectValueObjectClasses($argProviders);
+        $valueObjects = array_merge(...array_map(
+            static fn(ActionArgProvider $provider): array => $provider->provideValueObjects(),
+            $argProviders,
+        ));
 
         $args = [];
         $injections = [];
@@ -99,7 +102,7 @@ final readonly class ParameterClassifier
                     modelClass: $type->getName(),
                     nullable: $type->isNullable() || $param->hasDefaultValue(),
                     type: $argAttr?->type,
-                    hasUserRules: $argAttr !== null && ! empty($argAttr->rules),
+                    hasUserRules: $argAttr?->hasRules() ?? false,
                     authorizations: $this->discoverParameterAuthorizations($param, $class, $method),
                 );
 
@@ -108,7 +111,7 @@ final readonly class ParameterClassifier
 
             $this->assertNoParameterAuthorization($param, $class, $method);
 
-            if (! $type->isScalar() && $this->isInput($type->getName())) {
+            if (! $type->isScalar() && Input::marks($type->getName())) {
                 $args[] = $this->discoverInputArg($argAttr, $param, $class, $method, $naming);
                 continue;
             }
@@ -116,10 +119,8 @@ final readonly class ParameterClassifier
             if (!$argAttr && !$type->isScalar() && ! enum_exists($type->getName())) {
                 $typeName = $type->getName();
 
-                $valueObject = $valueObjectClasses[$typeName] ?? null;
-
-                if ($valueObject !== null && $this->hydrators->hydrates($valueObject)) {
-                    $argCompositions[$param->getName()] = $valueObject;
+                if (in_array($typeName, $valueObjects, true) && $this->hydrators->hydrates($typeName)) {
+                    $argCompositions[$param->getName()] = $typeName;
                     continue;
                 }
 
@@ -314,23 +315,6 @@ final readonly class ParameterClassifier
     }
 
     /**
-     * @param  list<ActionArgProvider>  $argProviders
-     * @return array<class-string<ComposedFromArgs>, class-string<ComposedFromArgs>>
-     */
-    private function collectValueObjectClasses(array $argProviders): array
-    {
-        $valueObjectClasses = [];
-
-        foreach ($argProviders as $provider) {
-            foreach ($provider->provideValueObjects() as $valueObject) {
-                $valueObjectClasses[$valueObject] = $valueObject;
-            }
-        }
-
-        return $valueObjectClasses;
-    }
-
-    /**
      * @return 'root'|'context'|'info'|null
      */
     private function detectInjectionKind(ParameterReflector $param): ?string
@@ -380,37 +364,10 @@ final readonly class ParameterClassifier
      */
     private function discoverParameterAuthorizations(ParameterReflector $param, ClassReflector $class, MethodReflector $method): array
     {
-        $authorizations = [];
+        $authorizations = array_values($param->getAttributes(Authorize::class));
 
-        foreach ($param->getAttributes(Authorize::class) as $authorize) {
-            if ($authorize->ability === null) {
-                throw new LogicException(sprintf(
-                    '#[Authorize] on the parameter $%s in %s::%s needs an ability, as in #[Authorize(\'view\')]. Bare #[Authorize] and #[Authorize(gate:)] belong on the class or the method.',
-                    $param->getName(),
-                    $class->getName(),
-                    $method->getName(),
-                ));
-            }
-
-            if ($authorize->gate !== null) {
-                throw new LogicException(sprintf(
-                    '#[Authorize(gate:)] on the parameter $%s in %s::%s is not supported: a gate class receives the raw args, so it belongs on the class or the method.',
-                    $param->getName(),
-                    $class->getName(),
-                    $method->getName(),
-                ));
-            }
-
-            if ($authorize->onDenied !== null) {
-                throw new LogicException(sprintf(
-                    '#[Authorize(onDenied:)] on the parameter $%s in %s::%s only applies to a field of a #[Type]. A denied parameter always reports an error; remove onDenied:.',
-                    $param->getName(),
-                    $class->getName(),
-                    $method->getName(),
-                ));
-            }
-
-            $authorizations[] = $authorize;
+        foreach ($authorizations as $authorize) {
+            $authorize->verifyOnParameter(sprintf('the parameter $%s in %s::%s', $param->getName(), $class->getName(), $method->getName()));
         }
 
         return $authorizations;
@@ -474,11 +431,6 @@ final readonly class ParameterClassifier
         }
     }
 
-    private function isInput(string $class): bool
-    {
-        return Input::marks($class);
-    }
-
     /**
      * @param ClassReflector<object> $class
      */
@@ -494,20 +446,7 @@ final readonly class ParameterClassifier
             ));
         }
 
-        $hasDefault = $param->hasDefaultValue();
-
-        return new DiscoveredArg(
-            name: $this->argName($argAttr, $param, $naming, $class, $method),
-            paramName: $param->getName(),
-            type: $param->getType()->getName(),
-            nullable: $param->getType()->isNullable() || $hasDefault,
-            description: $argAttr?->description,
-            hasRules: $argAttr !== null && ! empty($argAttr->rules),
-            hasDefault: $hasDefault,
-            defaultValue: $hasDefault ? $param->getDefaultValue() : null,
-            deprecationReason: $argAttr?->deprecationReason,
-            input: true,
-        );
+        return $this->arg($argAttr, $param, $class, $method, $naming, $param->getType()->getName(), input: true);
     }
 
     /**
@@ -546,19 +485,28 @@ final readonly class ParameterClassifier
             ));
         }
 
-        $hasRules = $argAttr !== null && ! empty($argAttr->rules);
+        return $this->arg($argAttr, $param, $class, $method, $naming, $typeName, typeRef: $mapped);
+    }
+
+    /**
+     * @param ClassReflector<object> $class
+     */
+    private function arg(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method, NamingStrategy $naming, string $typeName, ?TypeRef $typeRef = null, bool $input = false): DiscoveredArg
+    {
+        $hasDefault = $param->hasDefaultValue();
 
         return new DiscoveredArg(
             name: $this->argName($argAttr, $param, $naming, $class, $method),
             paramName: $param->getName(),
             type: $typeName,
-            nullable: $nullable,
+            nullable: $param->getType()->isNullable() || $hasDefault,
             description: $argAttr?->description,
-            hasRules: $hasRules,
+            hasRules: $argAttr?->hasRules() ?? false,
             hasDefault: $hasDefault,
             defaultValue: $hasDefault ? $param->getDefaultValue() : null,
             deprecationReason: $argAttr?->deprecationReason,
-            typeRef: $mapped,
+            typeRef: $typeRef,
+            input: $input,
         );
     }
 

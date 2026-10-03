@@ -10,7 +10,6 @@ use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Type\Definition\Type as GraphQLType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
-use Illuminate\Validation\Rule;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ArgumentRules;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
@@ -139,11 +138,7 @@ trait AsActionField
             return ! $action->nullable && $type instanceof NullableType ? GraphQLType::nonNull($type) : $type;
         }
 
-        if ($ref === null) {
-            throw new RuntimeException('Action type was not resolved during discovery.');
-        }
-
-        return $registry->resolve($ref, Position::Output);
+        return $registry->resolve($ref ?? throw new RuntimeException('Action type was not resolved during discovery.'), Position::Output);
     }
 
     /**
@@ -165,13 +160,7 @@ trait AsActionField
             $mappedArgs[$discovered->paramName] = $value ?? $discovered->defaultValue;
         }
 
-        foreach ($this->discoveredAction->injections as $paramName => $kind) {
-            $mappedArgs[$paramName] = match ($kind) {
-                'root' => $root,
-                'context' => $context,
-                'info' => $info,
-            };
-        }
+        $mappedArgs = [...$mappedArgs, ...Injections::values($this->discoveredAction->injections, $root, $context, $info)];
 
         foreach ($this->discoveredAction->argCompositions as $paramName => $valueObjectClass) {
             $mappedArgs[$paramName] = $hydrators->hydrate($valueObjectClass, $args);
@@ -224,16 +213,7 @@ trait AsActionField
     {
         $rules = parent::getRules($arguments);
 
-        foreach ($this->argumentRules($arguments)->rules as $path => $contributed) {
-            $existing = $rules[$path] ?? [];
-
-            $rules[$path] = [
-                ...is_array($existing) ? $existing : [$existing],
-                ...is_array($contributed) ? $contributed : [$contributed],
-            ];
-        }
-
-        return $rules;
+        return $this->argumentRules($arguments)->appendTo($rules);
     }
 
     /**
@@ -257,7 +237,7 @@ trait AsActionField
         $messages = [];
 
         foreach ($this->app->make(InputObjects::class)->inArgs($this->args(), $args) as [$type, $values, $path]) {
-            $names = array_column(array_map(static fn(DiscoveredTypeField $field): array => [$field->phpName, $field->name], $type->fields), 1, 0);
+            $names = $type->fieldNames();
 
             foreach ($providers->rulesForInput($type->class, $type->toProperties($values))->messages as $key => $message) {
                 $parts = explode('.', $key, 2);
@@ -383,8 +363,7 @@ trait AsActionField
         $rules = [];
 
         if (! $binding->nullable) {
-            $model = new $binding->modelClass();
-            $rules[] = Rule::exists($model->getTable(), $model->getRouteKeyName());
+            $rules[] = $binding->existsRule();
         }
 
         if (! $binding->hasUserRules) {
@@ -395,13 +374,7 @@ trait AsActionField
 
         if ($userRules instanceof Closure) {
             return static function (array $arguments, array $request) use ($rules, $userRules): array {
-                $resolved = $userRules($arguments, $request);
-
-                return [...$rules, ...match (true) {
-                    is_array($resolved) => array_values($resolved),
-                    is_string($resolved) => explode('|', $resolved),
-                    default => [$resolved],
-                }];
+                return [...$rules, ...ArgumentRules::normalise($userRules($arguments, $request))];
             };
         }
 

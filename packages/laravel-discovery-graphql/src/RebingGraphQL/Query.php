@@ -7,18 +7,4 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 use Attribute;
 
 #[Attribute(Attribute::TARGET_METHOD)]
-class Query implements Action
-{
-    public function __construct(
-        public ?string $name = null,
-        public ?string $type = null,
-        public ?string $schema = null,
-        public ?string $description = null,
-        public bool $list = false {
-            get => $this->list || $this->of !== null;
-        },
-        public bool $nullable = false,
-        public ?string $of = null,
-        public bool $nullableItems = false,
-    ) {}
-}
+class Query extends ActionAttribute {}

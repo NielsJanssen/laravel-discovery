@@ -6,7 +6,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Closure;
 use Illuminate\Foundation\Application;
-use Illuminate\Validation\Rule;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ArgumentRules;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
 use Rebing\GraphQL\Support\InputType as RebingInputType;
 use ReflectionProperty;
@@ -25,13 +25,7 @@ final class DiscoveredInputType extends RebingInputType
 
     public function attributes(): array
     {
-        $attributes = ['name' => $this->discoveredType->name];
-
-        if ($this->discoveredType->description !== null) {
-            $attributes['description'] = $this->discoveredType->description;
-        }
-
-        return $attributes;
+        return $this->discoveredType->attributes();
     }
 
     public function fields(): array
@@ -130,19 +124,14 @@ final class DiscoveredInputType extends RebingInputType
         $rules = [];
 
         if ($field->binding !== null && ! $field->binding->nullable) {
-            $model = new $field->binding->modelClass();
-            $rules[] = Rule::exists($model->getTable(), $model->getRouteKeyName());
+            $rules[] = $field->binding->existsRule();
         }
 
         if ($field->hasRules) {
             $declared = self::declaredRules($class, $field->phpName);
             $declared = $declared instanceof Closure ? $declared($values, $request) : $declared;
 
-            $rules = [...$rules, ...match (true) {
-                is_array($declared) => array_values($declared),
-                is_string($declared) => explode('|', $declared),
-                default => [$declared],
-            }];
+            $rules = [...$rules, ...ArgumentRules::normalise($declared)];
         }
 
         return $rules;

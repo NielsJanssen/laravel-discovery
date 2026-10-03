@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
 
 use Illuminate\Database\Eloquent\Model;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredModelBinding;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\OmittableType;
@@ -108,7 +109,7 @@ final class InputHydrator implements Hydrator
         }
 
         if (is_a($class, Model::class, true)) {
-            $query = $class::query()->where(new $class()->getRouteKeyName(), $value);
+            $query = DiscoveredModelBinding::lookup($class, $value);
 
             return $nullable ? $query->first() : $query->firstOrFail();
         }
