@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery;
 
 use Deprecated;
+use Illuminate\Database\Eloquent\Model as EloquentModel;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Action;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\ActionArgProvider;
@@ -23,6 +24,8 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use PropertyHookType;
 use Rebing\GraphQL\Support\Type as RebingType;
+use ReflectionClass;
+use ReflectionProperty;
 use ReflectionType;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
@@ -84,11 +87,7 @@ final readonly class TypeCollector
         $fields = [];
 
         foreach ($class->getProperties() as $property) {
-            if (! $this->includes($property)) {
-                continue;
-            }
-
-            $field = $this->propertyField($class, $property);
+            $field = $this->includes($property) ? $this->propertyField($class, $property) : null;
 
             if ($field === null) {
                 $this->assertUndecorated($property);
@@ -100,11 +99,7 @@ final readonly class TypeCollector
         foreach ($class->getReflection()->getMethods() as $reflection) {
             $method = new MethodReflector($reflection);
 
-            if (! $this->includes($method)) {
-                continue;
-            }
-
-            $field = $this->methodField($class, $method);
+            $field = $this->includes($method) ? $this->methodField($class, $method) : null;
 
             if ($field === null) {
                 $this->assertUndecorated($method);
@@ -136,6 +131,20 @@ final readonly class TypeCollector
                 '%s has #[Field] but is %s. Only public, non-static properties become fields.',
                 $member,
                 $reflection->isStatic() ? 'static' : 'not public',
+            ));
+        }
+
+        if (! $reflection->isVirtual() && $class->is(EloquentModel::class)) {
+            if ($field === null && $this->isImportedFromTrait($reflection)) {
+                return null;
+            }
+
+            throw new LogicException(sprintf(
+                '%s is a plain public property on an Eloquent model, so it shadows the attribute \'%s\'. Make it a virtual hooked property, as in `public string $%s { get => $this->getAttribute(\'%s\'); }`, or add #[Ignore] to keep it out of the type.',
+                $member,
+                $property->getName(),
+                $property->getName(),
+                $property->getName(),
             ));
         }
 
@@ -201,7 +210,49 @@ final readonly class TypeCollector
      */
     private function includes(PropertyReflector|MethodReflector $member): bool
     {
-        return true;
+        $declaringClass = $member->getReflection()->getDeclaringClass();
+
+        if (str_starts_with($declaringClass->getName(), 'Illuminate\\')) {
+            return false;
+        }
+
+        return ! $member instanceof PropertyReflector || ! $this->isFrameworkProperty($declaringClass, $member->getName());
+    }
+
+    /**
+     * Whether a parent class or trait under the Illuminate namespace declares the property as well.
+     *
+     * @param  ReflectionClass<object>  $class
+     */
+    private function isFrameworkProperty(ReflectionClass $class, string $property): bool
+    {
+        $owners = trait_uses_recursive($class->getName());
+
+        for ($parent = $class->getParentClass(); $parent !== false; $parent = $parent->getParentClass()) {
+            $owners[] = $parent->getName();
+        }
+
+        foreach ($owners as $owner) {
+            if (str_starts_with($owner, 'Illuminate\\') && property_exists($owner, $property)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a property comes from a trait rather than the class body.
+     */
+    private function isImportedFromTrait(ReflectionProperty $property): bool
+    {
+        foreach (trait_uses_recursive($property->getDeclaringClass()->getName()) as $trait) {
+            if (property_exists($trait, $property->getName())) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -265,7 +316,7 @@ final readonly class TypeCollector
 
         if ($member instanceof PropertyReflector) {
             throw new LogicException(sprintf(
-                'Property %s::$%s has #[%s] but is not a field, because it is ignored, not public, static or has no get hook. Make it a field, or remove #[%s].',
+                'Property %s::$%s has #[%s] but is not a field, because it is ignored, not public, static, has no get hook, or is a framework or trait property that types skip. Make it a field, or remove #[%s].',
                 $class,
                 $member->getName(),
                 $name,
