@@ -194,7 +194,7 @@ describe('input args', function () {
     it('classifies an #[Input] parameter as an arg named after the parameter', function () {
         $actions = discoveredActions(Inputs\BookMutations::class);
 
-        expect(array_map(static fn($arg) => [$arg->name, $arg->paramName, $arg->type, $arg->nullable, $arg->input], [...$actions['createBook']->args, ...$actions['draftBook']->args]))->toBe([
+        expect(array_map(static fn($arg) => [$arg->name, $arg->paramName, $arg->type->target(), $arg->type->nullable, $arg->input], [...$actions['createBook']->args, ...$actions['draftBook']->args]))->toBe([
             ['input', 'input', Inputs\CreateBook::class, false, true],
             ['data', 'draft', Inputs\CreateBook::class, true, true],
         ])
@@ -908,7 +908,7 @@ describe('type mappers in input position', function () {
             }
         }
 
-        expect([$arg->input, $arg->type, $arg->typeRef])->toBe([true, Inputs\CreateBook::class, null])
+        expect([$arg->input, $arg->type])->toEqual([true, TypeRef::class(Inputs\CreateBook::class)])
             ->and($fields['shipTo'])->toEqual(TypeRef::class(Inputs\Address::class, nullable: true))
             ->and($fields['chapters'])->toEqual(TypeRef::class(Inputs\Chapter::class, list: true, nullable: true))
             ->and($fields['title'])->toEqual(TypeRef::scalar('String'))

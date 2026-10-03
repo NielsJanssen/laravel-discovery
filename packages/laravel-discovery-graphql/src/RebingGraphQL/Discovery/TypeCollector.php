@@ -391,7 +391,7 @@ final readonly class TypeCollector
                 throw new LogicException(sprintf(
                     '%s takes the #[Input] %s as $%s, which fields do not support yet. Take its values as scalar args instead.',
                     $member,
-                    class_basename($arg->type),
+                    class_basename($arg->type->target()),
                     $arg->paramName,
                 ));
             }

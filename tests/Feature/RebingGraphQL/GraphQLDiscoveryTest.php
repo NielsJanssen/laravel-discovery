@@ -10,6 +10,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\NullType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use Rebing\GraphQL\Support\Facades\GraphQL;
 use Tests\Fixtures\RebingGraphQL\AlwaysAllowGate;
 use Tests\Fixtures\RebingGraphQL\AlwaysDenyGate;
@@ -99,7 +100,7 @@ describe('resolution and return-type inference', function () {
     it('stores default values and widens nullable for optional arguments during discovery', function () {
         [$a, $b] = discoveredActions(ScalarActions::class)['add']->args;
 
-        expect($a->nullable)->toBeTrue()
+        expect($a->type->nullable)->toBeTrue()
             ->and($a->hasDefault)->toBeTrue()
             ->and($a->defaultValue)->toBe(0)
             ->and($b->hasDefault)->toBeTrue()
@@ -178,7 +179,7 @@ describe('resolution and return-type inference', function () {
     it('honours #[Arg(type: ...)] as an explicit GraphQL type override', function () {
         $item = discoveredActions(ExplicitTypeArgQuery::class)['resolve'];
 
-        expect($item->args[0]->type)->toBe('CustomFilter');
+        expect($item->args[0]->type)->toEqual(TypeRef::named('CustomFilter'));
     });
 });
 

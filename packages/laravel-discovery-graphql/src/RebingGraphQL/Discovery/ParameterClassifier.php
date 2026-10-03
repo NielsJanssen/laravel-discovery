@@ -446,7 +446,7 @@ final readonly class ParameterClassifier
             ));
         }
 
-        return $this->arg($argAttr, $param, $class, $method, $naming, $param->getType()->getName(), input: true);
+        return $this->arg($argAttr, $param, $class, $method, $naming, TypeRef::from($param->getType()->getName(), nullable: $param->getType()->isNullable() || $param->hasDefaultValue()), input: true);
     }
 
     /**
@@ -457,10 +457,9 @@ final readonly class ParameterClassifier
         $typeReflector = $param->getType();
         $hasDefault = $param->hasDefaultValue();
         $nullable = $typeReflector->isNullable() || $hasDefault;
-        $mapped = null;
 
         if ($argAttr !== null && $argAttr->type !== null) {
-            $typeName = $argAttr->type;
+            $type = TypeRef::from($argAttr->type, nullable: $nullable);
         } elseif ($typeReflector->getName() !== 'mixed' && ($mapped = $this->mappers->map($typeReflector, $this->member($param, $method))) !== null) {
             if ($mapped->nullable && ! $nullable) {
                 throw new LogicException(sprintf(
@@ -472,10 +471,9 @@ final readonly class ParameterClassifier
                 ));
             }
 
-            $mapped = $mapped->orNullable($nullable);
-            $typeName = $mapped->target();
+            $type = $mapped->orNullable($nullable);
         } elseif ($typeReflector->isScalar() || enum_exists($typeReflector->getName())) {
-            $typeName = $typeReflector->getName();
+            $type = TypeRef::from($typeReflector->getName(), nullable: $nullable);
         } else {
             throw new RuntimeException(sprintf(
                 'Parameter $%s in %s::%s is not a scalar or enum type. Use #[Arg(type: \'GraphQLTypeName\')] to specify the GraphQL type.',
@@ -485,27 +483,25 @@ final readonly class ParameterClassifier
             ));
         }
 
-        return $this->arg($argAttr, $param, $class, $method, $naming, $typeName, typeRef: $mapped);
+        return $this->arg($argAttr, $param, $class, $method, $naming, $type);
     }
 
     /**
      * @param ClassReflector<object> $class
      */
-    private function arg(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method, NamingStrategy $naming, string $typeName, ?TypeRef $typeRef = null, bool $input = false): DiscoveredArg
+    private function arg(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method, NamingStrategy $naming, TypeRef $type, bool $input = false): DiscoveredArg
     {
         $hasDefault = $param->hasDefaultValue();
 
         return new DiscoveredArg(
             name: $this->argName($argAttr, $param, $naming, $class, $method),
             paramName: $param->getName(),
-            type: $typeName,
-            nullable: $param->getType()->isNullable() || $hasDefault,
+            type: $type,
             description: $argAttr?->description,
             hasRules: $argAttr?->hasRules() ?? false,
             hasDefault: $hasDefault,
             defaultValue: $hasDefault ? $param->getDefaultValue() : null,
             deprecationReason: $argAttr?->deprecationReason,
-            typeRef: $typeRef,
             input: $input,
         );
     }
