@@ -12,13 +12,21 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeContext;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeDefinition;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeProvider;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
+use Rebing\GraphQL\GraphQL as RebingGraphQL;
 use Rebing\GraphQL\Support\Facades\GraphQL;
 use stdClass;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeConfigurableProvider;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeDepotQuery;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeFilterProvider;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeFilterQuery;
+use Tests\Fixtures\RebingGraphQL\Providers\AcmeListed;
+use Tests\Fixtures\RebingGraphQL\Providers\AcmeListedProvider;
+use Tests\Fixtures\RebingGraphQL\Providers\AcmeListedQuery;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeMetaProvider;
+use Tests\Fixtures\RebingGraphQL\Providers\AcmeShipment;
+use Tests\Fixtures\RebingGraphQL\Providers\AcmeShipmentProvider;
+use Tests\Fixtures\RebingGraphQL\Providers\AcmeShipmentQuery;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeWarehouseQuery;
 
 /**
@@ -218,5 +226,83 @@ describe('rejections', function () {
 
         expect(fn() => provideTypes([acmeDefinition('AcmeWarehouse', Position::Output, [new Field(name: 'name')])]))
             ->toThrow(LogicException::class, 'Field "name" from the type provider');
+    });
+});
+
+describe('class mapping', function () {
+    it('infers the provided type from a return typed as its class', function () {
+        $sdl = schemaSdl(AcmeShipmentQuery::class, AcmeShipmentProvider::class);
+
+        expect($sdl)->toContain('shipment: AcmeConsignment!')
+            ->and($sdl)->toContain('maybeShipment: AcmeConsignment')
+            ->and($sdl)->not->toContain('maybeShipment: AcmeConsignment!')
+            ->and($sdl)->toContain('shipments: [AcmeConsignment!]!');
+    });
+
+    it('resolves the provided type from an instance of its class', function () {
+        schemaSdl(AcmeShipmentQuery::class, AcmeShipmentProvider::class);
+
+        expect(GraphQL::query('{ shipment { reference weight } maybeShipment { reference } shipments { reference } }'))->toBe(['data' => [
+            'shipment' => ['reference' => 'S-1', 'weight' => 12],
+            'maybeShipment' => null,
+            'shipments' => [['reference' => 'S-1'], ['reference' => 'S-2']],
+        ]]);
+    });
+
+    it('maps the class in the registry', function () {
+        schemaSdl(AcmeShipmentQuery::class, AcmeShipmentProvider::class);
+        GraphQL::schema();
+
+        expect(app(TypeRegistry::class)->nameOf(AcmeShipment::class, Position::Output))->toBe('AcmeConsignment');
+    });
+
+    it('serves a class-mapped type from the discovery cache', function () {
+        applyCachedGraphQL([AcmeShipmentQuery::class, AcmeShipmentProvider::class]);
+
+        expect(GraphQL::query('{ shipment { reference } }'))->toBe(['data' => ['shipment' => ['reference' => 'S-1']]]);
+    });
+
+    it('rejects a class a #[Type] already maps', function () {
+        expect(fn() => schemaSdl(AcmeListedQuery::class, AcmeListed::class, AcmeListedProvider::class))
+            ->toThrow(LogicException::class, sprintf('Cannot register %s as object type [AcmeOtherListed]: it is already registered as [AcmeListed].', AcmeListed::class));
+    });
+});
+
+describe('the deferred class check', function () {
+    it('rejects an unknown class at apply() when no provider exists', function () {
+        isolateGraphQL();
+
+        expect(fn() => discoverGraphQL(AcmeShipmentQuery::class)->apply())
+            ->toThrow(LogicException::class, sprintf('Method %s::shipment references %s, which is not a registered GraphQL output type.', AcmeShipmentQuery::class, AcmeShipment::class));
+    });
+
+    it('defers the check to schema build when a provider exists', function () {
+        isolateGraphQL();
+        discoverGraphQL(AcmeShipmentQuery::class, AcmeMetaProvider::class)->apply();
+
+        expect(fn() => GraphQL::schema())
+            ->toThrow(LogicException::class, sprintf('Method %s::shipment references %s, which is not a registered GraphQL output type.', AcmeShipmentQuery::class, AcmeShipment::class));
+    });
+
+    it('points at the provider as a way out', function () {
+        isolateGraphQL();
+        discoverGraphQL(AcmeShipmentQuery::class, AcmeMetaProvider::class)->apply();
+
+        expect(fn() => GraphQL::schema())->toThrow(LogicException::class, 'A type provider can map the class to a type with TypeDefinition(class:).');
+    });
+
+    it('fails again when GraphQL is resolved a second time', function () {
+        isolateGraphQL();
+        discoverGraphQL(AcmeShipmentQuery::class, AcmeMetaProvider::class)->apply();
+
+        expect(fn() => app(RebingGraphQL::class))->toThrow(LogicException::class)
+            ->and(fn() => app(RebingGraphQL::class))->toThrow(LogicException::class, 'which is not a registered GraphQL output type');
+    });
+
+    it('passes once a provider maps the class', function () {
+        isolateGraphQL();
+        discoverGraphQL(AcmeShipmentQuery::class, AcmeShipmentProvider::class)->apply();
+
+        expect(GraphQL::schema()->getQueryType()?->hasField('shipment'))->toBeTrue();
     });
 });
