@@ -20,10 +20,6 @@ it('config:cache succeeds without serialization errors', function () {
     expect($cache)->toBeArray();
 });
 
-it('discovery:cache succeeds and generates valid cache files', function () {
-    $this->artisan('discovery:cache')->assertSuccessful();
-});
-
 it('queries still resolve after discovery:cache populates the discovery cache', function () {
     $this->artisan('discovery:cache')->assertSuccessful();
 

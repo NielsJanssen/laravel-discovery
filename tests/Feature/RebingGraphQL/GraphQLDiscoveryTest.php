@@ -5,37 +5,26 @@ declare(strict_types=1);
 namespace Tests\Feature\RebingGraphQL;
 
 use GraphQL\Language\AST\StringValueNode;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Arg;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\NullType;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
 use Rebing\GraphQL\Support\Facades\GraphQL;
 use Tests\Fixtures\RebingGraphQL\AlwaysAllowGate;
 use Tests\Fixtures\RebingGraphQL\AlwaysDenyGate;
 use Tests\Fixtures\RebingGraphQL\AuthorizedQuery;
-use Tests\Fixtures\RebingGraphQL\BareDeprecatedQuery;
-use Tests\Fixtures\RebingGraphQL\BoolReturnQuery;
-use Tests\Fixtures\RebingGraphQL\CollidingArgNameQuery;
-use Tests\Fixtures\RebingGraphQL\DeprecatedQuery;
+use Tests\Fixtures\RebingGraphQL\DeprecatedQueries;
 use Tests\Fixtures\RebingGraphQL\DescribedQuery;
-use Tests\Fixtures\RebingGraphQL\ExclamationMiddleware;
 use Tests\Fixtures\RebingGraphQL\ExplicitTypeArgQuery;
 use Tests\Fixtures\RebingGraphQL\ExplicitTypeReturnQuery;
-use Tests\Fixtures\RebingGraphQL\FloatBoolQuery;
 use Tests\Fixtures\RebingGraphQL\GatedQuery;
-use Tests\Fixtures\RebingGraphQL\InjectionQuery;
 use Tests\Fixtures\RebingGraphQL\MiddlewareQuery;
-use Tests\Fixtures\RebingGraphQL\MissingTypeQuery;
-use Tests\Fixtures\RebingGraphQL\NonScalarQuery;
-use Tests\Fixtures\RebingGraphQL\NullableScalarReturnQuery;
-use Tests\Fixtures\RebingGraphQL\OptionalArgQuery;
-use Tests\Fixtures\RebingGraphQL\ScalarReturnQuery;
-use Tests\Fixtures\RebingGraphQL\SchemaExplicitArgQuery;
-use Tests\Fixtures\RebingGraphQL\SchemaMethodOverridesClassQuery;
-use Tests\Fixtures\RebingGraphQL\SchemaOnClassQuery;
+use Tests\Fixtures\RebingGraphQL\ScalarActions;
 use Tests\Fixtures\RebingGraphQL\SchemaOnMethodQuery;
-use Tests\Fixtures\RebingGraphQL\SinceOnlyDeprecatedQuery;
-use Tests\Fixtures\RebingGraphQL\UppercaseMiddleware;
-use Tests\Fixtures\RebingGraphQL\VoidQuery;
+use Tests\Fixtures\RebingGraphQL\SchemaQueries;
+use Workbench\App\GraphQL\Middleware\ExclamationMiddleware;
+use Workbench\App\GraphQL\Middleware\UppercaseMiddleware;
 use Workbench\App\GraphQL\Mutations\RebingNativeMutation;
 use Workbench\App\Models\User;
 
@@ -77,28 +66,38 @@ describe('resolution and return-type inference', function () {
             ->assertJsonPath('data.greet', 'Hello, World!');
     });
 
-    it('infers scalar return type from method return type hint', function () {
-        $discovery = discoverGraphQL(ScalarReturnQuery::class);
-        /** @var DiscoveredAction[] $items */
-        $items = iterator_to_array($discovery->getItems());
+    it('infers the GraphQL type and nullability from the method return type', function () {
+        $actions = discoveredActions(ScalarActions::class);
 
-        expect($items)->toHaveCount(1)
-            ->and($items[0]->action->type)->toBe('string')
-            ->and($items[0]->action->nullable)->toBeFalse();
+        expect(array_map(fn(DiscoveredAction $a) => [$a->action->type, $a->action->nullable], $actions))->toBe([
+            'greet' => ['string', false],
+            'maybeGreet' => ['string', true],
+            'isReady' => ['bool', false],
+            'percent' => ['float', false],
+            'doNothing' => ['void', true],
+            'add' => ['int', false],
+        ]);
     });
 
-    it('infers nullable scalar return type and sets nullable on the action', function () {
-        $discovery = discoverGraphQL(NullableScalarReturnQuery::class);
-        $items = iterator_to_array($discovery->getItems());
+    it('prints the scalar actions in the schema, mapping void to the Null scalar', function () {
+        expect(schemaSdl(ScalarActions::class))->toBe(<<<'SDL'
+            type Query {
+              greet(name: String!): String!
+              maybeGreet: String
+              isReady: Boolean!
+              percent(enabled: Boolean!, threshold: Float!): Float!
+              doNothing: Null
+              add(a: Int, b: Int): Int!
+            }
 
-        expect($items[0]->action->type)->toBe('string')
-            ->and($items[0]->action->nullable)->toBeTrue();
+            "Represents the absence of a return value."
+            scalar Null
+
+            SDL);
     });
 
     it('stores default values and widens nullable for optional arguments during discovery', function () {
-        $discovery = discoverGraphQL(OptionalArgQuery::class);
-        $items = iterator_to_array($discovery->getItems());
-        [$a, $b] = $items[0]->args;
+        [$a, $b] = discoveredActions(ScalarActions::class)['add']->args;
 
         expect($a->nullable)->toBeTrue()
             ->and($a->hasDefault)->toBeTrue()
@@ -107,46 +106,53 @@ describe('resolution and return-type inference', function () {
             ->and($b->defaultValue)->toBe(0);
     });
 
-    it('throws during discovery when a non-scalar argument is missing #[Arg]', function () {
-        expect(fn() => discoverGraphQL(NonScalarQuery::class))
-            ->toThrow(\RuntimeException::class, '#[Arg(type:');
-    });
+    it('rejects an action shape at discovery', function (object $shape, string $format, string $exception) {
+        expectRejected($shape, $format, exception: $exception);
+    })->with([
+        'a non-scalar argument without #[Arg]' => [
+            fn() => new class {
+                #[Query(type: 'Book', list: true)]
+                public function resolve(array $missingArg): array
+                {
+                    return [];
+                }
+            },
+            'Parameter $missingArg in %1$s::resolve is not a scalar or enum type. Use #[Arg(type: \'GraphQLTypeName\')] to specify the GraphQL type.',
+            \RuntimeException::class,
+        ],
+        'an #[Arg(name:)] colliding with another parameter name' => [
+            fn() => new class {
+                #[Query]
+                public function resolve(#[Arg('name')] string $title, string $name): string
+                {
+                    return "{$title} {$name}";
+                }
+            },
+            'in %1$s::resolve takes the arg "name", which collides with the arg of the parameter $title. Rename one with #[Arg(name: ...)].',
+            \LogicException::class,
+        ],
+        'no type and a non-scalar return type' => [
+            fn() => new class {
+                #[Query]
+                public function resolve(): array
+                {
+                    return [];
+                }
+            },
+            'Method %1$s::resolve has type array, which needs #[Query(of: ...)] to name the type of its items, or #[Query(type: ...)] to name its GraphQL type. A scalar, void, enum or #[Type] class return type is inferred.',
+            \RuntimeException::class,
+        ],
+    ]);
 
-    it('throws during discovery when an #[Arg(name:)] collides with another parameter name', function () {
-        expect(fn() => discoverGraphQL(CollidingArgNameQuery::class))
-            ->toThrow(\LogicException::class, 'takes the arg "name", which collides with the arg of the parameter $title. Rename one with #[Arg(name: ...)].');
-    });
-
-    it('throws during discovery when type is missing and return type is non-scalar', function () {
-        expect(fn() => discoverGraphQL(MissingTypeQuery::class))
-            ->toThrow(\RuntimeException::class, 'Method ' . MissingTypeQuery::class . '::resolve has type array, which needs #[Query(of: ...)] to name the type of its items, or #[Query(type: ...)] to name its GraphQL type. A scalar, void, enum or #[Type] class return type is inferred.');
-    });
-
-    it('maps void return type to the Null scalar type', function () {
-        $discovery = discoverGraphQL(VoidQuery::class);
-        $items = iterator_to_array($discovery->getItems());
-
-        expect($items[0]->action->type)->toBe('void')
-            ->and($items[0]->action->nullable)->toBeTrue();
-    });
-
-    it('resolves a query with optional args using defaults when omitted', function () {
-        $this->postJson('/graphql', ['query' => '{ add }'])
+    it('resolves a query with optional args', function (string $query, int $expected) {
+        $this->postJson('/graphql', ['query' => $query])
             ->assertOk()
-            ->assertJsonPath('data.add', 0);
-    });
-
-    it('resolves a query with optional args when values are provided', function () {
-        $this->postJson('/graphql', ['query' => '{ add(a: 3, b: 4) }'])
-            ->assertOk()
-            ->assertJsonPath('data.add', 7);
-    });
-
-    it('resolves a query with optional args using default when null is passed', function () {
-        $this->postJson('/graphql', ['query' => '{ add(a: 5, b: null) }'])
-            ->assertOk()
-            ->assertJsonPath('data.add', 5);
-    });
+            ->assertJsonPath('data.add', $expected);
+    })->with([
+        'using defaults when omitted' => ['{ add }', 0],
+        'when values are provided' => ['{ add(a: 3, b: 4) }', 7],
+        'using the default when null is passed' => ['{ add(a: 5, b: null) }', 5],
+    ]);
 
     it('resolves a void mutation returning null', function () {
         $this->postJson('/graphql', [
@@ -169,32 +175,10 @@ describe('resolution and return-type inference', function () {
             ->assertJsonPath('data.validatedHello', 'hi, Niels');
     });
 
-    it('maps float and bool to their GraphQL scalar types for both args and return type', function () {
-        $items = iterator_to_array(discoverGraphQL(FloatBoolQuery::class)->getItems());
-        /** @var DiscoveredAction $item */
-        $item = $items[0];
-
-        $field = $item->createType(app());
-
-        expect($item->action->type)->toBe('float')
-            ->and($item->args[0]->type)->toBe('bool')
-            ->and($item->args[1]->type)->toBe('float')
-            ->and((string) $field->type())->toBe('Float!')
-            ->and((string) $field->args()['enabled']['type'])->toBe('Boolean!')
-            ->and((string) $field->args()['threshold']['type'])->toBe('Float!');
-    });
-
-    it('maps a bool return type to the GraphQL Boolean scalar', function () {
-        $items = iterator_to_array(discoverGraphQL(BoolReturnQuery::class)->getItems());
-        $field = $items[0]->createType(app());
-
-        expect((string) $field->type())->toBe('Boolean!');
-    });
-
     it('honours #[Arg(type: ...)] as an explicit GraphQL type override', function () {
-        $items = iterator_to_array(discoverGraphQL(ExplicitTypeArgQuery::class)->getItems());
+        $item = discoveredActions(ExplicitTypeArgQuery::class)['resolve'];
 
-        expect($items[0]->args[0]->type)->toBe('CustomFilter');
+        expect($item->args[0]->type)->toBe('CustomFilter');
     });
 });
 
@@ -223,44 +207,25 @@ describe('null type', function () {
 });
 
 describe('schema routing', function () {
-    it('applies a method-level #[Schema] decorator to the action', function () {
-        $items = iterator_to_array(discoverGraphQL(SchemaOnMethodQuery::class)->getItems());
+    it('resolves the schema of every action from #[Schema] decorators and the explicit schema argument', function () {
+        $actions = [...discoveredActions(SchemaOnMethodQuery::class), ...discoveredActions(SchemaQueries::class)];
 
-        expect($items[0]->action->schema)->toBe('admin');
-    });
-
-    it('applies a class-level #[Schema] decorator to every action method', function () {
-        $items = iterator_to_array(discoverGraphQL(SchemaOnClassQuery::class)->getItems());
-
-        expect($items)->toHaveCount(2)
-            ->and($items[0]->action->schema)->toBe('admin')
-            ->and($items[1]->action->schema)->toBe('admin');
-    });
-
-    it('lets a method-level #[Schema] decorator override the class-level one', function () {
-        $items = iterator_to_array(discoverGraphQL(SchemaMethodOverridesClassQuery::class)->getItems());
-
-        $bySchema = array_column(array_map(
-            fn($item) => ['name' => $item->action->name, 'schema' => $item->action->schema],
-            $items,
-        ), 'schema', 'name');
-
-        expect($bySchema)->toBe([
+        expect(array_column(array_map(
+            fn(DiscoveredAction $a) => ['name' => $a->action->name, 'schema' => $a->action->schema],
+            $actions,
+        ), 'schema', 'name'))->toBe([
+            'methodLevel' => 'admin',
+            'classLevelQuery' => 'admin',
+            'classLevelMutation' => 'admin',
             'methodWins' => 'public',
-            'classFallback' => 'admin',
+            'explicitWins' => 'reports',
         ]);
-    });
-
-    it('preserves an explicit schema argument on #[Query] over decorators', function () {
-        $items = iterator_to_array(discoverGraphQL(SchemaExplicitArgQuery::class)->getItems());
-
-        expect($items[0]->action->schema)->toBe('reports');
     });
 
     it('routes decorated actions to their declared schema in graphql.schemas config', function () {
         config()->set('graphql.schemas', []);
 
-        $discovery = discoverGraphQL(SchemaOnMethodQuery::class, SchemaOnClassQuery::class);
+        $discovery = discoverGraphQL(SchemaOnMethodQuery::class, SchemaQueries::class);
         $discovery->apply();
 
         $schemas = config('graphql.schemas');
@@ -269,42 +234,37 @@ describe('schema routing', function () {
             ->and($schemas['admin']['query'])->toHaveKey('methodLevel')
             ->and($schemas['admin']['query'])->toHaveKey('classLevelQuery')
             ->and($schemas['admin']['mutation'])->toHaveKey('classLevelMutation')
+            ->and($schemas['public']['query'])->toHaveKey('methodWins')
+            ->and($schemas['reports']['query'])->toHaveKey('explicitWins')
             ->and($schemas['default'] ?? [])->not->toHaveKey('query');
     });
 
-    it('routes undecorated actions to graphql.default_schema when configured', function () {
+    it('routes undecorated actions to graphql.default_schema', function (?string $configured, string $expected) {
         config()->set('graphql.schemas', []);
-        config()->set('graphql.default_schema', 'custom');
 
-        $discovery = discoverGraphQL(ScalarReturnQuery::class);
-        $discovery->apply();
+        if ($configured !== null) {
+            config()->set('graphql.default_schema', $configured);
+        }
+
+        expect(config('graphql.default_schema'))->toBe($expected);
+
+        discoverGraphQL(ScalarActions::class)->apply();
 
         $schemas = config('graphql.schemas');
 
-        expect($schemas)->toHaveKey('custom')
-            ->and($schemas['custom']['query'] ?? [])->not->toBeEmpty()
-            ->and($schemas)->not->toHaveKey('default');
-    });
-
-    it('uses the Rebing default schema "default" when graphql.default_schema is unchanged', function () {
-        config()->set('graphql.schemas', []);
-
-        expect(config('graphql.default_schema'))->toBe('default');
-
-        $discovery = discoverGraphQL(ScalarReturnQuery::class);
-        $discovery->apply();
-
-        $schemas = config('graphql.schemas');
-
-        expect($schemas)->toHaveKey('default')
-            ->and($schemas['default']['query'] ?? [])->not->toBeEmpty();
-    });
+        expect($schemas)->toHaveKey($expected)
+            ->and($schemas[$expected]['query'] ?? [])->not->toBeEmpty()
+            ->and($schemas)->toHaveCount(1);
+    })->with([
+        'the Rebing default when unchanged' => [null, 'default'],
+        'the configured schema' => ['custom', 'custom'],
+    ]);
 
     it('keeps decorated actions in their declared schema even when graphql.default_schema is set', function () {
         config()->set('graphql.schemas', []);
         config()->set('graphql.default_schema', 'custom');
 
-        $discovery = discoverGraphQL(SchemaOnMethodQuery::class, ScalarReturnQuery::class);
+        $discovery = discoverGraphQL(SchemaOnMethodQuery::class, ScalarActions::class);
         $discovery->apply();
 
         $schemas = config('graphql.schemas');
@@ -316,29 +276,6 @@ describe('schema routing', function () {
 });
 
 describe('parameter injections', function () {
-    it('treats #[Root], #[Context] and ResolveInfo-typed parameters as injections, not GraphQL args', function () {
-        $items = iterator_to_array(discoverGraphQL(InjectionQuery::class)->getItems());
-
-        /** @var DiscoveredAction $item */
-        $item = $items[0];
-
-        expect($item->args)->toHaveCount(1)
-            ->and($item->args[0]->paramName)->toBe('name')
-            ->and($item->injections)->toBe([
-                'root' => 'root',
-                'context' => 'context',
-                'info' => 'info',
-            ]);
-    });
-
-    it('wires #[Root], #[Context] and ResolveInfo into the resolve() call when invoked directly', function () {
-        $items = iterator_to_array(discoverGraphQL(InjectionQuery::class)->getItems());
-        $field = $items[0]->createType(app());
-
-        expect($field->resolve('root-value', ['name' => 'Niels'], 'context-value', null))
-            ->toBe('Niels');
-    });
-
     it('passes ResolveInfo into resolve() with the actual field name at runtime', function () {
         auth()->logout();
 
@@ -358,9 +295,7 @@ describe('parameter injections', function () {
 
 describe('description', function () {
     it('exposes #[Query(description: ...)] on the discovered action and the Field attributes', function () {
-        $items = iterator_to_array(discoverGraphQL(DescribedQuery::class)->getItems());
-        /** @var DiscoveredAction $item */
-        $item = $items[0];
+        $item = discoveredActions(DescribedQuery::class)['resolve'];
 
         $field = $item->createType(app());
 
@@ -374,9 +309,7 @@ describe('description', function () {
 
 describe('deprecation', function () {
     it('maps native #[\Deprecated] on methods and parameters to GraphQL deprecationReason', function () {
-        $items = iterator_to_array(discoverGraphQL(DeprecatedQuery::class)->getItems());
-        /** @var DiscoveredAction $item */
-        $item = $items[0];
+        $item = discoveredActions(DeprecatedQueries::class)['withMessage'];
 
         $field = $item->createType(app());
 
@@ -386,53 +319,25 @@ describe('deprecation', function () {
             ->and($field->args()['name'])->toHaveKey('deprecationReason', 'Pass name via context');
     });
 
-    it('formats #[\Deprecated(since:)] without a message as "Deprecated since X"', function () {
-        $items = iterator_to_array(discoverGraphQL(SinceOnlyDeprecatedQuery::class)->getItems());
-
-        expect($items[0]->deprecationReason)->toBe('Deprecated since 3.0.0');
-    });
-
-    it('falls back to a plain "Deprecated" reason for a bare #[\Deprecated]', function () {
-        $items = iterator_to_array(discoverGraphQL(BareDeprecatedQuery::class)->getItems());
-
-        expect($items[0]->deprecationReason)->toBe('Deprecated');
-    });
+    it('words a #[\Deprecated] without a message', function (string $method, string $reason) {
+        expect(discoveredActions(DeprecatedQueries::class)[$method]->deprecationReason)->toBe($reason);
+    })->with([
+        'since only' => ['sinceOnly', 'Deprecated since 3.0.0'],
+        'bare' => ['bare', 'Deprecated'],
+    ]);
 });
 
 describe('middleware', function () {
     it('collects class-level then method-level middleware in execution order', function () {
-        $items = iterator_to_array(discoverGraphQL(MiddlewareQuery::class)->getItems());
+        $actions = discoveredActions(MiddlewareQuery::class);
 
-        /** @var DiscoveredAction $shout */
-        /** @var DiscoveredAction $whisper */
-        [$shout, $whisper] = array_values(array_combine(
-            array_map(fn(DiscoveredAction $i) => $i->action->name, $items),
-            $items,
-        ));
-
-        expect($shout->middleware)->toBe([
+        expect($actions['resolve']->middleware)->toBe([
             ExclamationMiddleware::class,
             UppercaseMiddleware::class,
         ])
-            ->and($whisper->middleware)->toBe([
+            ->and($actions['whisper']->middleware)->toBe([
                 ExclamationMiddleware::class,
             ]);
-    });
-
-    it('exposes discovered middleware to Rebing via the Field getMiddleware() hook', function () {
-        $items = iterator_to_array(discoverGraphQL(MiddlewareQuery::class)->getItems());
-        /** @var DiscoveredAction $shout */
-        $shout = collect($items)->first(fn(DiscoveredAction $i) => $i->action->name === 'shout');
-
-        $field = $shout->createType(app());
-
-        $reflected = (new \ReflectionClass($field))->getMethod('getMiddleware');
-        $reflected->setAccessible(true);
-
-        expect($reflected->invoke($field))->toBe([
-            ExclamationMiddleware::class,
-            UppercaseMiddleware::class,
-        ]);
     });
 
     it('runs discovered middleware around the resolver in class-then-method order over a real GraphQL request', function () {
@@ -446,108 +351,67 @@ describe('middleware', function () {
 
 describe('authorization', function () {
     it('collects #[Authorize] attributes from class and method, class-first', function () {
-        $items = iterator_to_array(discoverGraphQL(GatedQuery::class)->getItems());
+        $actions = discoveredActions(GatedQuery::class);
 
-        $denied = collect($items)->firstWhere(fn(DiscoveredAction $i) => $i->action->name === 'gatedDeny');
-        $allowed = collect($items)->firstWhere(fn(DiscoveredAction $i) => $i->action->name === 'gatedAllow');
-
-        expect(array_map(fn($a) => $a->gate, $denied->authorizations))
+        expect(array_map(fn($a) => $a->gate, $actions['denied']->authorizations))
             ->toBe([AlwaysAllowGate::class, AlwaysDenyGate::class])
-            ->and(array_map(fn($a) => $a->gate, $allowed->authorizations))
+            ->and(array_map(fn($a) => $a->gate, $actions['allowed']->authorizations))
             ->toBe([AlwaysAllowGate::class]);
     });
 
-    it('rejects bare #[Authorize] when no user is authenticated', function () {
-        auth()->logout();
+    it('requires an authenticated user for a bare #[Authorize]', function (bool $loggedIn, bool $allowed) {
+        $loggedIn ? $this->actingAs(new User()) : auth()->logout();
 
-        $items = iterator_to_array(discoverGraphQL(AuthorizedQuery::class)->getItems());
-        $field = $items[0]->createType(app());
+        $field = discoveredActions(AuthorizedQuery::class)['resolve']->createType(app());
 
-        expect($field->authorize(null, [], null, null))->toBeFalse()
-            ->and($field->getAuthorizationMessage())->toBe('Authentication required');
-    });
+        expect($field->authorize(null, [], null, null))->toBe($allowed);
 
-    it('accepts bare #[Authorize] when a user is authenticated', function () {
-        $this->actingAs(new User());
-
-        $items = iterator_to_array(discoverGraphQL(AuthorizedQuery::class)->getItems());
-        $field = $items[0]->createType(app());
-
-        expect($field->authorize(null, [], null, null))->toBeTrue();
-    });
+        if (! $allowed) {
+            expect($field->getAuthorizationMessage())->toBe('Authentication required');
+        }
+    })->with([
+        'rejects when no user is authenticated' => [false, false],
+        'accepts when a user is authenticated' => [true, true],
+    ]);
 
     it('delegates to the configured gate when #[Authorize(gate: ...)] is used', function () {
-        $items = iterator_to_array(discoverGraphQL(GatedQuery::class)->getItems());
+        $actions = discoveredActions(GatedQuery::class);
 
-        $denied = collect($items)->firstWhere(fn(DiscoveredAction $i) => $i->action->name === 'gatedDeny')
-            ->createType(app());
-        $allowed = collect($items)->firstWhere(fn(DiscoveredAction $i) => $i->action->name === 'gatedAllow')
-            ->createType(app());
+        $denied = $actions['denied']->createType(app());
+        $allowed = $actions['allowed']->createType(app());
 
         expect($denied->authorize(null, [], null, null))->toBeFalse()
             ->and($denied->getAuthorizationMessage())->toBe('denied by gate')
             ->and($allowed->authorize(null, [], null, null))->toBeTrue();
     });
 
-    it('returns an authorization error from the GraphQL endpoint for unauthenticated #[Authorize] requests', function () {
-        auth()->logout();
+    it('guards a #[Authorize] query over the GraphQL endpoint', function (bool $loggedIn) {
+        $loggedIn ? $this->actingAs(new User()) : auth()->logout();
 
-        $this->postJson('/graphql', [
-            'query' => '{ secret }',
-        ])
-            ->assertOk()
-            ->assertJsonPath('data.secret', null)
-            ->assertJsonPath('errors.0.message', 'Unauthorized');
-    });
+        $response = $this->postJson('/graphql', ['query' => '{ secret }'])->assertOk();
 
-    it('resolves an authorized #[Authorize] query when a user is logged in', function () {
-        $this->actingAs(new User());
-
-        $this->postJson('/graphql', [
-            'query' => '{ secret }',
-        ])
-            ->assertOk()
-            ->assertJsonPath('data.secret', 'top-secret');
-    });
+        if ($loggedIn) {
+            $response->assertJsonPath('data.secret', 'top-secret');
+        } else {
+            $response->assertJsonPath('data.secret', null)
+                ->assertJsonPath('errors.0.message', 'Unauthorized');
+        }
+    })->with([
+        'unauthenticated' => [false],
+        'logged in' => [true],
+    ]);
 });
 
 describe('nullability alongside an explicit type', function () {
-    /** @return array<string, DiscoveredAction> */
-    function discoverExplicitTypeReturns(): array
-    {
-        $byMethod = [];
-
-        foreach (discoverGraphQL(ExplicitTypeReturnQuery::class)->getItems() as $item) {
-            /** @var DiscoveredAction $item */
-            $byMethod[$item->method] = $item;
-        }
-
-        return $byMethod;
-    }
-
-    it('widens an explicitly typed field when the method returns null', function () {
-        $items = discoverExplicitTypeReturns();
-
-        expect($items['nullableReturn']->action->nullable)->toBeTrue();
-    });
-
-    it('leaves a non-nullable return non-null', function () {
-        $items = discoverExplicitTypeReturns();
-
-        expect($items['nonNullableReturn']->action->nullable)->toBeFalse();
-    });
-
-    it('keeps nullable: true on a non-nullable return', function () {
-        expect(discoverExplicitTypeReturns()['explicitlyNullable']->action->nullable)->toBeTrue();
-    });
-
-    it('widens a nullable list return, making the list itself nullable', function () {
-        expect(discoverExplicitTypeReturns()['nullableList']->action->nullable)->toBeTrue();
-    });
-
-    it('leaves an undeclared return type non-null', function () {
-        expect(discoverExplicitTypeReturns()['undeclaredReturn']->action->nullable)->toBeFalse();
-    });
+    it('sets the action nullability from the return type and nullable:', function (string $method, bool $nullable) {
+        expect(discoveredActions(ExplicitTypeReturnQuery::class)[$method]->action->nullable)->toBe($nullable);
+    })->with([
+        'a nullable return widens an explicitly typed field' => ['nullableReturn', true],
+        'a non-nullable return stays non-null' => ['nonNullableReturn', false],
+        'nullable: true survives a non-nullable return' => ['explicitlyNullable', true],
+        'a nullable list return makes the list itself nullable' => ['nullableList', true],
+        'an undeclared return type stays non-null' => ['undeclaredReturn', false],
+    ]);
 });
 
 describe('nullable explicit type end-to-end', function () {

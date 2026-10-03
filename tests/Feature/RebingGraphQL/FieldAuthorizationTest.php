@@ -5,48 +5,20 @@ declare(strict_types=1);
 namespace Tests\Feature\RebingGraphQL;
 
 use Illuminate\Support\Facades\Gate;
-use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorize;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDecoratorReference;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldSource;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
 use RuntimeException;
 use Tests\Fixtures\RebingGraphQL\Types\Authorization\GuardedCatalog;
-use Tests\Fixtures\RebingGraphQL\Types\Authorization\Invalid;
 use Tests\Fixtures\RebingGraphQL\Types\Authorization\Member;
 use Tests\Fixtures\RebingGraphQL\Types\Authorization\MemberQuery;
 use Tests\Fixtures\RebingGraphQL\Types\Authorization\StaffOnlyGate;
 use Tests\Fixtures\RebingGraphQL\Types\Decorators\Headline;
 use Tests\Fixtures\RebingGraphQL\Types\Decorators\HeadlineQuery;
 use Tests\Fixtures\RebingGraphQL\Types\Decorators\Uppercase;
-use Tests\Fixtures\RebingGraphQL\Types\Decorators\UppercaseOnInt;
 use Workbench\App\Models\User;
-
-/**
- * @return array<string, mixed>
- */
-function queryMember(string $selection, string $name = 'Ada'): array
-{
-    $json = test()->postJson('/graphql', ['query' => "{ member(name: \"$name\") { $selection } }"])
-        ->assertOk()
-        ->json();
-
-    return is_array($json) ? $json : [];
-}
-
-/**
- * @param  class-string  $class
- */
-function discoveredTypeOf(string $class): DiscoveredType
-{
-    foreach (discoverGraphQL($class)->getItems() as $item) {
-        if ($item instanceof DiscoveredType) {
-            return $item;
-        }
-    }
-
-    throw new LogicException("$class was not discovered.");
-}
 
 /**
  * @return array<string, list<object>> decorators keyed by field name
@@ -92,7 +64,7 @@ describe('field authorization', function () {
     });
 
     it('keeps the #[Authorize] instances on the field, in declaration order, through serialization', function () {
-        $type = discoveredTypeOf(Member::class);
+        $type = discoveredTypes(Member::class)[0];
         $address = decoratorsOf($type)['address'];
 
         expect(decoratorsOf($type)['name'])->toBe([])
@@ -107,11 +79,11 @@ describe('field authorization', function () {
         it('resolves the field for a signed-in caller', function () {
             $this->actingAs(new User());
 
-            expect(queryMember('handle'))->toBe(['data' => ['member' => ['handle' => 'ada']]]);
+            expect(queryGraphQL('{ member(name: "Ada") { handle } }'))->toBe(['data' => ['member' => ['handle' => 'ada']]]);
         });
 
         it('resolves the field to null for a guest', function () {
-            expect(queryMember('name handle'))->toBe(['data' => ['member' => ['name' => 'Ada', 'handle' => null]]]);
+            expect(queryGraphQL('{ member(name: "Ada") { name handle } }'))->toBe(['data' => ['member' => ['name' => 'Ada', 'handle' => null]]]);
         });
     });
 
@@ -119,7 +91,7 @@ describe('field authorization', function () {
         it('checks the ability against the parent object and resolves the field when allowed', function () {
             $this->actingAs(new User());
 
-            expect(queryMember('email birthday'))->toBe(['data' => ['member' => [
+            expect(queryGraphQL('{ member(name: "Ada") { email birthday } }'))->toBe(['data' => ['member' => [
                 'email' => 'ada@example.com',
                 'birthday' => '1815-12-10',
             ]]])
@@ -129,7 +101,7 @@ describe('field authorization', function () {
         it('resolves the field to null without running the resolver when denied', function () {
             $this->actingAs(new User());
 
-            expect(queryMember('name email birthday', 'Grace'))->toBe(['data' => ['member' => [
+            expect(queryGraphQL('{ member(name: "Grace") { name email birthday } }'))->toBe(['data' => ['member' => [
                 'name' => 'Grace',
                 'email' => null,
                 'birthday' => null,
@@ -142,7 +114,7 @@ describe('field authorization', function () {
         it('resolves the field when the gate allows, passing it the parent object', function () {
             $this->actingAs(new User(['name' => 'staff']));
 
-            expect(queryMember('salary'))->toBe(['data' => ['member' => ['salary' => '100']]])
+            expect(queryGraphQL('{ member(name: "Ada") { salary } }'))->toBe(['data' => ['member' => ['salary' => '100']]])
                 ->and(StaffOnlyGate::$calls)->toHaveCount(1)
                 ->and(StaffOnlyGate::$calls[0][0])->toBeInstanceOf(Member::class)
                 ->and(StaffOnlyGate::$calls[0][1])->toBe('salary');
@@ -151,7 +123,7 @@ describe('field authorization', function () {
         it('resolves the field to null when the gate denies', function () {
             $this->actingAs(new User(['name' => 'visitor']));
 
-            expect(queryMember('salary'))->toBe(['data' => ['member' => ['salary' => null]]]);
+            expect(queryGraphQL('{ member(name: "Ada") { salary } }'))->toBe(['data' => ['member' => ['salary' => null]]]);
         });
     });
 
@@ -159,7 +131,7 @@ describe('field authorization', function () {
         it('resolves the field when allowed', function () {
             $this->actingAs(new User(['name' => 'staff']));
 
-            expect(queryMember('notes phone diary'))->toBe(['data' => ['member' => [
+            expect(queryGraphQL('{ member(name: "Ada") { notes phone diary } }'))->toBe(['data' => ['member' => [
                 'notes' => 'Prefers mornings',
                 'phone' => '555-0100',
                 'diary' => 'Dear diary',
@@ -187,7 +159,7 @@ describe('field authorization', function () {
         it('checks an ability against the parent object', function () {
             $this->actingAs(new User());
 
-            expect(queryMember('postcode'))->toBe(['data' => ['member' => ['postcode' => '1815 AL']]]);
+            expect(queryGraphQL('{ member(name: "Ada") { postcode } }'))->toBe(['data' => ['member' => ['postcode' => '1815 AL']]]);
 
             $this->postJson('/graphql', ['query' => '{ member(name: "Grace") { name postcode } }'])
                 ->assertOk()
@@ -210,19 +182,19 @@ describe('field authorization', function () {
         it('resolves the field when every one passes', function () {
             $this->actingAs(new User());
 
-            expect(queryMember('address'))->toBe(['data' => ['member' => ['address' => 'Analytical Street 1']]]);
+            expect(queryGraphQL('{ member(name: "Ada") { address } }'))->toBe(['data' => ['member' => ['address' => 'Analytical Street 1']]]);
         });
 
         it('resolves the field to null when any one fails', function () {
             $this->actingAs(new User());
 
-            expect(queryMember('address', 'Grace'))->toBe(['data' => ['member' => ['address' => null]]]);
+            expect(queryGraphQL('{ member(name: "Grace") { address } }'))->toBe(['data' => ['member' => ['address' => null]]]);
         });
 
         it('resolves the field to null for a guest', function () {
             Gate::define('viewContactDetails', fn(?User $user) => true);
 
-            expect(queryMember('address'))->toBe(['data' => ['member' => ['address' => null]]]);
+            expect(queryGraphQL('{ member(name: "Ada") { address } }'))->toBe(['data' => ['member' => ['address' => null]]]);
         });
     });
 
@@ -230,13 +202,13 @@ describe('field authorization', function () {
         it('resolves the field when both pass', function () {
             $this->actingAs(new User(['name' => 'staff']));
 
-            expect(queryMember('vault'))->toBe(['data' => ['member' => ['vault' => 'Engine plans']]]);
+            expect(queryGraphQL('{ member(name: "Ada") { vault } }'))->toBe(['data' => ['member' => ['vault' => 'Engine plans']]]);
         });
 
         it('resolves to null without an error when the null check fails, and never reaches the error check', function () {
             $this->actingAs(new User(['name' => 'staff']));
 
-            expect(queryMember('vault', 'Grace'))->toBe(['data' => ['member' => ['vault' => null]]])
+            expect(queryGraphQL('{ member(name: "Grace") { vault } }'))->toBe(['data' => ['member' => ['vault' => null]]])
                 ->and(StaffOnlyGate::$calls)->toBe([]);
         });
 
@@ -262,7 +234,7 @@ describe('class-level #[Authorize] on a #[Type] with actions', function () {
               title: String!
             }
             GRAPHQL)
-            ->and(decoratorsOf(discoveredTypeOf(GuardedCatalog::class)))->toBe(['title' => []]);
+            ->and(decoratorsOf(discoveredTypes(GuardedCatalog::class)[0]))->toBe(['title' => []]);
     });
 
     it('still authorizes the action', function () {
@@ -305,7 +277,7 @@ describe('custom field decorators', function () {
     });
 
     it('stores serializable decorators as instances, and the rest as references read again by reflection', function () {
-        $type = discoveredTypeOf(Headline::class);
+        $type = discoveredTypes(Headline::class)[0];
         $decorators = decoratorsOf($type);
 
         expect($decorators['shouted'])->toEqual([new Uppercase()])
@@ -322,50 +294,13 @@ describe('custom field decorators', function () {
     });
 
     it('lets a decorator reject a field it cannot apply to', function () {
-        expect(fn() => discoverGraphQL(UppercaseOnInt::class))
-            ->toThrow(LogicException::class, 'Property ' . UppercaseOnInt::class . '::$count has #[Uppercase] but is not a string.');
+        expectRejected(
+            new #[Type]
+            class {
+                #[Uppercase]
+                public int $count = 1;
+            },
+            'Property %1$s::$count has #[Uppercase] but is not a string.',
+        );
     });
-});
-
-describe('rejections', function () {
-    it('rejects shapes that cannot work', function (string $class, string $message) {
-        expect(fn() => discoverGraphQL($class))->toThrow(LogicException::class, $message);
-    })->with([
-        '#[Authorize] on a #[Type] class without actions' => [
-            Invalid\AuthorizeOnTypeClass::class,
-            '#[Authorize] on the #[Type] class ' . Invalid\AuthorizeOnTypeClass::class . ' has nothing to apply to: on a class it only reaches #[Query] and #[Mutation] methods, never fields. Put it on each property or #[Field] method it should guard.',
-        ],
-        '#[Authorize] on a method without #[Field]' => [
-            Invalid\AuthorizeOnPlainMethod::class,
-            'Method ' . Invalid\AuthorizeOnPlainMethod::class . '::secret() has #[Authorize] but is not a field. Add #[Field], or remove #[Authorize].',
-        ],
-        'an ability and a gate' => [
-            Invalid\AbilityAndGate::class,
-            'Property ' . Invalid\AbilityAndGate::class . '::$name has #[Authorize] with both an ability and gate:.',
-        ],
-        'a gate that is no AuthorizationGate' => [
-            Invalid\GateNotAGate::class,
-            'Property ' . Invalid\GateNotAGate::class . '::$name has #[Authorize(gate: ' . Member::class . ')], which does not implement',
-        ],
-        'message: on a field that resolves to null' => [
-            Invalid\MessageWithoutError::class,
-            'Property ' . Invalid\MessageWithoutError::class . '::$name has #[Authorize(message:)], but a denied field resolves to null, so the message is never shown. Add onDenied: Denied::Error, or remove message:.',
-        ],
-        '#[Authorize] on an ignored property' => [
-            Invalid\AuthorizeOnIgnoredProperty::class,
-            'Property ' . Invalid\AuthorizeOnIgnoredProperty::class . '::$name has #[Authorize] but is not a field',
-        ],
-        '#[Authorize] on a private property' => [
-            Invalid\AuthorizeOnPrivateProperty::class,
-            'Property ' . Invalid\AuthorizeOnPrivateProperty::class . '::$name has #[Authorize] but is not a field',
-        ],
-        'onDenied: on a query' => [
-            Invalid\OnDeniedQuery::class,
-            'Method ' . Invalid\OnDeniedQuery::class . '::secret has #[Authorize(onDenied:)], which only applies to a field of a #[Type].',
-        ],
-        'onDenied: on a parameter' => [
-            Invalid\OnDeniedParameterQuery::class,
-            '#[Authorize(onDenied:)] on the parameter $user in ' . Invalid\OnDeniedParameterQuery::class . '::userName only applies to a field of a #[Type].',
-        ],
-    ]);
 });

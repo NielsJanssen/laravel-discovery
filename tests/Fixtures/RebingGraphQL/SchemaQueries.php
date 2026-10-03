@@ -9,16 +9,30 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Schema;
 
 #[Schema('admin')]
-class SchemaOnClassQuery
+class SchemaQueries
 {
     #[Query(name: 'classLevelQuery')]
-    public function resolveQuery(): string
+    public function classLevelQuery(): string
     {
         return 'ok';
     }
 
     #[Mutation(name: 'classLevelMutation')]
-    public function resolveMutation(): string
+    public function classLevelMutation(): string
+    {
+        return 'ok';
+    }
+
+    #[Query(name: 'methodWins')]
+    #[Schema('public')]
+    public function methodWins(): string
+    {
+        return 'ok';
+    }
+
+    #[Query(name: 'explicitWins', schema: 'reports')]
+    #[Schema('public')]
+    public function explicitWins(): string
     {
         return 'ok';
     }
