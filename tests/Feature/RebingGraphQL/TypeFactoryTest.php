@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
+use GraphQL\Type\Definition\ResolveInfo;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
@@ -17,6 +18,8 @@ use stdClass;
 use Tests\Fixtures\RebingGraphQL\Factories\AcmeCompany;
 use Tests\Fixtures\RebingGraphQL\Factories\AcmeCompanyFields;
 use Tests\Fixtures\RebingGraphQL\Factories\AcmeCompanyQuery;
+use Tests\Fixtures\RebingGraphQL\Factories\AcmeLookup;
+use Tests\Fixtures\RebingGraphQL\Factories\AcmeLookupQuery;
 use Tests\Fixtures\RebingGraphQL\Factories\AcmeYielded;
 use Tests\Fixtures\RebingGraphQL\Factories\AcmeYieldedFields;
 use Tests\Fixtures\RebingGraphQL\Factories\AcmeYieldedQuery;
@@ -148,4 +151,94 @@ describe('building', function () {
 
         expect(discoveredTypes(AcmeYielded::class))->toHaveCount(1);
     });
+});
+
+describe('resolvers and args', function () {
+    it('prints the args of a factory field, named by the argument strategy', function () {
+        expect(sdlDefinitions(schemaSdl(AcmeLookupQuery::class, AcmeLookup::class)))->toContain(<<<'GRAPHQL'
+            type AcmeLookup {
+              name: String!
+
+              "Looks a region up"
+              regionLabel(
+                "The code"
+                region_code: String!
+
+                upper: Boolean
+              ): String!
+            }
+            GRAPHQL);
+    });
+
+    it('runs the resolve closure with the args keyed as declared, and injects the factory dependencies', function () {
+        schemaSdl(AcmeLookupQuery::class, AcmeLookup::class);
+
+        expect(GraphQL::query('{ lookup { regionLabel(region_code: "eu") } }')['data']['lookup'])->toBe(['regionLabel' => 'Region eu'])
+            ->and(GraphQL::query('{ lookup { regionLabel(region_code: "eu", upper: true) } }')['data']['lookup'])->toBe(['regionLabel' => 'REGION EU']);
+    });
+
+    it('passes the root and the resolve info to the closure', function () {
+        $seen = [];
+        $field = new Field(name: 'seen', type: 'string', resolve: function (mixed $root, array $args, mixed $context, ResolveInfo $info) use (&$seen): string {
+            $seen = [$root::class, $args, $info->fieldName];
+
+            return 'ok';
+        });
+
+        yieldFactoryFields([$field]);
+
+        expect(GraphQL::query('{ yielded { seen } }')['data']['yielded'])->toBe(['seen' => 'ok'])
+            ->and($seen)->toBe([AcmeYielded::class, [], 'seen']);
+    });
+
+    it('keeps arg names as declared without a naming strategy', function () {
+        $sdl = yieldFactoryFields([new Field(name: 'echo', type: 'string', args: ['someText' => new Field(of: 'string')], resolve: fn($root, array $args): string => implode(',', $args['someText']))]);
+
+        expect($sdl)->toContain('echo(someText: [String!]!): String!')
+            ->and(GraphQL::query('{ yielded { echo(someText: ["a", "b"]) } }')['data']['yielded'])->toBe(['echo' => 'a,b']);
+    });
+
+    it('serves a factory type from the discovery cache', function () {
+        applyCachedGraphQL([AcmeLookupQuery::class, AcmeLookup::class]);
+
+        expect(GraphQL::query('{ lookup { name regionLabel(region_code: "nl") } }')['data']['lookup'])->toBe(['name' => 'Acme', 'regionLabel' => 'Region nl']);
+    });
+
+    it('rejects what a field arg cannot do', function (Field $arg, string $message) {
+        expect(fn() => yieldFactoryFields([new Field(name: 'echo', type: 'string', args: ['text' => $arg])]))
+            ->toThrow(LogicException::class, $message);
+    })->with([
+        'rules' => [new Field(type: 'string', rules: ['min:2']), 'sets rules:, which are not applied to the args of a type field'],
+        'no type' => [new Field(), 'Argument "echo(text)" from the type factory'],
+        'type and of' => [new Field(type: 'string', of: 'string'), 'sets both type: and of:'],
+    ]);
+
+    it('rejects two args that end up with one name', function () {
+        expect(fn() => yieldFactoryFields([new Field(name: 'echo', type: 'string', args: ['text' => new Field(type: 'string'), 'text ' => new Field(type: 'string')])]))
+            ->toThrow(LogicException::class);
+    });
+
+    it('rejects #[Field(resolve:)] and #[Field(args:)] on a declared member', function (object $shape, string $format) {
+        expectRejected($shape, $format);
+    })->with([
+        'resolve on a property' => [
+            fn() => new #[Type] class {
+                #[Field(resolve: static function (): string {
+                    return 'x';
+                })]
+                public string $name = 'Acme';
+            },
+            'Property %1$s::$name has #[Field(resolve:)] or #[Field(args:)], which only a field yielded by a TypeFactory can set.',
+        ],
+        'args on a method' => [
+            fn() => new #[Type] class {
+                #[Field(args: ['a' => new Field(type: 'string')])]
+                public function name(): string
+                {
+                    return 'Acme';
+                }
+            },
+            'Method %1$s::name() has #[Field(resolve:)] or #[Field(args:)], which only a field yielded by a TypeFactory can set.',
+        ],
+    ]);
 });
