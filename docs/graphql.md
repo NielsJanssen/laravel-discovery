@@ -259,6 +259,110 @@ A decorator is cached with discovery when it serializes; one that holds a closur
 the type is built. A `FieldDecorator` on a method without `#[Field]`, `#[Query]` or `#[Mutation]`, or on a property that
 is not a field, is an error.
 
+### Eloquent models
+
+`#[Type]` works on an Eloquent model too. Its fields come from virtual hooked properties that read the model's
+attributes, and from `#[Field]` methods:
+
+```php
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
+
+#[Type]
+class Article extends Model
+{
+    #[Field(type: 'ID')]
+    public int $id { get => $this->getKey(); }
+
+    public string $title {
+        get => $this->getAttribute('title');
+        set(string $value) { $this->setAttribute('title', $value); }
+    }
+
+    #[Field(type: 'String')]
+    public ?CarbonImmutable $publishedAt { get => $this->getAttribute('published_at'); }
+
+    public ArticleStatus $status { get => $this->getAttribute('status'); }   // a PHP enum
+
+    #[Authorize('viewSales')]
+    public int $copiesSold { get => $this->getAttribute('copies_sold'); }
+
+    #[Field(description: 'The title in capitals')]
+    public function headline(): string { return Str::upper($this->title); }
+
+    protected function casts(): array
+    {
+        return [
+            'published_at' => 'immutable_datetime',
+            'status' => ArticleStatus::class,
+            'copies_sold' => 'integer',
+        ];
+    }
+}
+
+class Articles
+{
+    #[Query]
+    public function article(#[Arg('id')] Article $article): Article { return $article; }
+
+    #[Mutation]
+    public function retitleArticle(#[Arg('id')] Article $article, string $title): Article
+    {
+        $article->title = $title;   // the set hook marks the attribute dirty
+        $article->save();
+
+        return $article;
+    }
+}
+```
+
+```graphql
+type Article {
+  id: ID!
+  title: String!
+  publishedAt: String
+  status: ArticleStatus!
+  copiesSold: Int          # nullable because of #[Authorize]
+  "The title in capitals"
+  headline: String!
+}
+
+enum ArticleStatus {
+  Draft
+  Published
+}
+
+type Query {
+  article(id: ID!): Article!
+}
+
+type Mutation {
+  retitleArticle(title: String!, id: ID!): Article!
+}
+```
+
+- **Framework members are skipped.** Anything declared in a class or trait under the `Illuminate\` namespace, such as
+  `$exists`, `$timestamps`, `$incrementing` and `$wasRecentlyCreated`, never becomes a field, also when the model
+  redeclares it (`public $timestamps = false;`). This holds for any `#[Type]` class, so a class using
+  `Illuminate\Bus\Queueable` does not expose `$queue` either.
+- **Hooks must be virtual.** A hook reads and writes through `getAttribute()` and `setAttribute()`, so the casts, the
+  dirty tracking, `toArray()` and `save()` keep working. A plain public property declared in the model itself would
+  shadow the attribute of the same name, so discovery rejects it with a `LogicException`. Make it a virtual hooked
+  property, or mark it `#[Ignore]` when it is deliberately not an attribute (a transient flag, say); an ignored
+  property is left alone.
+- **Traits.** A hooked property from a trait is a field like any other. A plain public property from a trait, such as
+  a package's bookkeeping property, is skipped rather than rejected, since you cannot add `#[Ignore]` to vendor code.
+- **Casts and decorators.** A cast attribute reads through the hook as its cast value, so an enum cast gives a
+  [GraphQL enum](#enums). Field decorators such as `#[Authorize]` work on hooked properties and receive the model as
+  the root. A decorator on a property that is skipped (a framework property, or a plain one from a trait) is an error.
+- **Models in input position stay bindings.** A model parameter is still an `ID` argument with a route-key lookup, as
+  described under [Model binding](#model-binding), even when the model is a `#[Type]`. Only the return type uses the
+  object type.
+- **Dates need an explicit type for now.** `CarbonImmutable` has no GraphQL counterpart yet, so name one with
+  `#[Field(type: 'String')]`; the value is printed through its `__toString()`.
+- Discovery reads the model through reflection only: it never instantiates the model or queries the database.
+
 ## Enums
 
 Any PHP enum, backed or not, becomes a GraphQL enum as soon as a query, a mutation, a `#[Type]` field or an argument
