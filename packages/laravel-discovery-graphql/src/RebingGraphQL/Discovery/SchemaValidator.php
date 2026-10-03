@@ -151,7 +151,7 @@ final class SchemaValidator
 
             foreach ($item->fields as $field) {
                 foreach ($field->parameters->args as $arg) {
-                    $input = $inputs[trim($arg->ref()->target(), '[]!')] ?? null;
+                    $input = $inputs[trim($arg->type->target(), '[]!')] ?? null;
 
                     if ($input !== null) {
                         throw new LogicException(sprintf(

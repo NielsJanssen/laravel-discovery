@@ -33,7 +33,7 @@ final class TypeUsage
         }
 
         foreach ($action->args as $arg) {
-            $ref = $arg->ref();
+            $ref = $arg->type;
 
             if (self::refers($ref)) {
                 yield new TypeReference($ref, Position::Input, "Argument {$arg->name} of " . lcfirst($method), 'Arg');
@@ -66,7 +66,7 @@ final class TypeUsage
             }
 
             foreach ($field->parameters->args as $arg) {
-                $ref = $arg->ref();
+                $ref = $arg->type;
 
                 if (self::refers($ref)) {
                     yield new TypeReference($ref, Position::Input, "Argument {$arg->name} of " . lcfirst($member), 'Arg');

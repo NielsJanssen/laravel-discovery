@@ -11,7 +11,6 @@ use Illuminate\Support\ServiceProvider;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorization;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredArg;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscoveryServiceProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
@@ -100,17 +99,6 @@ describe('the contract', function () {
         (new GraphQLDiscoveryServiceProvider(app()))->register();
 
         expect(config('discovery.graphql.scalars'))->toBe([CarbonInterface::class => 'DateTime']);
-    });
-
-    it('resolves the type of an arg cached before typeRef existed', function () {
-        $current = serialize(new DiscoveredArg('mood', 'mood', 'string', false));
-        $stale = str_replace([':11:{', 's:7:"typeRef";N;'], [':10:{', ''], $current);
-
-        $arg = unserialize($stale);
-
-        expect($stale)->not->toBe($current)
-            ->and($arg)->toBeInstanceOf(DiscoveredArg::class)
-            ->and($arg->ref())->toEqual(TypeRef::scalar('string'));
     });
 
     it('does not infer ID for an id without a mapper', function () {
@@ -209,7 +197,7 @@ describe('mapped types', function () {
         );
 
         expect($action)->toBeInstanceOf(DiscoveredAction::class)
-            ->and($action->args[0]->typeRef)->toEqual(TypeRef::named('Money'))
+            ->and($action->args[0]->type)->toEqual(TypeRef::named('Money'))
             ->and($action->returnType)->toEqual(TypeRef::named('Money'));
 
         app()->instance(TypeMapperRegistry::class, new TypeMapperRegistry());
@@ -271,7 +259,7 @@ describe('what mappers never claim', function () {
             ->and($action->containerInjections)->toBe(['service' => ContainerService::class])
             ->and($action->argCompositions)->toBe(['auth' => Authorization::class])
             ->and($action->injections)->toBe(['root' => 'root', 'context' => 'context', 'info' => 'info'])
-            ->and(array_map(static fn($arg) => [$arg->paramName, $arg->ref()], $action->args))->toEqual([['note', TypeRef::scalar('String')]])
+            ->and(array_map(static fn($arg) => [$arg->paramName, $arg->type], $action->args))->toEqual([['note', TypeRef::scalar('String')]])
             ->and($action->returnType)->toEqual(TypeRef::scalar('String'));
 
         expect(schemaSdlWith(MAPPED_SCALARS, Mappers\NotPreemptedQuery::class))->toContain('owner(note: String!, id: ID!): String!');
@@ -285,7 +273,7 @@ describe('what mappers never claim', function () {
         expect($action->containerInjections)->toBe(['amount' => Mappers\Money::class])
             ->and($action->args)->toHaveCount(1)
             ->and($action->args[0]->paramName)->toBe('other')
-            ->and($action->args[0]->ref())->toEqual(TypeRef::named('Money'));
+            ->and($action->args[0]->type)->toEqual(TypeRef::named('Money'));
     });
 
     it('still reports an untyped or mixed member, even with a mapper that claims everything', function (object $shape, string $format, string $exception) {

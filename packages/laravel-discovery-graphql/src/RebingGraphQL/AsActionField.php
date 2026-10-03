@@ -60,7 +60,7 @@ trait AsActionField
         $registry = $this->app->make(TypeRegistry::class);
 
         foreach ($this->discoveredAction->args as $arg) {
-            $entry = ['type' => $registry->resolve($arg->ref(), Position::Input)];
+            $entry = ['type' => $registry->resolve($arg->type, Position::Input)];
 
             if ($arg->description !== null) {
                 $entry['description'] = $arg->description;
@@ -153,8 +153,8 @@ trait AsActionField
         foreach ($this->discoveredAction->args as $discovered) {
             $value = $args[$discovered->name] ?? null;
 
-            if ($discovered->input && is_array($value) && class_exists($discovered->type)) {
-                $value = $hydrators->hydrate($discovered->type, array_filter($value, is_string(...), ARRAY_FILTER_USE_KEY));
+            if ($discovered->input && is_array($value) && $discovered->type->class !== null) {
+                $value = $hydrators->hydrate($discovered->type->class, array_filter($value, is_string(...), ARRAY_FILTER_USE_KEY));
             }
 
             $mappedArgs[$discovered->paramName] = $value ?? $discovered->defaultValue;

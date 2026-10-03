@@ -81,7 +81,7 @@ final class DiscoveredObjectType extends RebingType
         $args = [];
 
         foreach ($field->parameters->args as $arg) {
-            $entry = ['type' => $registry->resolve($arg->ref(), Position::Input)];
+            $entry = ['type' => $registry->resolve($arg->type, Position::Input)];
 
             if ($arg->hasDefault && $arg->defaultValue !== null) {
                 $entry['defaultValue'] = $arg->defaultValue;

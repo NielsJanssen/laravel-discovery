@@ -258,7 +258,7 @@ describe('discovery', function () {
     it('classifies an enum parameter as an arg, not a container injection', function () {
         $action = discoveredActions(Enums\MoodArgQuery::class)['mood'];
 
-        expect(array_map(static fn($arg) => [$arg->name, $arg->type, $arg->nullable], $action->args))->toBe([
+        expect(array_map(static fn($arg) => [$arg->name, $arg->type->target(), $arg->type->nullable], $action->args))->toBe([
             ['mood', Enums\Mood::class, false],
             ['fallback', Enums\Mood::class, true],
             ['preset', Enums\Mood::class, true],
