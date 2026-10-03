@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
+use Illuminate\Contracts\Foundation\CachesConfiguration;
 use Illuminate\Support\ServiceProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgsHydrator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
@@ -11,6 +12,9 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\LaravelValidationRules;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\ScalarMap;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapper;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
 use NielsJanssen\Laravel\Validation\RuleCompiler;
 use RuntimeException;
 
@@ -21,14 +25,25 @@ use RuntimeException;
  *
  *     $this->app->tag([MyRules::class], RuleProvider::TAG);
  *     $this->app->tag([MyHydrator::class], Hydrator::TAG);
+ *     $this->app->tag([MyMapper::class], TypeMapper::TAG);
+ *
+ * Tagged type mappers are asked before the built-in ScalarMap.
  *
  * Tagging happens in register(), so it is in place before DiscoveryServiceProvider::boot() runs
  * discovery — which needs the hydrators to decide which parameters are hydrated.
  */
 final class GraphQLDiscoveryServiceProvider extends ServiceProvider
 {
+    private const string CONFIG = __DIR__ . '/../../config/discovery-graphql.php';
+
     public function register(): void
     {
+        $this->mergeConfig();
+
+        $this->publishes([
+            self::CONFIG => config_path('discovery-graphql.php'),
+        ], 'discovery-graphql-config');
+
         $this->app->tag([ComposedFromArgsHydrator::class], Hydrator::TAG);
 
         // Our validation package is a suggestion, not a requirement: without it the hook simply has
@@ -48,11 +63,38 @@ final class GraphQLDiscoveryServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(
+            TypeMapperRegistry::class,
+            fn(): TypeMapperRegistry => new TypeMapperRegistry([
+                ...$this->tagged(TypeMapper::TAG, TypeMapper::class),
+                $this->app->make(ScalarMap::class),
+            ]),
+        );
+
+        $this->app->singleton(
             RuleProviderRegistry::class,
             fn(): RuleProviderRegistry => new RuleProviderRegistry(
                 $this->tagged(RuleProvider::TAG, RuleProvider::class),
             ),
         );
+    }
+
+    /** Fills `discovery.graphql` from the package defaults, a published `config/discovery-graphql.php`, then `discovery.graphql` itself. */
+    private function mergeConfig(): void
+    {
+        if ($this->app instanceof CachesConfiguration && $this->app->configurationIsCached()) {
+            return;
+        }
+
+        $config = $this->app->make('config');
+        $defaults = require self::CONFIG;
+        $published = $config->get('discovery-graphql', []);
+        $own = $config->get('discovery.graphql', []);
+
+        $config->set('discovery.graphql', [
+            ...(is_array($defaults) ? $defaults : []),
+            ...(is_array($published) ? $published : []),
+            ...(is_array($own) ? $own : []),
+        ]);
     }
 
     /**

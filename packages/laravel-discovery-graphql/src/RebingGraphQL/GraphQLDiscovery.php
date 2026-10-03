@@ -12,6 +12,8 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\EnumCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ParameterClassifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeInferrer;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
 use Rebing\GraphQL\GraphQL;
 use Rebing\GraphQL\Support\Mutation as RebingMutation;
 use Rebing\GraphQL\Support\Query as RebingQuery;
@@ -104,8 +106,14 @@ final class GraphQLDiscovery implements Discovery
 
             $typeBuilder = $this->resolveTypeBuilder($class, $method);
 
+            $inferred = null;
+
             if ($typeBuilder === null && $action->type === null && $action->of === null) {
-                [$action->type, $action->nullable] = $this->discoverActionReturnType($action, $class, $method);
+                $inferred = $this->discoverActionReturnType($action, $class, $method);
+                $action->type = $inferred->target();
+                $action->nullable = $inferred->nullable;
+                $action->list = $action->list || $inferred->list;
+                $action->nullableItems = $action->nullableItems || $inferred->nullableItems;
             } elseif ($method->getReturnType()?->isNullable() === true) {
                 // An explicit type: says which type, not whether the field may be null, so a `?Type`
                 // return still widens it. Inference only ever turns nullability on.
@@ -179,11 +187,15 @@ final class GraphQLDiscovery implements Discovery
                 }
             }
 
-            $returnType = $action->type === null && $action->of === null ? null : TypeRef::fromAction($action);
+            $returnType = match (true) {
+                $inferred !== null => $inferred->wrapped($action->list, $action->nullable, $action->nullableItems),
+                $action->type === null && $action->of === null => null,
+                default => TypeRef::fromAction($action),
+            };
 
             $this->addReferencedEnums($location, [
                 $returnType?->class,
-                ...array_map(static fn(DiscoveredArg $arg): string => $arg->type, $parameters->args),
+                ...array_map(static fn(DiscoveredArg $arg): ?string => $arg->ref()->class, $parameters->args),
             ]);
 
             $this->discoveryItems->add($location, new DiscoveredAction(
@@ -307,7 +319,7 @@ final class GraphQLDiscovery implements Discovery
             yield $field->type->class;
 
             foreach ($field->parameters->args as $arg) {
-                yield $arg->type;
+                yield $arg->ref()->class;
             }
         }
     }
@@ -438,9 +450,9 @@ final class GraphQLDiscovery implements Discovery
     private function argClassReferences(array $args, string $member): iterable
     {
         foreach ($args as $arg) {
-            $class = $arg->type;
+            $class = $arg->ref()->class;
 
-            if (class_exists($class) || interface_exists($class) || enum_exists($class)) {
+            if ($class !== null) {
                 yield [$class, "Argument {$arg->name} of " . lcfirst($member), 'Arg', Position::Input];
             }
         }
@@ -556,23 +568,23 @@ final class GraphQLDiscovery implements Discovery
 
     /**
      * @param  ClassReflector<object>  $class
-     * @return array{0: string, 1: bool} [type, nullable]
      */
-    private function discoverActionReturnType(Action $action, ClassReflector $class, MethodReflector $method): array
+    private function discoverActionReturnType(Action $action, ClassReflector $class, MethodReflector $method): TypeRef
     {
         $returnType = $method->getReflection()->getReturnType();
 
         if ($returnType instanceof ReflectionNamedType && $returnType->getName() === 'void') {
-            return ['void', true];
+            return TypeRef::scalar('void', nullable: true);
         }
 
         try {
-            $ref = $this->inferrer->output(
+            return $this->inferrer->output(
                 $returnType,
                 $class->getName(),
                 sprintf('Method %s::%s', $class->getName(), $method->getName()),
                 class_basename($action::class),
                 nullable: $action->nullable,
+                member: new Member($method->getName(), $method->getReflection()->getDeclaringClass()->getName(), Position::Output, MemberKind::MethodReturn),
             );
         } catch (LogicException $e) {
             throw new RuntimeException(
@@ -580,7 +592,5 @@ final class GraphQLDiscovery implements Discovery
                 previous: $e,
             );
         }
-
-        return [(string) ($ref->class ?? $ref->scalar), $ref->nullable];
     }
 }

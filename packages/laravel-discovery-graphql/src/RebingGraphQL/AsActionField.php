@@ -62,7 +62,7 @@ trait AsActionField
         $registry = $this->app->make(TypeRegistry::class);
 
         foreach ($this->discoveredAction->args as $arg) {
-            $entry = ['type' => $registry->resolve(TypeRef::from($arg->type, nullable: $arg->nullable), Position::Input)];
+            $entry = ['type' => $registry->resolve($arg->ref(), Position::Input)];
 
             if ($arg->description !== null) {
                 $entry['description'] = $arg->description;

@@ -16,5 +16,12 @@ readonly class DiscoveredArg
         public bool    $hasDefault = false,
         public mixed   $defaultValue = null,
         public ?string $deprecationReason = null,
+        /** the type a TypeMapper claimed; wins over $type */
+        public ?TypeRef $typeRef = null,
     ) {}
+
+    public function ref(): TypeRef
+    {
+        return $this->typeRef ?? TypeRef::from($this->type, nullable: $this->nullable);
+    }
 }
