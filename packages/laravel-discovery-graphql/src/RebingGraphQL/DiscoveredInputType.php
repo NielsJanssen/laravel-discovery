@@ -40,31 +40,42 @@ final class DiscoveredInputType extends RebingInputType
         $fields = [];
 
         foreach ($this->discoveredType->fields as $field) {
-            $definition = [
-                'type' => $registry->resolve($field->type, Position::Input),
-                'rules' => $this->rulesResolver($field),
-            ];
-
-            if ($field->description !== null) {
-                $definition['description'] = $field->description;
-            }
-
-            if ($field->deprecationReason !== null) {
-                $definition['deprecationReason'] = $field->deprecationReason;
-            }
-
-            if ($field->hasDefault && $field->defaultValue !== null) {
-                $definition['defaultValue'] = $field->defaultValue;
-            }
-
-            if ($field->name !== $field->phpName) {
-                $definition['alias'] = $field->phpName;
-            }
-
-            $fields[$field->name] = $definition;
+            $fields[$field->name] = self::fieldDefinition($registry, $field, $this->rulesResolver($field), alias: true);
         }
 
         return $fields;
+    }
+
+    /**
+     * One input field's definition, as an input object field or, without the alias, as a flattened arg.
+     *
+     * @return array<string, mixed>
+     */
+    public static function fieldDefinition(TypeRegistry $registry, DiscoveredTypeField $field, ?Closure $rules, bool $alias): array
+    {
+        $definition = ['type' => $registry->resolve($field->type, Position::Input)];
+
+        if ($rules !== null) {
+            $definition['rules'] = $rules;
+        }
+
+        if ($field->description !== null) {
+            $definition['description'] = $field->description;
+        }
+
+        if ($field->deprecationReason !== null) {
+            $definition['deprecationReason'] = $field->deprecationReason;
+        }
+
+        if ($field->hasDefault && $field->defaultValue !== null) {
+            $definition['defaultValue'] = $field->defaultValue;
+        }
+
+        if ($alias && $field->name !== $field->phpName) {
+            $definition['alias'] = $field->phpName;
+        }
+
+        return $definition;
     }
 
     /**
@@ -88,6 +99,19 @@ final class DiscoveredInputType extends RebingInputType
      */
     private function rules(DiscoveredTypeField $field, array $values, array $request): array
     {
+        return [...self::fieldRules($this->discoveredType->class, $field, $values, $request), ...$this->providedRules($values)[$field->phpName] ?? []];
+    }
+
+    /**
+     * A field's own rules: the `exists` rule of a required model binding, then #[Field(rules:)].
+     *
+     * @param  class-string  $class
+     * @param  array<string, mixed>  $values  the input's values, keyed by field name
+     * @param  array<string, mixed>  $request
+     * @return list<mixed>
+     */
+    public static function fieldRules(string $class, DiscoveredTypeField $field, array $values, array $request): array
+    {
         $rules = [];
 
         if ($field->binding !== null && ! $field->binding->nullable) {
@@ -96,7 +120,7 @@ final class DiscoveredInputType extends RebingInputType
         }
 
         if ($field->hasRules) {
-            $declared = $this->declaredRules($field->phpName);
+            $declared = self::declaredRules($class, $field->phpName);
             $declared = $declared instanceof Closure ? $declared($values, $request) : $declared;
 
             $rules = [...$rules, ...match (true) {
@@ -106,7 +130,7 @@ final class DiscoveredInputType extends RebingInputType
             }];
         }
 
-        return [...$rules, ...$this->providedRules($values)[$field->phpName] ?? []];
+        return $rules;
     }
 
     /**
@@ -133,11 +157,11 @@ final class DiscoveredInputType extends RebingInputType
     }
 
     /**
+     * @param  class-string  $class
      * @return array<int|string, mixed>|Closure
      */
-    private function declaredRules(string $property): array|Closure
+    private static function declaredRules(string $class, string $property): array|Closure
     {
-        $class = $this->discoveredType->class;
         $field = (new ReflectionProperty($class, $property)->getAttributes(Field::class)[0] ?? null)?->newInstance();
 
         return $field->rules ?? throw new RuntimeException("Could not find #[Field(rules:)] on $class::\$$property. Run discovery:clear after changing an #[Input] class.");

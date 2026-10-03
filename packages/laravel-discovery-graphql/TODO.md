@@ -5,7 +5,7 @@ Roadmap for fully replacing Rebing's class-based `Query` / `Mutation` / `Type` A
 ## Tier 1 — Parity with Rebing's resolver signature
 
 - **`SelectFields` injection** — a `#[SelectFields]` parameter attribute (or auto-detect by Rebing's `Closure $getSelectFields` injector type) that hands resolvers the same callable Rebing already exposes for Eloquent `with()` pre-loading, with the depth / parsing knobs.
-- **`$args` raw access** — a `#[Args]` parameter attribute that hands the full args array. Most resolvers will not need this, but it is a cheap escape hatch for forward-compat (args not declared on the method, dynamic resolvers, etc). Not to be confused with the planned `#[AsArgs]`, which flattens an `#[Input]` class into the action's own args and hydrates it; `#[Args]` hands over the raw array, untyped and unhydrated.
+- **`$args` raw access** — a `#[Args]` parameter attribute that hands the full args array. Most resolvers will not need this, but it is a cheap escape hatch for forward-compat (args not declared on the method, dynamic resolvers, etc). Not to be confused with `#[AsArgs]`, which flattens an `#[Input]` class into the action's own args and hydrates it; `#[Args]` hands over the raw array, untyped and unhydrated.
 
 ## Tier 2 — Type-system features Rebing has, we don't
 

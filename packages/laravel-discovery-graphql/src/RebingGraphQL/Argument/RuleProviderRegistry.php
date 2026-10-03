@@ -40,6 +40,23 @@ final class RuleProviderRegistry
             $messages = [...$messages, ...$set->messages];
         }
 
+        foreach ($action->flattenedInputs as $flattened) {
+            $set = $this->rulesForInput($flattened->type->class, $flattened->toProperties($args));
+
+            foreach ($set->rules as $property => $contributed) {
+                $path = $flattened->toArgPath($property);
+
+                $rules[$path] = [
+                    ...$rules[$path] ?? [],
+                    ...is_array($contributed) ? $contributed : [$contributed],
+                ];
+            }
+
+            foreach ($set->messages as $key => $message) {
+                $messages[$flattened->toArgPath($key)] = $message;
+            }
+        }
+
         return new ArgumentRules($rules, $messages);
     }
 

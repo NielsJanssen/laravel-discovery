@@ -38,6 +38,8 @@ class DiscoveredAction
         /** @var list<DiscoveredModelBinding> */
         public array $modelBindings = [],
         public ?TypeRef $returnType = null,
+        /** @var list<DiscoveredFlattenedInput> #[AsArgs] parameters, whose fields are top-level args */
+        public array $flattenedInputs = [],
     ) {}
 
     public function createType(Application $app): RebingField

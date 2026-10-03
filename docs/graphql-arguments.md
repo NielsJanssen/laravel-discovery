@@ -102,6 +102,10 @@ final class SpatieDataRules implements RuleProvider, InputRuleProvider
 }
 ```
 
+The same `rulesForInput()` is asked for an input flattened with
+[`#[AsArgs]`](graphql.md#flattening-an-input-with-asargs); its rules and messages are then reported at the top-level
+argument name, such as `year`.
+
 `DiscoveredAction` gives you what you need to speak the boundary's language:
 
 | Member | Use |
@@ -109,6 +113,7 @@ final class SpatieDataRules implements RuleProvider, InputRuleProvider
 | `$class`, `$method` | reflect the action |
 | `$args` | each `DiscoveredArg` carries both `$name` (GraphQL) and `$paramName` (PHP) |
 | `$argCompositions` | `paramName => class-string` for hydrated parameters |
+| `$flattenedInputs` | the `#[AsArgs]` parameters; each has `toProperties(array $args)` and `toArgPath(string $propertyPath)` |
 | `toParameters(array $args)` | re-key request args by parameter name |
 | `toArgPath(string $paramPath)` | translate a parameter path back to an arg path, keeping trailing segments |
 

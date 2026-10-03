@@ -86,6 +86,8 @@ The default `Forbidden` is `Authorize::DEFAULT_MESSAGE`.
 
 The same works on a model property of an [`#[Input]`](graphql.md#input-types). The check runs before validation, for
 the input argument and for every nested input and list item that carries the property, with the same nullability rules.
+It also runs when the input is [flattened with `#[AsArgs]`](graphql.md#flattening-an-input-with-asargs): the property is
+then a top-level `ID` argument, and nested inputs reached through the flattened fields are checked as well.
 
 ```php
 #[Input]

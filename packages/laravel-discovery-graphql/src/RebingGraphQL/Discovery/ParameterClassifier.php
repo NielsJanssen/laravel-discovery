@@ -12,9 +12,11 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\ActionArgProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Arg;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgs;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\AsArgs;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorize;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Context;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredArg;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredFlattenedInput;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredModelBinding;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
@@ -36,6 +38,7 @@ final readonly class ParameterClassifier
     public function __construct(
         private HydratorRegistry $hydrators,
         private TypeMapperRegistry $mappers,
+        private InputCollector $inputs,
     ) {}
 
     /**
@@ -44,13 +47,15 @@ final readonly class ParameterClassifier
      */
     public function classify(ClassReflector $class, MethodReflector $method, array $argProviders = []): ClassifiedParameters
     {
-        $valueObjectClasses = $this->collectValueObjectClasses($argProviders, $class, $method);
+        $providerArgs = $this->providerArgOwners($argProviders, $class, $method);
+        $valueObjectClasses = $this->collectValueObjectClasses($argProviders);
 
         $args = [];
         $injections = [];
         $containerInjections = [];
         $argCompositions = [];
         $modelBindings = [];
+        $flattenedInputs = [];
 
         foreach ($method->getParameters() as $param) {
             // Resolved by $container->call() through the attribute's resolve() hook.
@@ -60,6 +65,11 @@ final readonly class ParameterClassifier
 
             /** @var Arg|null $argAttr */
             $argAttr = $param->getAttribute(Arg::class);
+
+            if ($param->getAttribute(AsArgs::class) !== null) {
+                $flattenedInputs[] = $this->discoverFlattenedInput($argAttr, $param, $class, $method);
+                continue;
+            }
 
             $kind = $this->detectInjectionKind($param);
 
@@ -113,6 +123,7 @@ final readonly class ParameterClassifier
         }
 
         $this->assertNoArgNameCollisions($args, $class, $method);
+        $this->assertNoFlattenedArgCollisions($flattenedInputs, $args, $modelBindings, $providerArgs, $class, $method);
 
         return new ClassifiedParameters(
             args: $args,
@@ -120,21 +131,127 @@ final readonly class ParameterClassifier
             containerInjections: $containerInjections,
             argCompositions: $argCompositions,
             modelBindings: $modelBindings,
+            flattenedInputs: $flattenedInputs,
         );
     }
 
     /**
+     * @param ClassReflector<object> $class
+     */
+    private function discoverFlattenedInput(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method): DiscoveredFlattenedInput
+    {
+        $where = sprintf('#[AsArgs] on the parameter $%s in %s::%s', $param->getName(), $class->getName(), $method->getName());
+        $type = $param->getType();
+
+        if ($argAttr !== null) {
+            throw new LogicException("$where cannot be combined with #[Arg]: the parameter has no arg of its own to name or describe. Remove #[Arg], and rename or describe the fields with #[Field(name:, description:)] on the #[Input] class.");
+        }
+
+        if ($param->getAttributes(Authorize::class) !== []) {
+            throw new LogicException("$where cannot be combined with #[Authorize]: the parameter binds no record of its own. Put #[Authorize('ability')] on the model property of the #[Input] class instead.");
+        }
+
+        $input = $type->isClass() ? $type->asClass() : null;
+
+        if ($input === null || ! Input::marks($input->getName())) {
+            $kind = $this->nonInputKind($param);
+
+            throw new LogicException($kind === null
+                ? sprintf('%s needs an #[Input] class, but $%s is typed %s. Add #[Input] to %s, or remove #[AsArgs].', $where, $param->getName(), $type->getName(), class_basename($type->getName()))
+                : sprintf('%s is not supported: $%s is %s, and #[AsArgs] only applies to a parameter typed as an #[Input] class. Remove #[AsArgs].', $where, $param->getName(), $kind));
+        }
+
+        if ($type->isNullable() || $param->hasDefaultValue()) {
+            throw new LogicException("$where is not supported on a parameter that is nullable or has a default: flattened args cannot say the input as a whole is absent. Make the parameter required, or drop #[AsArgs] to take a nullable input arg.");
+        }
+
+        /** @var Input $attribute */
+        $attribute = $input->getAttribute(Input::class);
+
+        return new DiscoveredFlattenedInput($param->getName(), $this->inputs->collect($input, $attribute));
+    }
+
+    /**
+     * What a parameter that can never take #[Input] is, or null for a plain class that could.
+     */
+    private function nonInputKind(ParameterReflector $param): ?string
+    {
+        if ($this->detectInjectionKind($param) !== null) {
+            return 'an injected value (#[Root], #[Context] or ResolveInfo)';
+        }
+
+        $type = $param->getType();
+
+        return match (true) {
+            interface_exists($type->getName()) => "the interface {$type->getName()}",
+            ! $type->isClass() => "of type {$type->getName()}",
+            $type->isEnum() => "the enum {$type->getName()}",
+            is_a($type->getName(), EloquentModel::class, true) => "the Eloquent model {$type->getName()}, which binds by ID",
+            default => null,
+        };
+    }
+
+    /**
+     * Every flattened field must own its arg name: no other arg, model binding, arg provider or #[AsArgs] may take it.
+     *
+     * @param  list<DiscoveredFlattenedInput>  $flattenedInputs
+     * @param  list<DiscoveredArg>  $args
+     * @param  list<DiscoveredModelBinding>  $modelBindings
+     * @param  array<string, string>  $providerArgs  how to name each arg provider's arg, keyed by arg name
+     * @param  ClassReflector<object>  $class
+     */
+    private function assertNoFlattenedArgCollisions(array $flattenedInputs, array $args, array $modelBindings, array $providerArgs, ClassReflector $class, MethodReflector $method): void
+    {
+        if ($flattenedInputs === []) {
+            return;
+        }
+
+        $owners = $providerArgs;
+
+        foreach ($args as $arg) {
+            $owners[$arg->name] = "the arg of the parameter \${$arg->paramName}";
+        }
+
+        foreach ($modelBindings as $binding) {
+            $owners[$binding->argName] = "the arg of the model-bound parameter \${$binding->paramName}";
+        }
+
+        foreach ($flattenedInputs as $flattened) {
+            foreach ($flattened->type->fields as $field) {
+                $owner = $owners[$field->name] ?? null;
+
+                if ($owner !== null) {
+                    throw new LogicException(sprintf(
+                        '#[AsArgs] on the parameter $%s in %s::%s flattens %s::$%s into the arg "%s", which collides with %s. Rename the field with #[Field(name: ...)], or rename the other arg.',
+                        $flattened->paramName,
+                        $class->getName(),
+                        $method->getName(),
+                        $flattened->type->class,
+                        $field->phpName,
+                        $field->name,
+                        $owner,
+                    ));
+                }
+
+                $owners[$field->name] = sprintf('%s::$%s, flattened by #[AsArgs] on $%s', $flattened->type->class, $field->phpName, $flattened->paramName);
+            }
+        }
+    }
+
+    /**
+     * Each arg provider's args, named for error messages; two providers may not declare one arg.
+     *
      * @param  list<ActionArgProvider>  $argProviders
      * @param  ClassReflector<object>  $class
-     * @return array<class-string<ComposedFromArgs>, class-string<ComposedFromArgs>>
+     * @return array<string, string>
      */
-    private function collectValueObjectClasses(array $argProviders, ClassReflector $class, MethodReflector $method): array
+    private function providerArgOwners(array $argProviders, ClassReflector $class, MethodReflector $method): array
     {
-        $seen = [];
+        $owners = [];
 
         foreach ($argProviders as $provider) {
             foreach (array_keys($provider->provideArgs()) as $name) {
-                if (isset($seen[$name])) {
+                if (isset($owners[$name])) {
                     throw new RuntimeException(sprintf(
                         'Method %s::%s has multiple ActionArgProvider attributes declaring the same arg "%s".',
                         $class->getName(),
@@ -142,10 +259,20 @@ final readonly class ParameterClassifier
                         $name,
                     ));
                 }
-                $seen[$name] = true;
+
+                $owners[(string) $name] = sprintf('the arg #[%s] adds', class_basename($provider::class));
             }
         }
 
+        return $owners;
+    }
+
+    /**
+     * @param  list<ActionArgProvider>  $argProviders
+     * @return array<class-string<ComposedFromArgs>, class-string<ComposedFromArgs>>
+     */
+    private function collectValueObjectClasses(array $argProviders): array
+    {
         $valueObjectClasses = [];
 
         foreach ($argProviders as $provider) {
