@@ -10,11 +10,23 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Paginated;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Pagination;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
 
-class PaginatedWithCustomLimitQuery
+class PaginatedActions
 {
+    #[Query(type: 'Book', name: 'paginatedWithValueObject')]
+    #[Paginated]
+    public function valueObject(Pagination $pagination): LengthAwarePaginator
+    {
+        return new LengthAwarePaginatorImpl(
+            items: [],
+            total: 0,
+            perPage: $pagination->limit,
+            currentPage: $pagination->page,
+        );
+    }
+
     #[Query(type: 'Book', name: 'paginatedCustomLimit')]
     #[Paginated(defaultLimit: 50)]
-    public function resolve(Pagination $pagination): LengthAwarePaginator
+    public function customLimit(Pagination $pagination): LengthAwarePaginator
     {
         return new LengthAwarePaginatorImpl(
             items: [],

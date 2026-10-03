@@ -6,6 +6,8 @@ namespace Tests\Fixtures\RebingGraphQL;
 
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Middleware;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
+use Workbench\App\GraphQL\Middleware\ExclamationMiddleware;
+use Workbench\App\GraphQL\Middleware\UppercaseMiddleware;
 
 #[Middleware(ExclamationMiddleware::class)]
 class MiddlewareQuery

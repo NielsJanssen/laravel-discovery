@@ -6,40 +6,10 @@ namespace Tests\Feature\RebingGraphQL;
 
 use Illuminate\Support\Facades\Gate;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorization;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use Rebing\GraphQL\Error\AuthorizationError;
-use Tempest\Discovery\DiscoveryItems;
-use Tempest\Discovery\DiscoveryLocation;
-use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\RebingGraphQL\AuthorizationHelperQuery;
 use Tests\Fixtures\RebingGraphQL\ReportAbility;
 use Workbench\App\Models\User;
-
-/**
- * @return array<string, DiscoveredAction>
- */
-function discoverAuthorizationHelper(): array
-{
-    $discovery = app(GraphQLDiscovery::class);
-    $discovery->setItems(new DiscoveryItems());
-
-    $location = new DiscoveryLocation(
-        namespace: 'Tests\\Fixtures\\GraphQL',
-        path: dirname(__DIR__, 2) . '/Fixtures/RebingGraphQL',
-    );
-
-    $discovery->discover($location, new ClassReflector(AuthorizationHelperQuery::class));
-
-    $byMethod = [];
-
-    foreach ($discovery->getItems() as $item) {
-        /** @var DiscoveredAction $item */
-        $byMethod[$item->method] = $item;
-    }
-
-    return $byMethod;
-}
 
 describe('Authorization::policy()', function () {
     beforeEach(function () {
@@ -108,14 +78,14 @@ describe('Authorization::policy()', function () {
 
 describe('Authorization injection', function () {
     it('is hydrated as a value object when #[Authorize] provides it', function () {
-        $item = discoverAuthorizationHelper()['composedHelper'];
+        $item = discoveredActions(AuthorizationHelperQuery::class)['composedHelper'];
 
         expect($item->argCompositions)->toBe(['auth' => Authorization::class])
             ->and($item->containerInjections)->toBe([]);
     });
 
     it('falls back to the container when no #[Authorize] is present', function () {
-        $item = discoverAuthorizationHelper()['injectedHelper'];
+        $item = discoveredActions(AuthorizationHelperQuery::class)['injectedHelper'];
 
         expect($item->containerInjections)->toBe(['auth' => Authorization::class])
             ->and($item->argCompositions)->toBe([]);
@@ -123,12 +93,12 @@ describe('Authorization injection', function () {
 
     it('exposes no GraphQL arg for either route', function () {
         foreach (['composedHelper', 'injectedHelper'] as $method) {
-            expect(discoverAuthorizationHelper()[$method]->createType(app())->args())->toBe([]);
+            expect(discoveredActions(AuthorizationHelperQuery::class)[$method]->createType(app())->args())->toBe([]);
         }
     });
 
     it('resolves through both routes', function () {
-        $items = discoverAuthorizationHelper();
+        $items = discoveredActions(AuthorizationHelperQuery::class);
 
         expect($items['composedHelper']->createType(app())->resolve(null, [], null, null))->toBe('ok')
             ->and($items['injectedHelper']->createType(app())->resolve(null, [], null, null))->toBe('ok');
