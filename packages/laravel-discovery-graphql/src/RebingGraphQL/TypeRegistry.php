@@ -80,14 +80,6 @@ final class TypeRegistry
     }
 
     /**
-     * @return class-string|null
-     */
-    public function classOf(string $name): ?string
-    {
-        return $this->classes[$name] ?? null;
-    }
-
-    /**
      * The GraphQL name a reference points at; scalars keep their scalar name.
      */
     public function name(TypeRef $ref, Position $position): string

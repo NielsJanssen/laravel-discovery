@@ -12,6 +12,16 @@ enum TypeKind: string
     case Object = 'object';
     case Union = 'union';
 
+    /** The name of the attribute that declares a type of this kind. */
+    public function attribute(): string
+    {
+        return match ($this) {
+            self::Enum => 'Enum',
+            self::Input => 'Input',
+            self::Interface, self::Object, self::Union => 'Type',
+        };
+    }
+
     public function usableAt(Position $position): bool
     {
         return match ($this) {

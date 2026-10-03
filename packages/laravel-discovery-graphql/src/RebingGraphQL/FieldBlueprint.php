@@ -45,7 +45,7 @@ final class FieldBlueprint
 
     public function nullable(): void
     {
-        $this->typeRef = $this->typeRef->asNullable();
+        $this->typeRef = $this->typeRef->orNullable(true);
     }
 
     /**
