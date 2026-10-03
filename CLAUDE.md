@@ -461,8 +461,10 @@ the specific code path rather than reusing existing ones.
   prerelease whose base is already the target promotes to stable, so `1.0.0-beta.8` + `patch` → `1.0.0`; channels number
   from `.1`). Prereleases are marked as such on GitHub automatically. The workflow then regenerates
   `packages/<package>/CHANGELOG.md` via `git-cliff` (scoped with `--include-path` and `--tag-pattern`), commits it, and
-  tags `<package>@vX.Y.Z`
-- `.github/scripts/bump-version.test.sh` covers the bump table and runs in the CI lint job
+  tags `<package>@vX.Y.Z`. A stable release folds its own prereleases into one section (`--ignore-tags`), and its
+  release notes cover everything since the previous stable tag; `.github/scripts/changelog-tags.sh` computes both
+  filters
+- `.github/scripts/bump-version.test.sh` and `changelog-tags.test.sh` run in the CI lint job
 - **`.github/workflows/split.yml`**: a push to `main` mirrors all three packages to their split repos; a
   `<package>@vX.Y.Z` tag only splits that one package, and the split repo receives the bare `vX.Y.Z` tag
 - Cross-package constraints are **not** bumped automatically — `laravel-discovery-graphql` requires

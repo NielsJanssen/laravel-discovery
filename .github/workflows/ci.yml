@@ -42,6 +42,9 @@ jobs:
       - name: Test release version bumping
         run: .github/scripts/bump-version.test.sh
 
+      - name: Test changelog tag filters
+        run: .github/scripts/changelog-tags.test.sh
+
   analyse:
     name: Static Analysis
     runs-on: ubuntu-24.04
