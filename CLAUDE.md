@@ -400,9 +400,11 @@ even without the GraphQL package present (though the composer dependency makes t
 **Workbench** (`workbench/`): a real Laravel app used for integration tests. `WorkbenchServiceProvider` and
 `GraphQLServiceProvider` are registered alongside `DiscoveryServiceProvider` in `tests/TestCase.php`.
 
-**Test helpers** (defined per-feature file): `discoverCommands()`, `discoverRoutes()`, `registerRoutes()`,
-`discoverSchedule()`, `discoverGraphQL()` — each builds a fresh discoverer, runs `discover()` over specific fixture
-classes, then calls `apply()`. This avoids cross-test pollution from singletons.
+**Test helpers**: `discoverCommands()`, `discoverRoutes()`, `registerRoutes()` and `discoverSchedule()` are defined per
+feature file; each builds a fresh discoverer, runs `discover()` over specific fixture classes, then calls `apply()`.
+This avoids cross-test pollution from singletons. The GraphQL helpers (`discoverGraphQL()`, `discoveredActions()`,
+`expectRejected()`, `schemaSdl()`, the discovery-cache round trip, …) are shared in `tests/Pest.php`; check there before
+writing a local helper.
 
 **Singleton isolation**: Discoverers marked `#[Singleton]` (e.g. `ScheduleDiscovery`) are resolved once during boot.
 Feature tests that exercise such a discoverer in isolation must reset both the discoverer and any Laravel singleton it
@@ -415,9 +417,30 @@ beforeEach(function () {
 });
 ```
 
-**Writing tests**: New code paths must be covered by tests before a task is considered complete. The fixtures pattern
-(one folder per discovery system under `tests/Fixtures/`) is the convention — add narrow fixture classes that exercise
-the specific code path rather than reusing existing ones.
+**Writing tests**: New code paths must be covered by tests before a task is considered complete.
+
+**Fixtures** live under `tests/Fixtures/<system>/`, never under `workbench/app`, which is scanned at boot. Valid shapes
+get a named class; add a method to an existing themed fixture when the test reads by method. A shape rejected in
+`discover()` is an anonymous class inline in the file's rejection dataset, written as a zero-argument non-static
+closure (`fn() => new #[Input] class {…}`; Pest invokes it and hands the test the object) and asserted with
+`expectRejected()`, whose message format takes the class name as `%1$s` and its basename as `%2$s`; a named fixture
+passes as a class-string. A shape stays a
+named class in the group's `Invalid` folder when it is abstract, an enum or an interface; extends an `Illuminate\` or
+Rebing class (an anonymous subclass takes the parent's namespace, so it is treated as a framework class); is used as a
+type by another class; is resolved at runtime (an anonymous action host cannot be called); is rejected at `apply()`; or
+when its message embeds a short name or a derived type name. There is no classmap for `tests/Fixtures`, so a class
+another file references needs its own PSR-4 file.
+
+```php
+'a scalar' => [
+    fn() => new class {
+        #[Query]
+        public function search(#[AsArgs] string $term): string { return $term; }
+    },
+    '#[AsArgs] on the parameter $term in %1$s::search is not supported: …',
+],
+// it('rejects them at discovery', fn(object $shape, string $format) => expectRejected($shape, $format))
+```
 
 ## Built-in Artisan Commands
 
@@ -439,6 +462,10 @@ the specific code path rather than reusing existing ones.
 | `packages/laravel-discovery/src/Schedule/Scheduled.php`                     | Repeatable attribute; `Cron\|Every\|\Closure` schedule                         |
 | `packages/laravel-discovery/src/Schedule/Every.php`                         | Backed enum of intervals (Second…Year)                                         |
 | `packages/laravel-discovery-graphql/src/RebingGraphQL/GraphQLDiscovery.php` | Discovers GraphQL types/queries/mutations and `#[Query]`/`#[Mutation]` actions |
+| `packages/laravel-discovery-graphql/src/RebingGraphQL/Discovery/FieldMembers.php` | Member reading shared by the type and input collectors |
+| `packages/laravel-discovery-graphql/src/RebingGraphQL/Discovery/ReturnTypeResolver.php` | Resolves an action's return type: `type:`/`of:`, type builder or inference |
+| `packages/laravel-discovery-graphql/src/RebingGraphQL/Discovery/TypeUsage.php` | One walker over type references; decides which types to register |
+| `packages/laravel-discovery-graphql/src/RebingGraphQL/Discovery/SchemaValidator.php` | Cross-class checks in `apply()`: name clashes, duplicate operations, unknown classes |
 | `packages/laravel-discovery-graphql/src/RebingGraphQL/AsActionField.php`    | Trait that adapts a `DiscoveredAction` into a Rebing `Field`                   |
 | `packages/laravel-discovery-graphql/src/RebingGraphQL/Authorization.php`    | Injectable helper for authorizing from inside a resolver                       |
 | `packages/laravel-discovery/config/discovery.php`                           | Package configuration                                                          |
