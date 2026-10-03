@@ -52,13 +52,7 @@ final readonly class TypeInferrer
                 : sprintf('%s is typed %s, but Omitted only applies to a property of an #[Input] class, in input position. Remove Omitted from the type.', $label, $type));
         }
 
-        if ($explicitType !== null && $of !== null) {
-            throw new LogicException(sprintf(
-                '%s sets both type: and of: on #[%s]. Use of: for a list of that type, or type: for a single value.',
-                $label,
-                $attribute,
-            ));
-        }
+        $this->assertNotBothTypeAndOf($explicitType, $of, $label, $attribute);
 
         $nullable = $nullable || $this->allowsNull($type);
 
@@ -121,6 +115,18 @@ final readonly class TypeInferrer
         }
 
         return TypeRef::class($name, nullable: $nullable);
+    }
+
+    /** Rejects a member that sets both `type:` and `of:`. */
+    public function assertNotBothTypeAndOf(?string $type, ?string $of, string $label, string $attribute): void
+    {
+        if ($type !== null && $of !== null) {
+            throw new LogicException(sprintf(
+                '%s sets both type: and of: on #[%s]. Use of: for a list of that type, or type: for a single value.',
+                $label,
+                $attribute,
+            ));
+        }
     }
 
     /**

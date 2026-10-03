@@ -24,4 +24,9 @@ final readonly class Field
         public ?string $deprecationReason = null,
         public array|Closure|null $rules = null,
     ) {}
+
+    public function hasRules(): bool
+    {
+        return $this->rules !== null && $this->rules !== [];
+    }
 }

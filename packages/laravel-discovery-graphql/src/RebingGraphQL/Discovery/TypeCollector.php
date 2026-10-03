@@ -18,7 +18,6 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDecorator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDecoratorReference;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDiscoveryVerifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldSource;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Ignore;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\BatchedFieldDecorator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\BatchLoader;
@@ -34,7 +33,6 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use PropertyHookType;
 use Rebing\GraphQL\Support\Type as RebingType;
 use ReflectionClass;
-use ReflectionProperty;
 use ReflectionType;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
@@ -48,6 +46,7 @@ final readonly class TypeCollector
         private ParameterClassifier $parameters,
         private TypeInferrer $inferrer,
         private SkippedMembers $skipped,
+        private FieldMembers $members,
         private Naming $names,
     ) {}
 
@@ -124,7 +123,7 @@ final readonly class TypeCollector
             }
         }
 
-        $this->assertUniqueFieldNames($class, $fields);
+        $this->members->assertUniqueNames('Type', $class->getName(), $fields);
 
         return $fields;
     }
@@ -134,24 +133,18 @@ final readonly class TypeCollector
      */
     private function propertyField(ClassReflector $class, PropertyReflector $property, NamingStrategy $naming): ?DiscoveredTypeField
     {
+        $member = $this->members->member($property);
+
+        if ($member === null) {
+            return null;
+        }
+
         $reflection = $property->getReflection();
-        $field = $property->getAttribute(Field::class);
-        $label = sprintf('Property %s::$%s', $reflection->getDeclaringClass()->getName(), $property->getName());
-
-        if ($property->hasAttribute(Ignore::class)) {
-            return $field === null ? null : throw new LogicException("$label has both #[Field] and #[Ignore]. Remove one.");
-        }
-
-        if (! $reflection->isPublic() || $reflection->isStatic()) {
-            return $field === null ? null : throw new LogicException(sprintf(
-                '%s has #[Field] but is %s. Only public, non-static properties become fields.',
-                $label,
-                $reflection->isStatic() ? 'static' : 'not public',
-            ));
-        }
+        $field = $member->field;
+        $label = $member->label;
 
         if (! $reflection->isVirtual() && $class->is(EloquentModel::class)) {
-            if ($field === null && $this->isImportedFromTrait($reflection)) {
+            if ($field === null && $this->skipped->isImportedFromTrait($reflection)) {
                 return null;
             }
 
@@ -164,20 +157,18 @@ final readonly class TypeCollector
             ));
         }
 
-        if ($reflection->isVirtual() && ! $reflection->hasHook(PropertyHookType::Get)) {
-            return $field === null ? null : throw new LogicException("$label has #[Field] but no get hook, so it cannot be read.");
+        if ($member->lacksHook(PropertyHookType::Get)) {
+            return $member->skipOrReject('no get hook, so it cannot be read.');
         }
 
         if ($field?->rules !== null && ! $class->hasAttribute(Input::class)) {
             throw new LogicException("$label has #[Field(rules:)], but rules only apply to a property of an #[Input]. Add #[Input] to the class, or remove rules:.");
         }
 
-        $member = new Member($property->getName(), $reflection->getDeclaringClass()->getName(), Position::Output, MemberKind::Property);
-
         return $this->decorate($label, $property, new DiscoveredTypeField(
             phpName: $property->getName(),
-            name: $field->name ?? $this->names->name($naming, $property->getName(), $label),
-            type: $this->inferType($reflection->getType(), $class, $label, $field, $member),
+            name: $this->members->name($member, $naming),
+            type: $this->inferType($reflection->getType(), $class, $label, $field, new Member($property->getName(), $reflection->getDeclaringClass()->getName(), Position::Output, MemberKind::Property)),
             source: FieldSource::Property,
             description: $field?->description,
             deprecationReason: $field?->deprecationReason,
@@ -190,26 +181,15 @@ final readonly class TypeCollector
      */
     private function methodField(ClassReflector $class, MethodReflector $method, NamingStrategy $naming, NamingStrategy $argumentNaming): ?DiscoveredTypeField
     {
-        $field = $method->getAttribute(Field::class);
+        $member = $this->members->member($method);
+        $field = $member?->field;
 
-        if ($field === null) {
+        if ($member === null || $field === null) {
             return null;
         }
 
         $reflection = $method->getReflection();
-        $label = sprintf('Method %s::%s()', $reflection->getDeclaringClass()->getName(), $method->getName());
-
-        if ($method->hasAttribute(Ignore::class)) {
-            throw new LogicException("$label has both #[Field] and #[Ignore]. Remove one.");
-        }
-
-        if (! $reflection->isPublic() || $reflection->isStatic()) {
-            throw new LogicException(sprintf(
-                '%s has #[Field] but is %s. Only public, non-static methods become fields.',
-                $label,
-                $reflection->isStatic() ? 'static' : 'not public',
-            ));
-        }
+        $label = $member->label;
 
         $this->assertNoActionAttributes($label, $method);
 
@@ -221,12 +201,10 @@ final readonly class TypeCollector
 
         $this->assertResolvableParameters($label, $parameters);
 
-        $member = new Member($method->getName(), $reflection->getDeclaringClass()->getName(), Position::Output, MemberKind::MethodReturn);
-
         return $this->decorate($label, $method, new DiscoveredTypeField(
             phpName: $method->getName(),
-            name: $field->name ?? $this->names->name($naming, $method->getName(), $label),
-            type: $this->inferType($reflection->getReturnType(), $class, $label, $field, $member),
+            name: $this->members->name($member, $naming),
+            type: $this->inferType($reflection->getReturnType(), $class, $label, $field, new Member($method->getName(), $reflection->getDeclaringClass()->getName(), Position::Output, MemberKind::MethodReturn)),
             source: FieldSource::Method,
             parameters: $parameters,
             description: $field->description,
@@ -241,20 +219,6 @@ final readonly class TypeCollector
     private function includes(PropertyReflector|MethodReflector $member): bool
     {
         return ! $this->skipped->skips($member);
-    }
-
-    /**
-     * Whether a property comes from a trait rather than the class body.
-     */
-    private function isImportedFromTrait(ReflectionProperty $property): bool
-    {
-        foreach (trait_uses_recursive($property->getDeclaringClass()->getName()) as $trait) {
-            if (property_exists($trait, $property->getName())) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**
@@ -451,36 +415,6 @@ final readonly class TypeCollector
                 $binding->paramName,
             ));
         }
-    }
-
-    /**
-     * @param  ClassReflector<object>  $class
-     * @param  list<DiscoveredTypeField>  $fields
-     */
-    private function assertUniqueFieldNames(ClassReflector $class, array $fields): void
-    {
-        $seen = [];
-
-        foreach ($fields as $field) {
-            $previous = $seen[$field->name] ?? null;
-
-            if ($previous !== null) {
-                throw new LogicException(sprintf(
-                    'Type %s has two fields named "%s" (%s and %s). Rename one with #[Field(name: ...)], or #[Ignore] one.',
-                    $class->getName(),
-                    $field->name,
-                    $this->describe($previous),
-                    $this->describe($field),
-                ));
-            }
-
-            $seen[$field->name] = $field;
-        }
-    }
-
-    private function describe(DiscoveredTypeField $field): string
-    {
-        return $field->source === FieldSource::Method ? "{$field->phpName}()" : "\${$field->phpName}";
     }
 
     /**

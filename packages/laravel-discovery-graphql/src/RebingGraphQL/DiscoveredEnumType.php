@@ -17,16 +17,7 @@ final class DiscoveredEnumType extends RebingEnumType
 
     public function attributes(): array
     {
-        $attributes = [
-            'name' => $this->discoveredType->name,
-            'values' => $this->values(),
-        ];
-
-        if ($this->discoveredType->description !== null) {
-            $attributes['description'] = $this->discoveredType->description;
-        }
-
-        return $attributes;
+        return [...$this->discoveredType->attributes(), 'values' => $this->values()];
     }
 
     /**

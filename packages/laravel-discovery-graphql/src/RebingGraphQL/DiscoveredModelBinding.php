@@ -8,6 +8,8 @@ use GraphQL\Type\Definition\ResolveInfo;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Exists;
 
 readonly class DiscoveredModelBinding
 {
@@ -27,15 +29,30 @@ readonly class DiscoveredModelBinding
     ) {}
 
     /**
-     * Looks the model up by its route key, as Laravel's own route-model binding does.
-     *
      * @return Builder<Model>
      */
     public function query(mixed $value): Builder
     {
-        $modelClass = $this->modelClass;
+        return self::lookup($this->modelClass, $value);
+    }
 
+    /**
+     * Looks the model up by its route key, as Laravel's own route-model binding does.
+     *
+     * @param  class-string<Model>  $modelClass
+     * @return Builder<Model>
+     */
+    public static function lookup(string $modelClass, mixed $value): Builder
+    {
         return $modelClass::query()->where(new $modelClass()->getRouteKeyName(), $value);
+    }
+
+    /** The validation rule for a non-nullable binding: the record must exist under its route key. */
+    public function existsRule(): Exists
+    {
+        $model = new $this->modelClass();
+
+        return Rule::exists($model->getTable(), $model->getRouteKeyName());
     }
 
     /**

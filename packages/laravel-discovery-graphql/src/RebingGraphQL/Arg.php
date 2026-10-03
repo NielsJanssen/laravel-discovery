@@ -17,4 +17,9 @@ class Arg
         public readonly ?string $description = null,
         public readonly ?string $deprecationReason = null,
     ) {}
+
+    public function hasRules(): bool
+    {
+        return $this->rules !== null && $this->rules !== [];
+    }
 }

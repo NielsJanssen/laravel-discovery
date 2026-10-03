@@ -11,7 +11,6 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredModelBinding;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredTypeField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Ignore;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
@@ -38,6 +37,7 @@ final readonly class InputCollector
     public function __construct(
         private TypeInferrer $inferrer,
         private SkippedMembers $skipped,
+        private FieldMembers $members,
         private Naming $names,
     ) {}
 
@@ -147,30 +147,16 @@ final readonly class InputCollector
     private function fields(ClassReflector $class, bool $shared, NamingStrategy $naming): array
     {
         $fields = [];
-        $seen = [];
 
         foreach ($class->getProperties() as $property) {
             $field = $this->skipped->skips($property) ? null : $this->propertyField($class, $property, $shared, $naming);
 
-            if ($field === null) {
-                continue;
+            if ($field !== null) {
+                $fields[] = $field;
             }
-
-            $previous = $seen[$field->name] ?? null;
-
-            if ($previous !== null) {
-                throw new LogicException(sprintf(
-                    'Input %s has two fields named "%s" ($%s and $%s). Rename one with #[Field(name: ...)], or #[Ignore] one.',
-                    $class->getName(),
-                    $field->name,
-                    $previous,
-                    $field->phpName,
-                ));
-            }
-
-            $seen[$field->name] = $field->phpName;
-            $fields[] = $field;
         }
+
+        $this->members->assertUniqueNames('Input', $class->getName(), $fields);
 
         return $fields;
     }
@@ -180,42 +166,33 @@ final readonly class InputCollector
      */
     private function propertyField(ClassReflector $class, PropertyReflector $property, bool $shared, NamingStrategy $naming): ?DiscoveredTypeField
     {
+        $member = $this->members->member($property);
+
+        if ($member === null) {
+            return null;
+        }
+
+        if ($member->lacksHook(PropertyHookType::Set)) {
+            return $shared ? null : $member->skipOrReject('no set hook, so an input cannot fill it.');
+        }
+
         $reflection = $property->getReflection();
-        $field = $property->getAttribute(Field::class);
-        $member = sprintf('Property %s::$%s', $reflection->getDeclaringClass()->getName(), $property->getName());
-
-        if ($property->hasAttribute(Ignore::class)) {
-            return $field === null ? null : throw new LogicException("$member has both #[Field] and #[Ignore]. Remove one.");
-        }
-
-        if (! $reflection->isPublic() || $reflection->isStatic()) {
-            return $field === null ? null : throw new LogicException(sprintf(
-                '%s has #[Field] but is %s. Only public, non-static properties become fields.',
-                $member,
-                $reflection->isStatic() ? 'static' : 'not public',
-            ));
-        }
-
-        if ($reflection->isVirtual() && ! $reflection->hasHook(PropertyHookType::Set)) {
-            if ($shared) {
-                return null;
-            }
-
-            return $field === null ? null : throw new LogicException("$member has #[Field] but no set hook, so an input cannot fill it.");
-        }
+        $field = $member->field;
+        $label = $member->label;
 
         $defaults = $this->defaultOf($reflection);
         [$hasDefault, $default] = $defaults;
-        $name = $field->name ?? $this->names->name($naming, $property->getName(), $member);
+        $name = $this->members->name($member, $naming);
         $type = $reflection->getType();
         $omittable = OmittableType::of($type);
 
         if ($omittable !== null) {
-            $type = $this->omittableInner($class, $member, (string) $type, $omittable, $shared, $defaults);
+            $type = $this->omittableInner($class, $label, (string) $type, $omittable, $shared, $defaults);
         }
 
         $nullable = ($field !== null && $field->nullable) || $hasDefault || ($type?->allowsNull() ?? false);
         $authorizations = array_values($property->getAttributes(Authorize::class));
+
         $modelClass = $type instanceof ReflectionNamedType && ! $type->isBuiltin() && is_a($type->getName(), EloquentModel::class, true)
             ? $type->getName()
             : null;
@@ -223,14 +200,18 @@ final readonly class InputCollector
         $binding = null;
 
         if ($modelClass !== null && $field?->of === null) {
+            foreach ($authorizations as $authorize) {
+                $authorize->verifyOnProperty($label, $shared);
+            }
+
             $binding = new DiscoveredModelBinding(
                 paramName: $property->getName(),
                 argName: $name,
                 modelClass: $modelClass,
                 nullable: $omittable === null ? $nullable : $omittable->allowsNull,
                 type: $field?->type,
-                hasUserRules: $this->hasRules($field),
-                authorizations: $this->authorizations($authorizations, $member, $shared),
+                hasUserRules: $field?->hasRules() ?? false,
+                authorizations: $authorizations,
             );
 
             $ref = TypeRef::from($field->type ?? 'ID', nullable: $nullable);
@@ -238,7 +219,7 @@ final readonly class InputCollector
             if ($authorizations !== [] && ! $shared) {
                 throw new LogicException(sprintf(
                     '#[Authorize] on %s only applies to a property that binds an Eloquent model; $%s does not.',
-                    lcfirst($member),
+                    lcfirst($label),
                     $property->getName(),
                 ));
             }
@@ -246,7 +227,7 @@ final readonly class InputCollector
             $ref = $this->inferrer->input(
                 $type,
                 $class->getName(),
-                $member,
+                $label,
                 'Field',
                 $field?->type,
                 $field?->of,
@@ -262,7 +243,7 @@ final readonly class InputCollector
             type: $ref,
             description: $field?->description,
             deprecationReason: $field?->deprecationReason,
-            hasRules: $this->hasRules($field),
+            hasRules: $field?->hasRules() ?? false,
             binding: $binding,
             hasDefault: $hasDefault,
             defaultValue: $omittable === null && $this->isPrintable($default) ? $default : null,
@@ -333,43 +314,6 @@ final readonly class InputCollector
         }
 
         return is_scalar($value) || $value instanceof UnitEnum;
-    }
-
-    private function hasRules(?Field $field): bool
-    {
-        return $field !== null && $field->rules !== null && $field->rules !== [];
-    }
-
-    /**
-     * @param  list<Authorize>  $authorizations
-     * @return list<Authorize>
-     */
-    private function authorizations(array $authorizations, string $member, bool $shared): array
-    {
-        foreach ($authorizations as $authorize) {
-            if ($authorize->ability === null) {
-                throw new LogicException(sprintf(
-                    "#[Authorize] on %s needs an ability, as in #[Authorize('view')], to check the record it binds.",
-                    lcfirst($member),
-                ));
-            }
-
-            if ($authorize->gate !== null) {
-                throw new LogicException(sprintf(
-                    '#[Authorize(gate:)] on %s is not supported: a gate class receives the raw args, so it belongs on the action.',
-                    lcfirst($member),
-                ));
-            }
-
-            if ($authorize->onDenied !== null && ! $shared) {
-                throw new LogicException(sprintf(
-                    '#[Authorize(onDenied:)] on %s only applies to a field of a #[Type]. A denied input always reports an error; remove onDenied:.',
-                    lcfirst($member),
-                ));
-            }
-        }
-
-        return $authorizations;
     }
 
     /**

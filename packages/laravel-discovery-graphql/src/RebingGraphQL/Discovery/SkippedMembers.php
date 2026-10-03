@@ -7,6 +7,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery;
 use Illuminate\Contracts\Config\Repository;
 use LogicException;
 use ReflectionClass;
+use ReflectionProperty;
 use Tempest\Reflection\MethodReflector;
 use Tempest\Reflection\PropertyReflector;
 
@@ -33,6 +34,21 @@ final class SkippedMembers
         return $member instanceof PropertyReflector && $this->declaredUnderSkipped($declaringClass, $member->getName());
     }
 
+    /** Whether a property comes from a trait rather than the class body. */
+    public function isImportedFromTrait(ReflectionProperty $property): bool
+    {
+        return $this->traitsDeclaring($property->getDeclaringClass(), $property->getName()) !== [];
+    }
+
+    /**
+     * @param  ReflectionClass<object>  $class
+     * @return list<string>
+     */
+    private function traitsDeclaring(ReflectionClass $class, string $property): array
+    {
+        return array_values(array_filter(trait_uses_recursive($class->getName()), static fn(string $trait): bool => property_exists($trait, $property)));
+    }
+
     /**
      * Whether a parent class or trait under a skipped namespace declares the property as well.
      *
@@ -40,7 +56,7 @@ final class SkippedMembers
      */
     private function declaredUnderSkipped(ReflectionClass $class, string $property): bool
     {
-        $owners = trait_uses_recursive($class->getName());
+        $owners = $this->traitsDeclaring($class, $property);
 
         for ($parent = $class->getParentClass(); $parent !== false; $parent = $parent->getParentClass()) {
             $owners[] = $parent->getName();

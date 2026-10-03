@@ -72,6 +72,113 @@ class Authorize implements ActionArgProvider, FieldDecorator, FieldDiscoveryVeri
         }
     }
 
+    /**
+     * The shape rules of a parameter that binds a model, e.g. "the parameter $note in Acme\Notes::get".
+     *
+     * @internal
+     */
+    public function verifyOnParameter(string $where): void
+    {
+        if ($this->ability === null) {
+            throw new LogicException(sprintf(
+                '#[Authorize] on %s needs an ability, as in #[Authorize(\'view\')]. Bare #[Authorize] and #[Authorize(gate:)] belong on the class or the method.',
+                $where,
+            ));
+        }
+
+        if ($this->gate !== null) {
+            throw new LogicException(sprintf(
+                '#[Authorize(gate:)] on %s is not supported: a gate class receives the raw args, so it belongs on the class or the method.',
+                $where,
+            ));
+        }
+
+        if ($this->onDenied !== null) {
+            throw new LogicException(sprintf(
+                '#[Authorize(onDenied:)] on %s only applies to a field of a #[Type]. A denied parameter always reports an error; remove onDenied:.',
+                $where,
+            ));
+        }
+    }
+
+    /**
+     * The shape rules of a property that binds a model, e.g. "Property Acme\Note::$owner".
+     *
+     * @internal
+     */
+    public function verifyOnProperty(string $member, bool $shared): void
+    {
+        if ($this->ability === null) {
+            throw new LogicException(sprintf(
+                "#[Authorize] on %s needs an ability, as in #[Authorize('view')], to check the record it binds.",
+                lcfirst($member),
+            ));
+        }
+
+        if ($this->gate !== null) {
+            throw new LogicException(sprintf(
+                '#[Authorize(gate:)] on %s is not supported: a gate class receives the raw args, so it belongs on the action.',
+                lcfirst($member),
+            ));
+        }
+
+        if ($this->onDenied !== null && ! $shared) {
+            throw new LogicException(sprintf(
+                '#[Authorize(onDenied:)] on %s only applies to a field of a #[Type]. A denied input always reports an error; remove onDenied:.',
+                lcfirst($member),
+            ));
+        }
+    }
+
+    /**
+     * The shape rules of the class and method attributes of an action.
+     *
+     * @param  list<Authorize>  $authorizations  class and method attributes; onDenied: is checked across all first
+     *
+     * @internal
+     */
+    public static function verifyOnAction(array $authorizations, string $class, string $method, string $action): void
+    {
+        if (array_any($authorizations, static fn(self $authorize): bool => $authorize->onDenied !== null)) {
+            throw new LogicException(sprintf(
+                'Method %s::%s has #[Authorize(onDenied:)], which only applies to a field of a #[Type]. A denied #[%s] always reports an error; remove onDenied:.',
+                $class,
+                $method,
+                $action,
+            ));
+        }
+
+        foreach ($authorizations as $authorize) {
+            if ($authorize->ability !== null && $authorize->gate !== null) {
+                throw new LogicException(sprintf(
+                    "Method %s::%s has #[Authorize] with both an ability and gate:. A gate decides on its own: remove the ability, or move it to the model-bound parameter as #[Authorize('%s')].",
+                    $class,
+                    $method,
+                    $authorize->ability,
+                ));
+            }
+
+            if ($authorize->gate !== null && ! is_a($authorize->gate, AuthorizationGate::class, true)) {
+                throw new LogicException(sprintf(
+                    'Method %s::%s has #[Authorize(gate: %s)], which does not implement %s.',
+                    $class,
+                    $method,
+                    $authorize->gate,
+                    AuthorizationGate::class,
+                ));
+            }
+
+            if ($authorize->ability !== null) {
+                throw new LogicException(sprintf(
+                    "Method %s::%s has #[Authorize('%s')] on the class or method, where there is no record to check the ability against. Put it on the model-bound parameter, or use #[Authorize(gate: ...)].",
+                    $class,
+                    $method,
+                    $authorize->ability,
+                ));
+            }
+        }
+    }
+
     public function decorate(FieldBlueprint $field): void
     {
         $field->nullable();
