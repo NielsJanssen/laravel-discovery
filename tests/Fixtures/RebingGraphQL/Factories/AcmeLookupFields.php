@@ -8,10 +8,11 @@ use GraphQL\Type\Definition\ResolveInfo;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeContext;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeFactory;
+use Tests\Fixtures\RebingGraphQL\ContainerService;
 
 final readonly class AcmeLookupFields implements TypeFactory
 {
-    public function __construct(private AcmeRegions $regions) {}
+    public function __construct(private ContainerService $service) {}
 
     public function fields(TypeContext $context): iterable
     {
@@ -24,7 +25,7 @@ final readonly class AcmeLookupFields implements TypeFactory
                 'upper' => new Field(type: 'bool', nullable: true),
             ],
             resolve: function (mixed $root, array $args, mixed $context, ResolveInfo $info): string {
-                $label = $this->regions->label($args['regionCode']);
+                $label = "Region {$args['regionCode']}{$this->service->suffix()}";
 
                 return ($args['upper'] ?? false) ? strtoupper($label) : $label;
             },

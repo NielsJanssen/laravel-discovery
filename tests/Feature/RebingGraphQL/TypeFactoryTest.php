@@ -17,21 +17,19 @@ use RuntimeException;
 use stdClass;
 use Tests\Fixtures\RebingGraphQL\Factories\AcmeCompany;
 use Tests\Fixtures\RebingGraphQL\Factories\AcmeCompanyFields;
-use Tests\Fixtures\RebingGraphQL\Factories\AcmeCompanyQuery;
+use Tests\Fixtures\RebingGraphQL\Factories\AcmeFactoryQueries;
 use Tests\Fixtures\RebingGraphQL\Factories\AcmeLookup;
-use Tests\Fixtures\RebingGraphQL\Factories\AcmeLookupQuery;
-use Tests\Fixtures\RebingGraphQL\Factories\AcmeYielded;
-use Tests\Fixtures\RebingGraphQL\Factories\AcmeYieldedFields;
-use Tests\Fixtures\RebingGraphQL\Factories\AcmeYieldedQuery;
+
+const FACTORY_SOURCES = [AcmeFactoryQueries::class, AcmeCompany::class, AcmeLookup::class];
 
 /**
  * @param  list<Field>  $fields
  */
 function yieldFactoryFields(array $fields): string
 {
-    app()->instance(AcmeYieldedFields::class, new AcmeYieldedFields($fields));
+    app()->instance(AcmeCompanyFields::class, new AcmeCompanyFields($fields));
 
-    return schemaSdl(AcmeYieldedQuery::class, AcmeYielded::class);
+    return schemaSdl(...FACTORY_SOURCES);
 }
 
 describe('discovery', function () {
@@ -78,7 +76,7 @@ describe('discovery', function () {
 
 describe('building', function () {
     it('merges the factory fields after the declared ones', function () {
-        expect(sdlDefinitions(schemaSdl(AcmeCompanyQuery::class, AcmeCompany::class)))->toContain(<<<'GRAPHQL'
+        expect(sdlDefinitions(schemaSdl(...FACTORY_SOURCES)))->toContain(<<<'GRAPHQL'
             type AcmeCompany {
               name: String!
 
@@ -92,41 +90,41 @@ describe('building', function () {
     });
 
     it('resolves a factory field from the property of the root', function () {
-        schemaSdl(AcmeCompanyQuery::class, AcmeCompany::class);
+        schemaSdl(...FACTORY_SOURCES);
 
-        expect(GraphQL::query('{ company { name region tags } }')['data']['company'] ?? null)
-            ->toBe(['name' => 'Acme', 'region' => 'EU', 'tags' => ['anvils']]);
+        expect(GraphQL::query('{ company { name region tags } }'))
+            ->toBe(['data' => ['company' => ['name' => 'Acme', 'region' => 'EU', 'tags' => ['anvils']]]]);
     });
 
     it('resolves a factory field the root does not have to null', function () {
-        yieldFactoryFields([new Field(name: 'region', type: 'string', nullable: true)]);
+        yieldFactoryFields([new Field(name: 'motto', type: 'string', nullable: true)]);
 
-        expect(GraphQL::query('{ yielded { name region } }'))
-            ->toBe(['data' => ['yielded' => ['name' => 'Acme', 'region' => null]]]);
+        expect(GraphQL::query('{ company { name motto } }'))
+            ->toBe(['data' => ['company' => ['name' => 'Acme', 'motto' => null]]]);
     });
 
     it('rejects a factory field named like a declared field', function () {
         expect(fn() => yieldFactoryFields([new Field(name: 'name', type: 'string')]))
             ->toThrow(LogicException::class, sprintf(
-                'The type factory %s yields a field "name" that type [AcmeYielded] (%s) already has.',
-                AcmeYieldedFields::class,
-                AcmeYielded::class,
+                'The type factory %s yields a field "name" that type [AcmeCompany] (%s) already has.',
+                AcmeCompanyFields::class,
+                AcmeCompany::class,
             ));
     });
 
     it('rejects two factory fields with one name', function () {
         expect(fn() => yieldFactoryFields([new Field(name: 'region', type: 'string'), new Field(name: 'region', type: 'int')]))
-            ->toThrow(LogicException::class, 'yields a field "region" that type [AcmeYielded]');
+            ->toThrow(LogicException::class, 'yields a field "region" that type [AcmeCompany]');
     });
 
     it('rejects a factory field without a name', function () {
         expect(fn() => yieldFactoryFields([new Field(type: 'string')]))
-            ->toThrow(LogicException::class, sprintf('yielded a field without a name for type [AcmeYielded] (%s). Set name: on the Field.', AcmeYielded::class));
+            ->toThrow(LogicException::class, sprintf('yielded a field without a name for type [AcmeCompany] (%s). Set name: on the Field.', AcmeCompany::class));
     });
 
     it('rejects a factory field without a type', function () {
         expect(fn() => yieldFactoryFields([new Field(name: 'region')]))
-            ->toThrow(LogicException::class, sprintf('Field "region" from the type factory %s for type [AcmeYielded] (%s) has no type.', AcmeYieldedFields::class, AcmeYielded::class));
+            ->toThrow(LogicException::class, sprintf('Field "region" from the type factory %s for type [AcmeCompany] (%s) has no type.', AcmeCompanyFields::class, AcmeCompany::class));
     });
 
     it('rejects a factory field with both type and of', function () {
@@ -135,27 +133,27 @@ describe('building', function () {
     });
 
     it('rejects a container binding that is no TypeFactory', function () {
-        app()->instance(AcmeYieldedFields::class, new stdClass());
+        app()->instance(AcmeCompanyFields::class, new stdClass());
 
-        expect(fn() => schemaSdl(AcmeYieldedQuery::class, AcmeYielded::class))
+        expect(fn() => schemaSdl(...FACTORY_SOURCES))
             ->toThrow(LogicException::class, 'resolves to stdClass, which is no ' . TypeFactory::class);
     });
 
     it('does not run the factory during discovery', function () {
-        app()->instance(AcmeYieldedFields::class, new class implements TypeFactory {
+        app()->instance(AcmeCompanyFields::class, new class implements TypeFactory {
             public function fields(TypeContext $context): iterable
             {
                 throw new RuntimeException('ran');
             }
         });
 
-        expect(discoveredTypes(AcmeYielded::class))->toHaveCount(1);
+        expect(discoveredTypes(AcmeCompany::class))->toHaveCount(1);
     });
 });
 
 describe('resolvers and args', function () {
     it('prints the args of a factory field, named by the argument strategy', function () {
-        expect(sdlDefinitions(schemaSdl(AcmeLookupQuery::class, AcmeLookup::class)))->toContain(<<<'GRAPHQL'
+        expect(sdlDefinitions(schemaSdl(...FACTORY_SOURCES)))->toContain(<<<'GRAPHQL'
             type AcmeLookup {
               name: String!
 
@@ -171,10 +169,10 @@ describe('resolvers and args', function () {
     });
 
     it('runs the resolve closure with the args keyed as declared, and injects the factory dependencies', function () {
-        schemaSdl(AcmeLookupQuery::class, AcmeLookup::class);
+        schemaSdl(...FACTORY_SOURCES);
 
-        expect(GraphQL::query('{ lookup { regionLabel(region_code: "eu") } }')['data']['lookup'])->toBe(['regionLabel' => 'Region eu'])
-            ->and(GraphQL::query('{ lookup { regionLabel(region_code: "eu", upper: true) } }')['data']['lookup'])->toBe(['regionLabel' => 'REGION EU']);
+        expect(GraphQL::query('{ lookup { regionLabel(region_code: "eu") } }'))->toBe(['data' => ['lookup' => ['regionLabel' => 'Region eu!']]])
+            ->and(GraphQL::query('{ lookup { regionLabel(region_code: "eu", upper: true) } }'))->toBe(['data' => ['lookup' => ['regionLabel' => 'REGION EU!']]]);
     });
 
     it('passes the root and the resolve info to the closure', function () {
@@ -187,21 +185,21 @@ describe('resolvers and args', function () {
 
         yieldFactoryFields([$field]);
 
-        expect(GraphQL::query('{ yielded { seen } }')['data']['yielded'])->toBe(['seen' => 'ok'])
-            ->and($seen)->toBe([AcmeYielded::class, [], 'seen']);
+        expect(GraphQL::query('{ company { seen } }'))->toBe(['data' => ['company' => ['seen' => 'ok']]])
+            ->and($seen)->toBe([AcmeCompany::class, [], 'seen']);
     });
 
     it('keeps arg names as declared without a naming strategy', function () {
         $sdl = yieldFactoryFields([new Field(name: 'echo', type: 'string', args: ['someText' => new Field(of: 'string')], resolve: fn($root, array $args): string => implode(',', $args['someText']))]);
 
         expect($sdl)->toContain('echo(someText: [String!]!): String!')
-            ->and(GraphQL::query('{ yielded { echo(someText: ["a", "b"]) } }')['data']['yielded'])->toBe(['echo' => 'a,b']);
+            ->and(GraphQL::query('{ company { echo(someText: ["a", "b"]) } }'))->toBe(['data' => ['company' => ['echo' => 'a,b']]]);
     });
 
     it('serves a factory type from the discovery cache', function () {
-        applyCachedGraphQL([AcmeLookupQuery::class, AcmeLookup::class]);
+        applyCachedGraphQL(FACTORY_SOURCES);
 
-        expect(GraphQL::query('{ lookup { name regionLabel(region_code: "nl") } }')['data']['lookup'])->toBe(['name' => 'Acme', 'regionLabel' => 'Region nl']);
+        expect(GraphQL::query('{ lookup { name regionLabel(region_code: "nl") } }'))->toBe(['data' => ['lookup' => ['name' => 'Acme', 'regionLabel' => 'Region nl!']]]);
     });
 
     it('rejects what a field arg cannot do', function (Field $arg, string $message) {
