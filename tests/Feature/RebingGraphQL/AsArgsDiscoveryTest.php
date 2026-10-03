@@ -4,20 +4,24 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
+use GraphQL\Type\Definition\ResolveInfo;
 use Illuminate\Support\Facades\Gate;
 use LogicException;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Arg;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\LaravelValidationRules;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\AsArgs as AsArgsAttribute;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorize;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredFlattenedInput;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Paginated;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Pagination;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
 use NielsJanssen\Laravel\Validation\RuleCompiler;
-use RuntimeException;
-use Tempest\Discovery\DiscoveryItems;
 use Tests\Fixtures\RebingGraphQL\Inputs\AsArgs;
 use Tests\Fixtures\RebingGraphQL\Inputs\AsArgs\Invalid;
 use Workbench\App\Models\User;
@@ -53,24 +57,6 @@ function placeOrderVariables(User $supplier, User $buyer, array $overrides = [])
         'buyer' => $buyer->id,
         ...$overrides,
     ];
-}
-
-/** Discover, pass the items through serialize() as the discovery cache does, and apply them. */
-function applyCachedAsArgs(string ...$classes): DiscoveryItems
-{
-    isolateGraphQL();
-    $items = unserialize(serialize(discoverGraphQL(...$classes)->getItems()));
-
-    if (! $items instanceof DiscoveryItems) {
-        throw new RuntimeException('Items did not survive serialization.');
-    }
-
-    isolateGraphQL();
-    $discovery = app(GraphQLDiscovery::class);
-    $discovery->setItems($items);
-    $discovery->apply();
-
-    return $items;
 }
 
 beforeEach(function () {
@@ -450,7 +436,7 @@ describe('the discovery cache', function () {
         $supplier = User::factory()->create();
         $buyer = User::factory()->create();
 
-        $items = applyCachedAsArgs(...PLACE_ORDER_SOURCES);
+        $items = applyCachedGraphQL(PLACE_ORDER_SOURCES);
 
         $kept = [];
 
@@ -479,31 +465,12 @@ describe('the discovery cache', function () {
     });
 
     it('registers what the flattened fields use, and not the flattened class, when the configuration is cached', function () {
-        isolateGraphQL();
-        app()->instance('config_loaded_from_cache', true);
-
-        $discovery = discoverGraphQL(...PLACE_ORDER_SOURCES);
-        $discovery->apply();
-
-        $registry = app(TypeRegistry::class);
-
-        foreach ($discovery->getItems() as $item) {
-            if ($item instanceof DiscoveredType) {
-                expect(app()->bound((string) $item->bindName))->toBe($item->class !== AsArgs\PlaceOrder::class);
-            }
-
-            if ($item instanceof DiscoveredAction) {
-                expect(app()->bound((string) $item->bindName))->toBeTrue();
-            }
-        }
+        $registry = assertBoundWhenConfigCached(PLACE_ORDER_SOURCES, fn(DiscoveredType $type) => $type->class !== AsArgs\PlaceOrder::class);
 
         expect($registry->nameOf(AsArgs\Destination::class, Position::Input))->toBe('DestinationInput')
             ->and($registry->has(AsArgs\Shelf::class))->toBeTrue()
             ->and($registry->has(AsArgs\PlaceOrder::class))->toBeFalse()
-            ->and($registry->typeNamed('PlaceOrderInput'))->toBeNull()
-            ->and(config('graphql.types'))->toBe([]);
-
-        app()->forgetInstance('config_loaded_from_cache');
+            ->and($registry->typeNamed('PlaceOrderInput'))->toBeNull();
     });
 
     it('registers an enum only a flattened field references, without the input class being discovered', function () {
@@ -521,82 +488,158 @@ describe('the discovery cache', function () {
 });
 
 describe('rejected shapes', function () {
-    it('rejects them at discovery', function (array $classes, string $message) {
-        expect(fn() => discoverGraphQL(...$classes))->toThrow(LogicException::class, $message);
+    it('rejects them at discovery', function (object $shape, string $format) {
+        expectRejected($shape, $format);
     })->with([
         'a class without #[Input]' => [
-            [Invalid\NotAnInput::class],
-            '#[AsArgs] on the parameter $filter in ' . Invalid\NotAnInput::class . '::search needs an #[Input] class, but $filter is typed ' . Invalid\PlainFilter::class . '. Add #[Input] to PlainFilter, or remove #[AsArgs].',
+            fn() => new class {
+                #[Query]
+                public function search(#[AsArgsAttribute] Invalid\PlainFilter $filter): string
+                {
+                    return 'never';
+                }
+            },
+            '#[AsArgs] on the parameter $filter in %1$s::search needs an #[Input] class, but $filter is typed ' . Invalid\PlainFilter::class . '. Add #[Input] to PlainFilter, or remove #[AsArgs].',
         ],
         'a scalar' => [
-            [Invalid\ScalarAsArgs::class],
-            '#[AsArgs] on the parameter $term in ' . Invalid\ScalarAsArgs::class . '::search is not supported: $term is of type string, and #[AsArgs] only applies to a parameter typed as an #[Input] class. Remove #[AsArgs].',
+            fn() => new class {
+                #[Query]
+                public function search(#[AsArgsAttribute] string $term): string
+                {
+                    return $term;
+                }
+            },
+            '#[AsArgs] on the parameter $term in %1$s::search is not supported: $term is of type string, and #[AsArgs] only applies to a parameter typed as an #[Input] class. Remove #[AsArgs].',
         ],
         'an enum' => [
-            [Invalid\EnumAsArgs::class],
-            '#[AsArgs] on the parameter $shelf in ' . Invalid\EnumAsArgs::class . '::search is not supported: $shelf is the enum ' . AsArgs\Shelf::class . ', and #[AsArgs] only applies to a parameter typed as an #[Input] class. Remove #[AsArgs].',
+            fn() => new class {
+                #[Query]
+                public function search(#[AsArgsAttribute] AsArgs\Shelf $shelf): string
+                {
+                    return $shelf->name;
+                }
+            },
+            '#[AsArgs] on the parameter $shelf in %1$s::search is not supported: $shelf is the enum ' . AsArgs\Shelf::class . ', and #[AsArgs] only applies to a parameter typed as an #[Input] class. Remove #[AsArgs].',
         ],
         'a model' => [
-            [Invalid\ModelAsArgs::class],
-            '#[AsArgs] on the parameter $user in ' . Invalid\ModelAsArgs::class . '::search is not supported: $user is the Eloquent model ' . User::class . ', which binds by ID, and #[AsArgs] only applies to a parameter typed as an #[Input] class. Remove #[AsArgs].',
+            fn() => new class {
+                #[Query]
+                public function search(#[AsArgsAttribute] User $user): string
+                {
+                    return $user->name;
+                }
+            },
+            '#[AsArgs] on the parameter $user in %1$s::search is not supported: $user is the Eloquent model ' . User::class . ', which binds by ID, and #[AsArgs] only applies to a parameter typed as an #[Input] class. Remove #[AsArgs].',
         ],
         'an injection' => [
-            [Invalid\InjectionAsArgs::class],
-            '#[AsArgs] on the parameter $info in ' . Invalid\InjectionAsArgs::class . '::search is not supported: $info is an injected value (#[Root], #[Context] or ResolveInfo), and #[AsArgs] only applies to a parameter typed as an #[Input] class. Remove #[AsArgs].',
+            fn() => new class {
+                #[Query]
+                public function search(#[AsArgsAttribute] ResolveInfo $info): string
+                {
+                    return $info->fieldName;
+                }
+            },
+            '#[AsArgs] on the parameter $info in %1$s::search is not supported: $info is an injected value (#[Root], #[Context] or ResolveInfo), and #[AsArgs] only applies to a parameter typed as an #[Input] class. Remove #[AsArgs].',
         ],
         '#[Authorize] on the #[AsArgs] parameter' => [
-            [Invalid\AuthorizeAsArgs::class],
-            "#[AsArgs] on the parameter \$search in " . Invalid\AuthorizeAsArgs::class . "::search cannot be combined with #[Authorize]: the parameter binds no record of its own. Put #[Authorize('ability')] on the model property of the #[Input] class instead.",
+            fn() => new class {
+                #[Query]
+                public function search(#[AsArgsAttribute, Authorize('view')] AsArgs\BookSearch $search): string
+                {
+                    return 'never';
+                }
+            },
+            "#[AsArgs] on the parameter \$search in %1\$s::search cannot be combined with #[Authorize]: the parameter binds no record of its own. Put #[Authorize('ability')] on the model property of the #[Input] class instead.",
         ],
         'a collision with a parameter' => [
-            [Invalid\CollidesWithParameter::class],
-            '#[AsArgs] on the parameter $search in ' . Invalid\CollidesWithParameter::class . '::search flattens ' . AsArgs\BookSearch::class . '::$term into the arg "term", which collides with the arg of the parameter $term. Rename the field with #[Field(name: ...)], or rename the other arg.',
+            fn() => new class {
+                #[Query]
+                public function search(#[AsArgsAttribute] AsArgs\BookSearch $search, string $term): string
+                {
+                    return $term;
+                }
+            },
+            '#[AsArgs] on the parameter $search in %1$s::search flattens ' . AsArgs\BookSearch::class . '::$term into the arg "term", which collides with the arg of the parameter $term. Rename the field with #[Field(name: ...)], or rename the other arg.',
         ],
         'a collision with a model binding' => [
-            [Invalid\CollidesWithModelBinding::class],
-            '#[AsArgs] on the parameter $search in ' . Invalid\CollidesWithModelBinding::class . '::search flattens ' . AsArgs\BookSearch::class . '::$year into the arg "year", which collides with the arg of the model-bound parameter $owner. Rename the field with #[Field(name: ...)], or rename the other arg.',
+            fn() => new class {
+                #[Query]
+                public function search(#[Arg('year')] User $owner, #[AsArgsAttribute] AsArgs\BookSearch $search): string
+                {
+                    return 'never';
+                }
+            },
+            '#[AsArgs] on the parameter $search in %1$s::search flattens ' . AsArgs\BookSearch::class . '::$year into the arg "year", which collides with the arg of the model-bound parameter $owner. Rename the field with #[Field(name: ...)], or rename the other arg.',
         ],
         'a collision with an arg provider' => [
-            [Invalid\CollidesWithProvider::class],
-            '#[AsArgs] on the parameter $cursor in ' . Invalid\CollidesWithProvider::class . '::pages flattens ' . Invalid\PageCursor::class . '::$page into the arg "page", which collides with the arg #[Paginated] adds. Rename the field with #[Field(name: ...)], or rename the other arg.',
+            fn() => new class {
+                #[Query(type: 'String')]
+                #[Paginated]
+                public function pages(#[AsArgsAttribute] Invalid\PageCursor $cursor, Pagination $pagination): array
+                {
+                    return [];
+                }
+            },
+            '#[AsArgs] on the parameter $cursor in %1$s::pages flattens ' . Invalid\PageCursor::class . '::$page into the arg "page", which collides with the arg #[Paginated] adds. Rename the field with #[Field(name: ...)], or rename the other arg.',
         ],
         'two colliding #[AsArgs]' => [
-            [Invalid\TwoCollidingAsArgs::class],
-            '#[AsArgs] on the parameter $right in ' . Invalid\TwoCollidingAsArgs::class . '::compare flattens ' . AsArgs\BookSearch::class . '::$term into the arg "term", which collides with ' . AsArgs\BookSearch::class . '::$term, flattened by #[AsArgs] on $left. Rename the field with #[Field(name: ...)], or rename the other arg.',
+            fn() => new class {
+                #[Query]
+                public function compare(#[AsArgsAttribute] AsArgs\BookSearch $left, #[AsArgsAttribute] AsArgs\BookSearch $right): string
+                {
+                    return 'never';
+                }
+            },
+            '#[AsArgs] on the parameter $right in %1$s::compare flattens ' . AsArgs\BookSearch::class . '::$term into the arg "term", which collides with ' . AsArgs\BookSearch::class . '::$term, flattened by #[AsArgs] on $left. Rename the field with #[Field(name: ...)], or rename the other arg.',
         ],
         'a #[Field] method' => [
-            [Invalid\FieldMethodAsArgs::class],
-            'Method ' . Invalid\FieldMethodAsArgs::class . '::matches() has #[AsArgs] on $search, which #[Field] methods do not support yet: field args are neither validated, hydrated nor authorized. Take scalar args instead, or move the operation to a #[Query] or #[Mutation].',
+            fn() => new #[Type] class {
+                #[Field]
+                public function matches(#[AsArgsAttribute] AsArgs\BookSearch $search): int
+                {
+                    return 0;
+                }
+            },
+            'Method %1$s::matches() has #[AsArgs] on $search, which #[Field] methods do not support yet: field args are neither validated, hydrated nor authorized. Take scalar args instead, or move the operation to a #[Query] or #[Mutation].',
         ],
         '#[AsArgs] with #[Arg]' => [
-            [Invalid\AsArgsWithArg::class],
-            '#[AsArgs] on the parameter $search in ' . Invalid\AsArgsWithArg::class . '::search cannot be combined with #[Arg]: the parameter has no arg of its own to name or describe. Remove #[Arg], and rename or describe the fields with #[Field(name:, description:)] on the #[Input] class.',
+            fn() => new class {
+                #[Query]
+                public function search(#[AsArgsAttribute, Arg('filter')] AsArgs\BookSearch $search): string
+                {
+                    return 'never';
+                }
+            },
+            '#[AsArgs] on the parameter $search in %1$s::search cannot be combined with #[Arg]: the parameter has no arg of its own to name or describe. Remove #[Arg], and rename or describe the fields with #[Field(name:, description:)] on the #[Input] class.',
         ],
         'a nullable parameter' => [
-            [Invalid\NullableAsArgs::class],
-            '#[AsArgs] on the parameter $search in ' . Invalid\NullableAsArgs::class . '::search is not supported on a parameter that is nullable or has a default: flattened args cannot say the input as a whole is absent. Make the parameter required, or drop #[AsArgs] to take a nullable input arg.',
+            fn() => new class {
+                #[Query]
+                public function search(#[AsArgsAttribute] ?AsArgs\BookSearch $search = null): string
+                {
+                    return 'never';
+                }
+            },
+            '#[AsArgs] on the parameter $search in %1$s::search is not supported on a parameter that is nullable or has a default: flattened args cannot say the input as a whole is absent. Make the parameter required, or drop #[AsArgs] to take a nullable input arg.',
         ],
         'a parameter with a default' => [
-            [Invalid\DefaultedAsArgs::class],
-            '#[AsArgs] on the parameter $search in ' . Invalid\DefaultedAsArgs::class . '::search is not supported on a parameter that is nullable or has a default: flattened args cannot say the input as a whole is absent. Make the parameter required, or drop #[AsArgs] to take a nullable input arg.',
+            fn() => new class {
+                #[Query]
+                public function search(#[AsArgsAttribute] AsArgs\BookSearch $search = new AsArgs\BookSearch()): string
+                {
+                    return 'never';
+                }
+            },
+            '#[AsArgs] on the parameter $search in %1$s::search is not supported on a parameter that is nullable or has a default: flattened args cannot say the input as a whole is absent. Make the parameter required, or drop #[AsArgs] to take a nullable input arg.',
         ],
     ]);
 
-    it('rejects a flattened field whose input type is not registered', function (bool $cached) {
+    it('rejects a flattened field whose input type is not registered', function () {
         isolateGraphQL();
-
-        if ($cached) {
-            app()->instance('config_loaded_from_cache', true);
-        }
 
         expect(fn() => discoverGraphQL(AsArgs\OrderMutations::class)->apply())->toThrow(
             LogicException::class,
             'Property ' . AsArgs\PlaceOrder::class . '::$shipTo, flattened into method ' . AsArgs\OrderMutations::class . '::placeOrder, references ' . AsArgs\Destination::class . ', which is not a registered GraphQL input type. Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[Field(type: ...)].',
         );
-
-        app()->forgetInstance('config_loaded_from_cache');
-    })->with([
-        'config written' => [false],
-        'config cached' => [true],
-    ]);
+    });
 });

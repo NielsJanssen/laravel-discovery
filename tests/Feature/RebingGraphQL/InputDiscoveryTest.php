@@ -6,28 +6,32 @@ namespace Tests\Feature\RebingGraphQL;
 
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
-use GraphQL\Utils\SchemaPrinter;
+use Countable;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rules\Exists;
 use LogicException;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Arg;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\InputHydrator;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorize;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Denied;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredInputType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Ignore;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\ScalarMap;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapper;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mutation;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
-use Rebing\GraphQL\Support\Facades\GraphQL;
 use Rebing\GraphQL\Support\Type as RebingType;
 use RuntimeException;
-use Tempest\Discovery\DiscoveryItems;
+use Tests\Fixtures\RebingGraphQL\AlwaysAllowGate;
 use Tests\Fixtures\RebingGraphQL\Inputs;
 use Tests\Fixtures\RebingGraphQL\Inputs\Invalid;
 use Tests\Fixtures\RebingGraphQL\Mappers;
@@ -35,34 +39,6 @@ use Workbench\App\Models\User;
 
 /** The CreateBook fixtures, in discovery order. */
 const CREATE_BOOK_SOURCES = [Inputs\BookMutations::class, Inputs\CreateBook::class, Inputs\Address::class, Inputs\Chapter::class];
-
-/**
- * @return list<DiscoveredType>
- */
-function discoveredInputs(string ...$classes): array
-{
-    $items = iterator_to_array(discoverGraphQL(...$classes)->getItems(), false);
-
-    return array_values(array_filter($items, static fn(mixed $item): bool => $item instanceof DiscoveredType && $item->kind === TypeKind::Input));
-}
-
-/** Discover, then pass the items through serialize() as the discovery cache does, and apply them. */
-function applyCachedInputs(string ...$classes): DiscoveryItems
-{
-    isolateGraphQL();
-    $items = unserialize(serialize(discoverGraphQL(...$classes)->getItems()));
-
-    if (! $items instanceof DiscoveryItems) {
-        throw new RuntimeException('Items did not survive serialization.');
-    }
-
-    isolateGraphQL();
-    $discovery = app(GraphQLDiscovery::class);
-    $discovery->setItems($items);
-    $discovery->apply();
-
-    return $items;
-}
 
 /**
  * @return array<string, mixed>
@@ -181,7 +157,7 @@ describe('the input schema', function () {
             ->and(config('graphql.types'))->not->toHaveKey('UnusedInput')
             ->and(app(TypeRegistry::class)->has(Inputs\Unused::class))->toBeFalse();
 
-        $unused = array_values(array_filter(discoveredInputs(...$sources), static fn(DiscoveredType $type): bool => $type->class === Inputs\Unused::class));
+        $unused = array_values(array_filter(discoveredTypesOf(TypeKind::Input, ...$sources), static fn(DiscoveredType $type): bool => $type->class === Inputs\Unused::class));
 
         expect($unused)->toHaveCount(1)
             ->and(app()->bound((string) $unused[0]->bindName))->toBeFalse();
@@ -532,7 +508,7 @@ describe('#[Authorize] on a model-bound input property', function () {
 describe('#[Authorize] on an input reached through a raw arg', function () {
     beforeEach(function () {
         $this->loadLaravelMigrations();
-        refreshInputMappers(Inputs\ReviewListMapper::class);
+        refreshMappers(Inputs\ReviewListMapper::class);
     });
 
     it('checks an input named by #[Arg(type:)] on an array parameter', function () {
@@ -576,7 +552,7 @@ describe('#[Authorize] on an input reached through a raw arg', function () {
 
 describe('the discovery cache', function () {
     it('round-trips an input type whose field has closure rules and a model binding', function () {
-        $review = array_values(array_filter(discoveredInputs(Inputs\Review::class), static fn(DiscoveredType $type): bool => $type->name === 'ReviewInput'))[0];
+        $review = array_find(discoveredTypesOf(TypeKind::Input, Inputs\Review::class), static fn(DiscoveredType $type): bool => $type->name === 'ReviewInput');
 
         expect(unserialize(serialize($review)))->toEqual($review)
             ->and($review->bindName)->toStartWith('discovery.rebing_graphql.type.')
@@ -591,7 +567,7 @@ describe('the discovery cache', function () {
         Gate::define('attach', fn(?User $actor) => true);
         $publisher = User::factory()->create();
 
-        $items = applyCachedInputs(Inputs\Unused::class, ...CREATE_BOOK_SOURCES);
+        $items = applyCachedGraphQL([Inputs\Unused::class, ...CREATE_BOOK_SOURCES]);
 
         $kept = [];
 
@@ -616,71 +592,200 @@ describe('the discovery cache', function () {
     });
 
     it('binds the used inputs and fills the registry when the configuration is cached', function () {
-        isolateGraphQL();
-        app()->instance('config_loaded_from_cache', true);
-
-        $discovery = discoverGraphQL(Inputs\Unused::class, ...CREATE_BOOK_SOURCES);
-        $discovery->apply();
-
-        $registry = app(TypeRegistry::class);
-
-        foreach ($discovery->getItems() as $item) {
-            if ($item instanceof DiscoveredType) {
-                expect(app()->bound((string) $item->bindName))->toBe($item->class !== Inputs\Unused::class && $item->name !== 'Shade');
-            }
-        }
+        $registry = assertBoundWhenConfigCached(
+            [Inputs\Unused::class, ...CREATE_BOOK_SOURCES],
+            static fn(DiscoveredType $type): bool => $type->class !== Inputs\Unused::class && $type->name !== 'Shade',
+        );
 
         expect($registry->nameOf(Inputs\CreateBook::class, Position::Input))->toBe('CreateBookInput')
             ->and($registry->nameOf(Inputs\Chapter::class, Position::Input))->toBe('ChapterInput')
             ->and($registry->has(Inputs\Unused::class))->toBeFalse()
             ->and($registry->has(Inputs\Shade::class))->toBeFalse()
-            ->and(app(TypeRegistry::class)->typeNamed('CreateBookInput')?->class)->toBe(Inputs\CreateBook::class)
-            ->and(app(TypeRegistry::class)->typeNamed('UnusedInput'))->toBeNull()
-            ->and(config('graphql.types'))->toBe([]);
-
-        app()->forgetInstance('config_loaded_from_cache');
+            ->and($registry->typeNamed('CreateBookInput')?->class)->toBe(Inputs\CreateBook::class)
+            ->and($registry->typeNamed('UnusedInput'))->toBeNull();
     });
 });
 
 describe('rejected shapes', function () {
-    it('rejects them at discovery', function (array $classes, string $message) {
-        expect(fn() => discoverGraphQL(...$classes))->toThrow(LogicException::class, $message);
+    it('rejects them at discovery', function (object $shape, string $format) {
+        expectRejected($shape, $format);
     })->with([
         'an interface property' => [
-            [Invalid\InterfaceProperty::class],
-            'Property ' . Invalid\InterfaceProperty::class . '::$items references Countable, which is an interface, which has no GraphQL input type. Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[Field(type: ...)].',
+            fn() => new #[Input] class {
+                public Countable $items;
+            },
+            'Property %1$s::$items references Countable, which is an interface, which has no GraphQL input type. Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[Field(type: ...)].',
         ],
         'a union property' => [
-            [Invalid\UnionProperty::class],
-            'Property ' . Invalid\UnionProperty::class . '::$value has the union type string|int, which has no GraphQL input type. Use a single type, or name one with #[Field(type: ...)].',
+            fn() => new #[Input] class {
+                public int|string $value = 0;
+            },
+            'Property %1$s::$value has the union type string|int, which has no GraphQL input type. Use a single type, or name one with #[Field(type: ...)].',
         ],
+        'a list of models' => [
+            fn() => new #[Input] class {
+                /** @var list<User> */
+                #[Field(of: User::class)]
+                public array $users = [];
+            },
+            'Property %1$s::$users references ' . User::class . ', which is an Eloquent model, which is only bound as a single ID; a list of models is not supported. Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[Field(type: ...)].',
+        ],
+        'a builtin type with no input form' => [
+            fn() => new #[Input] class {
+                public object $anything;
+            },
+            'Property %1$s::$anything has type object, which has no GraphQL input type. Name one with #[Field(type: ...)].',
+        ],
+        '#[Authorize] on a property that binds no model' => [
+            fn() => new #[Input] class {
+                #[Authorize('view')]
+                public string $title = '';
+            },
+            '#[Authorize] on property %1$s::$title only applies to a property that binds an Eloquent model; $title does not.',
+        ],
+        '#[Authorize] without an ability' => [
+            fn() => new #[Input] class {
+                #[Authorize]
+                public User $owner;
+            },
+            "#[Authorize] on property %1\$s::\$owner needs an ability, as in #[Authorize('view')], to check the record it binds.",
+        ],
+        '#[Authorize(gate:)] on a property' => [
+            fn() => new #[Input] class {
+                #[Authorize('view', gate: AlwaysAllowGate::class)]
+                public User $owner;
+            },
+            '#[Authorize(gate:)] on property %1$s::$owner is not supported: a gate class receives the raw args, so it belongs on the action.',
+        ],
+        '#[Authorize(onDenied:)] on a property' => [
+            fn() => new #[Input] class {
+                #[Authorize('view', onDenied: Denied::Error)]
+                public User $owner;
+            },
+            '#[Authorize(onDenied:)] on property %1$s::$owner only applies to a field of a #[Type]. A denied input always reports an error; remove onDenied:.',
+        ],
+        'a #[Field] method on an input' => [
+            fn() => new #[Input] class {
+                public string $title = '';
+
+                #[Field]
+                public function shout(): string
+                {
+                    return strtoupper($this->title);
+                }
+            },
+            'Method %1$s::shout() has #[Field], but an #[Input] takes its fields from properties only. Make it a property, or add #[Type] to ',
+        ],
+        'two fields with one name' => [
+            fn() => new #[Input] class {
+                public string $title = '';
+
+                #[Field(name: 'title')]
+                public string $heading = '';
+            },
+            'Input %1$s has two fields named "title" ($title and $heading). Rename one with #[Field(name: ...)], or #[Ignore] one.',
+        ],
+        '#[Field] with #[Ignore]' => [
+            fn() => new #[Input] class {
+                #[Field, Ignore]
+                public string $title = '';
+            },
+            'Property %1$s::$title has both #[Field] and #[Ignore]. Remove one.',
+        ],
+        '#[Field] on a private property' => [
+            fn() => new #[Input] class {
+                #[Field]
+                private string $title = '';
+
+                public function title(): string
+                {
+                    return $this->title;
+                }
+            },
+            'Property %1$s::$title has #[Field] but is not public. Only public, non-static properties become fields.',
+        ],
+        '#[Field] on a property without a set hook' => [
+            fn() => new #[Input] class {
+                #[Field]
+                public string $title {
+                    get => 'fixed';
+                }
+            },
+            'Property %1$s::$title has #[Field] but no set hook, so an input cannot fill it.',
+        ],
+        'one name for #[Type] and #[Input]' => [
+            fn() => new #[Type(name: 'Same'), Input(name: 'Same')] class {
+                public string $title = '';
+            },
+            'GraphQL type name [Same] is used by both #[Type] and #[Input] on %1$s. Rename one with #[Input(name: ...)].',
+        ],
+        '#[Arg(type:)] on an input parameter' => [
+            fn() => new class {
+                #[Mutation]
+                public function addChapter(#[Arg(type: 'ChapterInput')] Inputs\Chapter $chapter): string
+                {
+                    return $chapter->title;
+                }
+            },
+            '#[Arg(type:)] on the parameter $chapter in %1$s::addChapter is not supported: its type is the input type of the #[Input] Chapter. Remove type:.',
+        ],
+        'an input parameter on a #[Field] method' => [
+            fn() => new #[Type] class {
+                #[Field]
+                public function matches(Inputs\Chapter $chapter): bool
+                {
+                    return $chapter->title !== '';
+                }
+            },
+            'Method %1$s::matches() takes the #[Input] Chapter as $chapter, which fields do not support yet. Take its values as scalar args instead.',
+        ],
+        '#[Field(rules:)] on an output-only property' => [
+            fn() => new #[Type] class {
+                #[Field(rules: ['min:2'])]
+                public string $title = '';
+            },
+            'Property %1$s::$title has #[Field(rules:)], but rules only apply to a property of an #[Input]. Add #[Input] to the class, or remove rules:.',
+        ],
+        'a constructor parameter no field fills' => [
+            fn() => new #[Input] class ('x', 'y') {
+                public string $token;
+
+                public function __construct(public string $title, string $secret)
+                {
+                    $this->token = hash('sha256', $secret);
+                }
+            },
+            'Constructor parameter $secret of the #[Input] %1$s has no default and no input field to fill it from, so the input cannot be built. Make it a public promoted property, give it a default, or make it nullable.',
+        ],
+        'a required constructor property made optional' => [
+            fn() => new #[Input] readonly class ('x') {
+                public function __construct(
+                    #[Field(nullable: true)]
+                    public string $title,
+                ) {}
+            },
+            'Property %1$s::$title is optional in the input (through a property default, #[Field(nullable: true)] or a type mapper), but its constructor parameter has no default and accepts no null, so an absent value cannot build the input. Give $title a default, make it nullable, or keep the field required.',
+        ],
+        '#[Field(rules:)] on a method' => [
+            fn() => new #[Type(), Input] class {
+                public string $title = '';
+
+                #[Field(rules: ['min:2'])]
+                public function shout(): string
+                {
+                    return strtoupper($this->title);
+                }
+            },
+            'Method %1$s::shout() has #[Field(rules:)], but rules only apply to a property of an #[Input]. Remove rules:.',
+        ],
+    ]);
+
+    it('rejects the shapes that need a named class at discovery', function (array $classes, string $message) {
+        expect(fn() => discoverGraphQL(...$classes))->toThrow(LogicException::class, $message);
+    })->with([
         'an output-only #[Type] property' => [
             [Invalid\OutputTypeProperty::class],
             'Property ' . Invalid\OutputTypeProperty::class . '::$thing references ' . Invalid\OutputOnly::class . ', which is an output-only #[Type]. Add #[Input] to OutputOnly to accept it as input too. Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[Field(type: ...)].',
-        ],
-        'a list of models' => [
-            [Invalid\ModelListProperty::class],
-            'Property ' . Invalid\ModelListProperty::class . '::$users references ' . User::class . ', which is an Eloquent model, which is only bound as a single ID; a list of models is not supported. Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[Field(type: ...)].',
-        ],
-        'a builtin type with no input form' => [
-            [Invalid\ObjectProperty::class],
-            'Property ' . Invalid\ObjectProperty::class . '::$anything has type object, which has no GraphQL input type. Name one with #[Field(type: ...)].',
-        ],
-        '#[Authorize] on a property that binds no model' => [
-            [Invalid\AuthorizeOnScalar::class],
-            '#[Authorize] on property ' . Invalid\AuthorizeOnScalar::class . '::$title only applies to a property that binds an Eloquent model; $title does not.',
-        ],
-        '#[Authorize] without an ability' => [
-            [Invalid\AuthorizeWithoutAbility::class],
-            "#[Authorize] on property " . Invalid\AuthorizeWithoutAbility::class . "::\$owner needs an ability, as in #[Authorize('view')], to check the record it binds.",
-        ],
-        '#[Authorize(gate:)] on a property' => [
-            [Invalid\GateOnProperty::class],
-            '#[Authorize(gate:)] on property ' . Invalid\GateOnProperty::class . '::$owner is not supported: a gate class receives the raw args, so it belongs on the action.',
-        ],
-        '#[Authorize(onDenied:)] on a property' => [
-            [Invalid\OnDeniedOnProperty::class],
-            '#[Authorize(onDenied:)] on property ' . Invalid\OnDeniedOnProperty::class . '::$owner only applies to a field of a #[Type]. A denied input always reports an error; remove onDenied:.',
         ],
         '#[Input] on an enum' => [
             [Invalid\InputEnum::class],
@@ -694,74 +799,20 @@ describe('rejected shapes', function () {
             [Invalid\RebingInput::class],
             '#[Input] on ' . Invalid\RebingInput::class . ', which extends ' . RebingType::class . ': a class is either a hand-written Rebing type or an #[Input], not both. Remove one.',
         ],
-        'a #[Field] method on an input' => [
-            [Invalid\MethodField::class],
-            'Method ' . Invalid\MethodField::class . '::shout() has #[Field], but an #[Input] takes its fields from properties only. Make it a property, or add #[Type] to MethodField for an output field.',
-        ],
-        'two fields with one name' => [
-            [Invalid\DuplicateFields::class],
-            'Input ' . Invalid\DuplicateFields::class . ' has two fields named "title" ($title and $heading). Rename one with #[Field(name: ...)], or #[Ignore] one.',
-        ],
-        '#[Field] with #[Ignore]' => [
-            [Invalid\IgnoredField::class],
-            'Property ' . Invalid\IgnoredField::class . '::$title has both #[Field] and #[Ignore]. Remove one.',
-        ],
-        '#[Field] on a private property' => [
-            [Invalid\PrivateField::class],
-            'Property ' . Invalid\PrivateField::class . '::$title has #[Field] but is not public. Only public, non-static properties become fields.',
-        ],
-        '#[Field] on a property without a set hook' => [
-            [Invalid\GetOnlyField::class],
-            'Property ' . Invalid\GetOnlyField::class . '::$title has #[Field] but no set hook, so an input cannot fill it.',
-        ],
-        'one name for #[Type] and #[Input]' => [
-            [Invalid\SameName::class],
-            'GraphQL type name [Same] is used by both #[Type] and #[Input] on ' . Invalid\SameName::class . '. Rename one with #[Input(name: ...)].',
+        '#[Input] on an Eloquent model' => [
+            [Invalid\InputModel::class],
+            '#[Input] on the Eloquent model ' . Invalid\InputModel::class . ' is not supported: in input position a model is always bound by its ID. Type a parameter or an input property as InputModel to bind one, or declare a separate #[Input] class with the values to fill it with.',
         ],
         'two inputs with one name' => [
             [Inputs\Chapter::class, Invalid\DuplicateInputName::class],
             'GraphQL type name [ChapterInput] is used by both ' . Inputs\Chapter::class . ' and ' . Invalid\DuplicateInputName::class . '. Rename one with #[Input(name: ...)].',
         ],
-        '#[Arg(type:)] on an input parameter' => [
-            [Invalid\ArgTypeOnInputQuery::class],
-            '#[Arg(type:)] on the parameter $chapter in ' . Invalid\ArgTypeOnInputQuery::class . '::addChapter is not supported: its type is the input type of the #[Input] Chapter. Remove type:.',
-        ],
-        'an input parameter on a #[Field] method' => [
-            [Invalid\FieldMethodInputArg::class],
-            'Method ' . Invalid\FieldMethodInputArg::class . '::matches() takes the #[Input] Chapter as $chapter, which fields do not support yet. Take its values as scalar args instead.',
-        ],
-        '#[Field(rules:)] on an output-only property' => [
-            [Invalid\RulesOnOutput::class],
-            'Property ' . Invalid\RulesOnOutput::class . '::$title has #[Field(rules:)], but rules only apply to a property of an #[Input]. Add #[Input] to the class, or remove rules:.',
-        ],
-        '#[Input] on an Eloquent model' => [
-            [Invalid\InputModel::class],
-            '#[Input] on the Eloquent model ' . Invalid\InputModel::class . ' is not supported: in input position a model is always bound by its ID. Type a parameter or an input property as InputModel to bind one, or declare a separate #[Input] class with the values to fill it with.',
-        ],
-        'a constructor parameter no field fills' => [
-            [Invalid\UnfilledConstructorParam::class],
-            'Constructor parameter $secret of the #[Input] ' . Invalid\UnfilledConstructorParam::class . ' has no default and no input field to fill it from, so the input cannot be built. Make it a public promoted property, give it a default, or make it nullable.',
-        ],
-        'a required constructor property made optional' => [
-            [Invalid\OptionalRequiredParam::class],
-            'Property ' . Invalid\OptionalRequiredParam::class . '::$title is optional in the input (through a property default, #[Field(nullable: true)] or a type mapper), but its constructor parameter has no default and accepts no null, so an absent value cannot build the input. Give $title a default, make it nullable, or keep the field required.',
-        ],
-        '#[Field(rules:)] on a method' => [
-            [Invalid\RulesOnMethod::class],
-            'Method ' . Invalid\RulesOnMethod::class . '::shout() has #[Field(rules:)], but rules only apply to a property of an #[Input]. Remove rules:.',
-        ],
     ]);
 
-    it('rejects them when applied', function (array $classes, string $message, bool $cached) {
+    it('rejects them when applied', function (array $classes, string $message) {
         isolateGraphQL();
 
-        if ($cached) {
-            app()->instance('config_loaded_from_cache', true);
-        }
-
         expect(fn() => discoverGraphQL(...$classes)->apply())->toThrow(LogicException::class, $message);
-
-        app()->forgetInstance('config_loaded_from_cache');
     })->with([
         'an input returned from an action' => [
             [Invalid\InputReturnQuery::class, Inputs\Chapter::class],
@@ -775,35 +826,22 @@ describe('rejected shapes', function () {
             [Invalid\UnregisteredPropertyMutation::class, Invalid\UnregisteredProperty::class],
             'Field UnregisteredPropertyInput.at references DateTimeImmutable, which is not a registered GraphQL input type. Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[Field(type: ...)].',
         ],
-    ])->with([
-        'config written' => [false],
-        'config cached' => [true],
     ]);
 
-    it('rejects a #[Type] field arg that takes a discovered input by name', function (string $fixture, string $arg, string $field, bool $cached) {
-        refreshInputMappers(Inputs\DraftsMapper::class);
+    it('rejects a #[Type] field arg that takes a discovered input by name', function (string $fixture, string $arg, string $field) {
+        refreshMappers(Inputs\DraftsMapper::class);
+
         isolateGraphQL();
 
-        if ($cached) {
-            app()->instance('config_loaded_from_cache', true);
-        }
-
-        $sources = [...CREATE_BOOK_SOURCES, $fixture];
-
-        expect(fn() => discoverGraphQL(...$sources)->apply())->toThrow(LogicException::class, sprintf(
+        expect(fn() => discoverGraphQL(...[...CREATE_BOOK_SOURCES, $fixture])->apply())->toThrow(LogicException::class, sprintf(
             'Argument %s of field %s.%s takes the input type [CreateBookInput], which fields do not support yet: field args are neither validated, hydrated nor authorized. Take scalar args instead, or move the operation to a #[Query] or #[Mutation].',
             $arg,
             class_basename($fixture),
             $field,
         ));
-
-        app()->forgetInstance('config_loaded_from_cache');
     })->with([
         '#[Arg(type:)] on an array' => [Invalid\RawInputFieldArg::class, 'raw', 'publisher'],
         'a mapped parameter' => [Invalid\MappedInputFieldArg::class, 'drafts', 'count'],
-    ])->with([
-        'config written' => [false],
-        'config cached' => [true],
     ]);
 
     it('does not check the fields of an input that nothing uses', function () {
@@ -815,28 +853,14 @@ describe('rejected shapes', function () {
     });
 });
 
-/** Rebuild the mapper registry and the discoverer, so tagged mappers and the scalar map take effect. */
-function refreshInputMappers(string ...$mappers): void
-{
-    if ($mappers !== []) {
-        app()->tag($mappers, TypeMapper::TAG);
-    }
-
-    app()->forgetInstance(ScalarMap::class);
-    app()->forgetInstance(TypeMapperRegistry::class);
-    app()->forgetInstance(GraphQLDiscovery::class);
-}
-
 describe('type mappers in input position', function () {
     it('maps an input property through the scalar map and hydrates the parsed value', function () {
         config()->set(ScalarMap::CONFIG, [CarbonInterface::class => 'DateTime']);
-        refreshInputMappers();
+        refreshMappers();
 
-        isolateGraphQL();
-        config()->set('graphql.types', ['DateTime' => Mappers\DateTimeScalar::class]);
-        discoverGraphQL(Inputs\EventMutation::class, Inputs\Event::class)->apply();
+        $sdl = schemaSdlWith(['DateTime' => Mappers\DateTimeScalar::class], Inputs\EventMutation::class, Inputs\Event::class);
 
-        expect(SchemaPrinter::doPrint(GraphQL::schema()))->toContain(<<<'GRAPHQL'
+        expect($sdl)->toContain(<<<'GRAPHQL'
             input EventInput {
               startsAt: DateTime!
               endsAt: DateTime
@@ -855,7 +879,7 @@ describe('type mappers in input position', function () {
     });
 
     it('asks the mappers about input properties as properties in input position', function () {
-        refreshInputMappers(Inputs\MemberRecordingMapper::class);
+        refreshMappers(Inputs\MemberRecordingMapper::class);
         Inputs\MemberRecordingMapper::$asked = [];
 
         discoverGraphQL(Inputs\Chapter::class);
@@ -865,20 +889,20 @@ describe('type mappers in input position', function () {
     });
 
     it('lets a mapper type a property whose class has no input form', function () {
-        refreshInputMappers(Mappers\GreedyMapper::class);
+        refreshMappers(greedyMapper());
 
-        [$input] = discoveredInputs(Invalid\OutputTypeProperty::class);
+        [$input] = discoveredTypesOf(TypeKind::Input, Invalid\OutputTypeProperty::class);
 
         expect($input->fields[0]->type)->toEqual(TypeRef::scalar('String'));
     });
 
     it('never offers an #[Input] parameter or property to a mapper', function () {
-        refreshInputMappers(Mappers\GreedyMapper::class);
+        refreshMappers(greedyMapper());
 
         $arg = discoveredActions(Inputs\BookMutations::class)['createBook']->args[0];
         $fields = [];
 
-        foreach (discoveredInputs(Inputs\CreateBook::class) as $type) {
+        foreach (discoveredTypesOf(TypeKind::Input, Inputs\CreateBook::class) as $type) {
             foreach ($type->fields as $field) {
                 $fields[$field->name] = $field->type;
             }
@@ -894,7 +918,7 @@ describe('type mappers in input position', function () {
 
 describe('framework members', function () {
     it('leaves properties Laravel declares out of an input', function () {
-        [$input] = discoveredInputs(Inputs\QueuedReport::class);
+        [$input] = discoveredTypesOf(TypeKind::Input, Inputs\QueuedReport::class);
 
         expect(array_map(static fn($field) => $field->name, $input->fields))->toBe(['title']);
     });

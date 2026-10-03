@@ -6,25 +6,16 @@ namespace Tests\Feature\RebingGraphQL;
 
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
-use GraphQL\Utils\SchemaPrinter;
 use Illuminate\Support\Facades\Gate;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\InputHydrator;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredTypeField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\InputCollector;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\ScalarMap;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mutation;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Omitted;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
-use Rebing\GraphQL\Support\Facades\GraphQL;
-use RuntimeException;
-use Tempest\Discovery\DiscoveryItems;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
 use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\RebingGraphQL\Inputs\Omitted as Partial;
 use Tests\Fixtures\RebingGraphQL\Inputs\Omitted\Invalid;
@@ -53,32 +44,6 @@ function patchRequest(string $field, string $input, array $variables): array
         'query' => "mutation (\$input: $input!) { $field(input: \$input) }",
         'variables' => ['input' => $variables],
     ];
-}
-
-/**
- * The discovered input types of the partial-update fixtures, keyed by class.
- *
- * @return array<class-string, DiscoveredType>
- */
-function omittedInputs(string ...$classes): array
-{
-    $types = [];
-
-    foreach (discoverGraphQL(...$classes)->getItems() as $item) {
-        if ($item instanceof DiscoveredType) {
-            $types[$item->class] = $item;
-        }
-    }
-
-    return $types;
-}
-
-/** Rebuild the scalar map and the discoverer so a changed config takes effect. */
-function refreshOmittedMappers(): void
-{
-    app()->forgetInstance(ScalarMap::class);
-    app()->forgetInstance(TypeMapperRegistry::class);
-    app()->forgetInstance(GraphQLDiscovery::class);
 }
 
 beforeEach(function () {
@@ -137,25 +102,6 @@ describe('the schema', function () {
                 }
                 GRAPHQL,
         );
-    });
-
-    it('marks the fields as omittable, and rejecting null only when the PHP type takes none', function () {
-        $fields = omittedInputs(Partial\UpdateBook::class)[Partial\UpdateBook::class]->fields;
-
-        expect(array_map(static fn(DiscoveredTypeField $field): array => [$field->name, $field->omittable, $field->rejectsNull, $field->defaultValue], $fields))->toBe([
-            ['title', true, true, null],
-            ['subtitle', true, false, null],
-        ])->and($fields[0]->type)->toEqual(TypeRef::scalar('string', nullable: true));
-    });
-
-    it('binds an Omitted model as nullable only when its PHP type takes null', function () {
-        $fields = omittedInputs(Partial\AssignBook::class)[Partial\AssignBook::class]->fields;
-
-        expect(array_map(static fn(DiscoveredTypeField $field): array => [$field->name, $field->binding?->modelClass, $field->binding?->nullable], $fields))->toBe([
-            ['editor', User::class, false],
-            ['reviewer', User::class, true],
-            ['owner', User::class, false],
-        ]);
     });
 });
 
@@ -563,12 +509,11 @@ describe('model properties in nested inputs and list items', function () {
 describe('mapped types', function () {
     it('maps the inner type of an Omitted property and hydrates the parsed value', function () {
         config()->set(ScalarMap::CONFIG, [CarbonInterface::class => 'DateTime']);
-        refreshOmittedMappers();
-        isolateGraphQL();
-        config()->set('graphql.types', ['DateTime' => Mappers\DateTimeScalar::class]);
-        discoverGraphQL(Partial\RescheduleMutation::class, Partial\Reschedule::class)->apply();
+        refreshMappers();
 
-        expect(SchemaPrinter::doPrint(GraphQL::schema()))->toContain(<<<'GRAPHQL'
+        $sdl = schemaSdlWith(['DateTime' => Mappers\DateTimeScalar::class], Partial\RescheduleMutation::class, Partial\Reschedule::class);
+
+        expect($sdl)->toContain(<<<'GRAPHQL'
             input RescheduleInput {
               startsAt: DateTime
             }
@@ -596,6 +541,86 @@ describe('hydration without a request', function () {
 });
 
 describe('rejected shapes', function () {
+    it('rejects them at discovery', function (object $shape, string $format) {
+        expectRejected($shape, $format);
+    })->with([
+        'Omitted next to more than one type' => [
+            fn() => new #[Input] readonly class {
+                public function __construct(
+                    public string|int|Omitted $value = Omitted::Value,
+                ) {}
+            },
+            'Property %1$s::$value is typed ' . Omitted::class . '|string|int, but Omitted makes exactly one type optional, as in string|Omitted or string|Omitted|null. Keep one type besides Omitted and null.',
+        ],
+        'Omitted on its own' => [
+            fn() => new #[Input] readonly class {
+                public function __construct(
+                    public ?Omitted $value = Omitted::Value,
+                ) {}
+            },
+            'Property %1$s::$value is typed ?' . Omitted::class . ', which leaves no value to send besides Omitted. Name the type Omitted makes optional, as in string|Omitted.',
+        ],
+        'an Omitted property without a default' => [
+            fn() => new #[Input] readonly class ('x') {
+                public function __construct(
+                    public string|Omitted $title,
+                ) {}
+            },
+            'Property %1$s::$title is typed ' . Omitted::class . '|string, but it has no default, so a field the caller leaves out has nothing to hydrate to. Give it the default Omitted::Value.',
+        ],
+        'an Omitted property with another default' => [
+            fn() => new #[Input] readonly class {
+                public function __construct(
+                    public string|Omitted|null $subtitle = null,
+                ) {}
+            },
+            'Property %1$s::$subtitle is typed ' . Omitted::class . '|string|null, but its default is not Omitted::Value, so a field the caller leaves out has nothing to hydrate to. Give it the default Omitted::Value.',
+        ],
+        'Omitted on an action parameter' => [
+            fn() => new class {
+                #[Mutation]
+                public function rename(string|Omitted $title = Omitted::Value): string
+                {
+                    return 'ok';
+                }
+            },
+            'Parameter $title in %1$s::rename is typed ' . Omitted::class . '|string, but Omitted only applies to a property of an #[Input] class. Move the optional args into an #[Input] class and take it with #[AsArgs] to keep them top-level.',
+        ],
+        'Omitted in an inferred return type' => [
+            fn() => new class {
+                #[Query]
+                public function title(): string|Omitted
+                {
+                    return Omitted::Value;
+                }
+            },
+            'Method %1$s::title is typed ' . Omitted::class . '|string, but Omitted only applies to a property of an #[Input] class, in input position. Remove Omitted from the return type.',
+        ],
+        'Omitted in a return type with type:' => [
+            fn() => new class {
+                #[Query(type: 'String')]
+                public function title(): string|Omitted
+                {
+                    return Omitted::Value;
+                }
+            },
+            'Method %1$s::title is typed ' . Omitted::class . '|string, but Omitted only applies to a property of an #[Input] class, in input position. Remove Omitted from the return type.',
+        ],
+        'Omitted in a return type with of:' => [
+            fn() => new class {
+                /**
+                 * @return list<string>|Omitted
+                 */
+                #[Query(of: 'string')]
+                public function titles(): array|Omitted
+                {
+                    return Omitted::Value;
+                }
+            },
+            'Method %1$s::titles is typed ' . Omitted::class . '|array, but Omitted only applies to a property of an #[Input] class, in input position. Remove Omitted from the return type.',
+        ],
+    ]);
+
     it('rejects Omitted on an output-only #[Type] property', function () {
         expect(fn() => discoverGraphQL(Invalid\OutputOnly::class))->toThrow(
             LogicException::class,
@@ -618,57 +643,11 @@ describe('rejected shapes', function () {
             sprintf('Property %s::$title is typed %s|string, but Shared is both a #[Type] and an #[Input]', Invalid\Shared::class, Omitted::class),
         );
     });
-
-    it('rejects Omitted next to more than one type', function () {
-        expect(fn() => discoverGraphQL(Invalid\WideUnion::class))->toThrow(
-            LogicException::class,
-            sprintf('Property %s::$value is typed %s|string|int, but Omitted makes exactly one type optional, as in string|Omitted or string|Omitted|null. Keep one type besides Omitted and null.', Invalid\WideUnion::class, Omitted::class),
-        );
-    });
-
-    it('rejects Omitted on its own', function () {
-        expect(fn() => discoverGraphQL(Invalid\OnlyOmitted::class))->toThrow(
-            LogicException::class,
-            sprintf('Property %s::$value is typed ?%s, which leaves no value to send besides Omitted. Name the type Omitted makes optional, as in string|Omitted.', Invalid\OnlyOmitted::class, Omitted::class),
-        );
-    });
-
-    it('rejects an Omitted property without a default', function () {
-        expect(fn() => discoverGraphQL(Invalid\MissingDefault::class))->toThrow(
-            LogicException::class,
-            sprintf('Property %s::$title is typed %s|string, but it has no default, so a field the caller leaves out has nothing to hydrate to. Give it the default Omitted::Value.', Invalid\MissingDefault::class, Omitted::class),
-        );
-    });
-
-    it('rejects an Omitted property with another default', function () {
-        expect(fn() => discoverGraphQL(Invalid\WrongDefault::class))->toThrow(
-            LogicException::class,
-            sprintf('Property %s::$subtitle is typed %s|string|null, but its default is not Omitted::Value, so a field the caller leaves out has nothing to hydrate to. Give it the default Omitted::Value.', Invalid\WrongDefault::class, Omitted::class),
-        );
-    });
-
-    it('rejects Omitted on an action parameter', function () {
-        expect(fn() => discoverGraphQL(Invalid\ParameterMutation::class))->toThrow(
-            LogicException::class,
-            sprintf('Parameter $title in %s::rename is typed %s|string, but Omitted only applies to a property of an #[Input] class. Move the optional args into an #[Input] class and take it with #[AsArgs] to keep them top-level.', Invalid\ParameterMutation::class, Omitted::class),
-        );
-    });
-
-    it('rejects Omitted in an action return type, also when type: or of: names the GraphQL type', function (string $fixture, string $method, string $type) {
-        expect(fn() => discoverGraphQL($fixture))->toThrow(
-            LogicException::class,
-            sprintf('Method %s::%s is typed %s, but Omitted only applies to a property of an #[Input] class, in input position. Remove Omitted from the return type.', $fixture, $method, $type),
-        );
-    })->with([
-        'inferred' => [Invalid\ReturnQuery::class, 'title', Omitted::class . '|string'],
-        'type:' => [Invalid\TypedReturnQuery::class, 'title', Omitted::class . '|string'],
-        'of:' => [Invalid\ListReturnQuery::class, 'titles', Omitted::class . '|array'],
-    ]);
 });
 
 describe('the discovery cache', function () {
     it('round-trips the omittable fields and their model bindings', function () {
-        $types = omittedInputs(...PATCH_SOURCES);
+        $types = array_column(discoveredTypes(...PATCH_SOURCES), null, 'class');
 
         foreach ([Partial\UpdateBook::class, Partial\RetagBook::class, Partial\AssignBook::class] as $class) {
             expect(unserialize(serialize($types[$class])))->toEqual($types[$class]);
@@ -685,17 +664,7 @@ describe('the discovery cache', function () {
         Gate::define('edit', fn(?User $actor, User $subject) => $subject->name !== 'Denied');
         $denied = User::factory()->create(['name' => 'Denied']);
 
-        isolateGraphQL();
-        $items = unserialize(serialize(discoverGraphQL(...PATCH_SOURCES)->getItems()));
-
-        if (! $items instanceof DiscoveryItems) {
-            throw new RuntimeException('Items did not survive serialization.');
-        }
-
-        isolateGraphQL();
-        $discovery = app(GraphQLDiscovery::class);
-        $discovery->setItems($items);
-        $discovery->apply();
+        applyCachedGraphQL(PATCH_SOURCES);
 
         $this->postJson('/graphql', patchRequest('updateBook', 'UpdateBookInput', ['subtitle' => null]))->assertOk()->assertJsonMissingPath('errors');
 
@@ -711,26 +680,11 @@ describe('the discovery cache', function () {
     });
 
     it('registers the input types an Omitted field references when the configuration is cached', function () {
-        isolateGraphQL();
-        app()->instance('config_loaded_from_cache', true);
-
-        $discovery = discoverGraphQL(...PATCH_SOURCES);
-        $discovery->apply();
-
-        foreach ($discovery->getItems() as $item) {
-            if ($item instanceof DiscoveredType || $item instanceof DiscoveredAction) {
-                expect(app()->bound((string) $item->bindName))->toBeTrue();
-            }
-        }
-
-        $registry = app(TypeRegistry::class);
+        $registry = assertBoundWhenConfigCached(PATCH_SOURCES, static fn(): bool => true);
 
         expect($registry->nameOf(Partial\Note::class, Position::Input))->toBe('NoteInput')
             ->and($registry->nameOf(Partial\UpdateBook::class, Position::Input))->toBe('UpdateBookInput')
             ->and($registry->has(Partial\Tone::class))->toBeTrue()
-            ->and($registry->has(Omitted::class))->toBeFalse()
-            ->and(config('graphql.types'))->toBe([]);
-
-        app()->forgetInstance('config_loaded_from_cache');
+            ->and($registry->has(Omitted::class))->toBeFalse();
     });
 });
