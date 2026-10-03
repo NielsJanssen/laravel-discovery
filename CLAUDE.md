@@ -239,7 +239,8 @@ alone* — no attribute required; `#[Arg]` only renames the arg, adds rules, or 
 - Lookup is always by the model's **route key** (`getRouteKeyName()`).
 - Non-nullable bindings auto-add a `Rule::exists(table, routeKey)` validation rule; nullable bindings (`?User $user` / a
   default) add no `exists` rule and resolve to `null` for a missing/absent value. Any `#[Arg(rules:)]` are merged with
-  the auto `exists` rule.
+  the auto `exists` rule, in array and `Closure` form alike (a closure is resolved first, then the `exists` rule is
+  prepended).
 - Default GraphQL arg type is `ID`; override with `#[Arg(type: '...')]`. The resolver's *return* type is unaffected — a
   `: User` return still needs `#[Query(type: 'User')]` (or a registered GraphQL type).
 - Carried on `DiscoveredAction::$modelBindings` (a list of serialize-safe `DiscoveredModelBinding` DTOs, so discovery
