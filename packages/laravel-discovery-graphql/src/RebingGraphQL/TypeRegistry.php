@@ -6,10 +6,12 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use GraphQL\Type\Definition\NullableType;
 use GraphQL\Type\Definition\Type as GraphQLType;
+use Illuminate\Container\Attributes\Singleton;
 use LogicException;
 use Rebing\GraphQL\Support\Facades\GraphQL;
 use RuntimeException;
 
+#[Singleton]
 final class TypeRegistry
 {
     /** @var array<class-string, array<string, string>> GraphQL name keyed by class, then by kind */

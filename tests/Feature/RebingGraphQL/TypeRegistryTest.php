@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
+use Illuminate\Container\Container;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\NullType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
@@ -51,6 +52,12 @@ describe('TypeRef', function () {
 
         expect(unserialize(serialize($ref)))->toEqual($ref);
     });
+});
+
+it('is a singleton even without the service provider binding it', function () {
+    $container = new Container();
+
+    expect($container->make(TypeRegistry::class))->toBe($container->make(TypeRegistry::class));
 });
 
 describe('TypeRegistry::resolve()', function () {
