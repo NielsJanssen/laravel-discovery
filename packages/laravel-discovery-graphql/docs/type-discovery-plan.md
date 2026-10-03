@@ -1,7 +1,8 @@
 # Type discovery: implementation plan
 
-Status: Phases 0–4 are done and merged into `main`, WP5.1 is done and merged, WP5.2 is done on branch `feat/type-provider`, and a simplification audit has landed on top of them (see
-[Progress](#progress) and [Simplification audit](#simplification-audit)); the rest of Phase 5, Phase 6, WP6.3 and Phase 7 remain.
+Status: Phases 0–4, the simplification audit and WP5.1–5.3 are done and merged into `main`, and WP5.4 is done on branch
+`feat/type-extension` (see [Progress](#progress) and [Simplification audit](#simplification-audit)); WP5.5, Phase 6, WP6.3
+and Phase 7 remain.
 Written 2 October 2026, against API proposal draft 3. Revised the same day after a review that verified the plan
 against the codebase and vendor code (see [Review changes](#review-changes)). Progress last updated 3 October 2026.
 
@@ -57,8 +58,8 @@ rebase-merged into `main` as one commit per WP (Phase 0 as one commit per WP ins
 | Simplification audit ([details](#simplification-audit)) | Done | Commits `fix: Keep the exists rule for closure rules on bindings` to `docs: Document the test helpers and fixture convention` (hashes pending a rewrite) | |
 | WP5.1 TypeFactory | Done | `479da11`, `64c6ac0`, `cf1b77d`, `9510728`, docs `a5103c1` | #22 |
 | WP5.2 TypeProvider | Done | `7377c24`, `c84e945`, `623efd1`, docs `0122439` | #23 |
-| WP5.3 `replace: true` | Done | `fd074c1`, docs (branch `feat/type-replacement`) | |
-| WP5.4 `#[ExtendType]` | To do | | |
+| WP5.3 `replace: true` | Done | `f17bbe2`, docs `aba5376` | #24 |
+| WP5.4 `#[TypeExtension]` | Done | `bec8053`, `9a29cae`, docs (branch `feat/type-extension`) | |
 | WP5.5 Schema-scoped types | To do (added during implementation) | | |
 | WP6.1 Interfaces | To do (low priority) | | |
 | WP6.2 Unions | To do (low priority) | | |
@@ -107,6 +108,24 @@ conflict, this list wins.
 - **WP5.1:** output only: `#[Input(factory:)]` is rejected at discovery, and the input variant is left for later. `TypeContext::$declaredFields` is a `list<string>` of GraphQL names, and `TypeContext::$naming` is the type's field strategy, rebuilt from `DiscoveredType::$naming` (the persisted `#[Type(naming:)]` override). A factory field's `Field::$args` are exposed under the argument naming strategy but reach `resolve` under their declared keys. Arg `rules:` are rejected (Rebing does not validate nested field args) and arg defaults are unsupported. `#[Field(resolve:)]` and `#[Field(args:)]` on a declared member are rejected at discovery (`FieldMembers`). Factory field types are invisible to `TypeUsage` and `SchemaValidator`, so they must reference registered types. `FactoryFields` builds the definitions; duplicate names, a missing name or type, and `type:` with `of:` throw at type build.
 - **WP5.2:** `TypeDefinition` has `name`, `kind`, `fields`, `class` and `description`; `interfaces` waits for WP6.1. `kind` is `Position::Output` or `Position::Input`. An input definition is class-less: `class:` on it is rejected, because the parameter classifier decides at discovery which parameters are hydrated and cannot know a provider's class then. Name the input with `#[Arg(type: 'Name')]` on an `array` parameter; the value arrives as a plain array. Input fields reject `resolve`, `args` and `rules`. `FactoryFields::build()` (with `FactoryOwner`) builds the fields for factories and providers alike. When a provider exists, `SchemaValidator::validate()` hands the class references to `TypeRegistry::deferReferences()` instead of asserting them, and `ProvidedTypes` (the `afterResolving` handler) runs `assertRegistered()` once the providers have registered; a failure forgets the half-built `GraphQL` instance so a second resolve fails again. A provided name that `graphql.types` or another provider already holds is a `LogicException`.
 - **WP5.3:** `replace: true` finds its parent at `apply()` (`Discovery/Replacements`): the nearest parent class that is a discovered type of the same kind. The replacer is renamed to the parent's name and inherits its description unless it sets one; the parent is neither bound nor written to `graphql.types`. `name:` with `replace: true` and a class without a parent are rejected at discovery; a missing parent and two replacers of one parent at `apply()`. A chain of replacements is allowed, and a class with both `#[Type]` and `#[Input]` replaces each kind independently. `TypeRegistry::replace()` maps the replaced class to the replacement's name, and `effective()` gives the class to hydrate, used by `AsActionField` and `InputHydrator` (which now takes the container). An `#[AsArgs]` parameter whose input is replaced is rejected at `apply()`, because flattened args are fixed at discovery. A `#[Type]` field whose property or method the returned object lacks resolves to `null` without an error, instead of throwing. `writeConfig()` writes types from the registered list, not from the items.
+- **WP5.4:** a contributor is its own discovery item (`DiscoveredExtension`), read by `TypeCollector::contributed()`
+  with the same member, naming, parameter and decorator code as a `#[Type]`, and matched to its target at `apply()` by
+  `Discovery/Extensions`, which clones the target with the contributed fields (the bind name stays, so a cached config
+  still holds). Contributors merge in the order of their class names, not in discovery order, so the SDL is the same on
+  every machine. A class target names its fields with the target's `#[Type(naming:)]`, read by reflection; a GraphQL
+  name target uses the configured strategy. `DiscoveredTypeField::$host` names the contributor that resolves the field;
+  `typeClass` stays the class of the root, so loader option checks run at discovery for a class target and at attach
+  time for a name target. `TypeContext::$declaredFields` now holds every name the type has before the factory runs,
+  contributed `#[Field]` methods included, and contributor factories run after the type's own
+  (`FactoryFields::contributed()`, label `type extension`). `ObjectFields` builds object fields for discovered and
+  provided types alike. Provided types can be extended: with a provider present, an unmatched target is deferred
+  (`TypeRegistry::deferExtensions()`) and attached in `ProvidedTypes` by GraphQL name or `TypeDefinition(class:)`; an
+  unmatched target, a provided input and a name clash with a provided field throw from the hook, which reads a provided
+  type's `fields` closure once and keeps the result. Also rejected: a hand-written Rebing type as target, a contributor
+  that is also a `#[Type]`/`#[Input]`, abstract or a Rebing class, `#[Field]` on a contributor property and a
+  class-level field decorator on a contributor. A clash with a factory field fails at type build, as in WP5.1.
+  `#[TypeExtension]` is not repeatable. Discovery items cached before WP5.4 do not unserialize
+  (`DiscoveredType::$extensionFactories`).
 - **Simplification audit:** `GraphQLDiscovery` no longer holds validation, reference walking or return-type
   resolution: see `SchemaValidator`, `TypeUsage`, `ReturnTypeResolver` and `FieldMembers`. `#[Authorize]` shape rules are
   `Authorize::verify()`, `verifyOnAction()`, `verifyOnParameter()` and `verifyOnProperty()`. The WP sections below name
@@ -238,7 +257,7 @@ WP0.1 Parameter classifier refactor ──► WP0.2 TypeRef + TypeRegistry ─�
                                        │
                                        ▼
                      WP5.1 TypeFactory ──► WP5.2 TypeProvider
-                     WP5.3 replace: true      WP5.4 #[ExtendType]
+                     WP5.3 replace: true      WP5.4 #[TypeExtension]
                      WP5.5 Schema-scoped types (after the current tracks)
                                        │
                                        ▼
@@ -791,7 +810,7 @@ provider's type; the deferred error when neither registry knows a class.
 
 ### WP5.3 Replacing a type: `replace: true`
 
-**Status:** Done, `fd074c1` and the docs commit (branch `feat/type-replacement`). See [Deviations](#deviations-from-this-plan).
+**Status:** Done, `f17bbe2` and docs `aba5376` (#24). See [Deviations](#deviations-from-this-plan).
 
 **Depends on:** WP1.1, and WP2.1 for inputs.
 
@@ -812,9 +831,9 @@ the duplicate-name check is `SchemaValidator::assertNameAvailable()`, and `valid
 fields are `null`); an input replacement hydrates the subclass into a resolver typed against the parent; both
 rejections.
 
-### WP5.4 `#[ExtendType]` contributors
+### WP5.4 `#[TypeExtension]` contributors
 
-**Status:** To do.
+**Status:** Done, `bec8053` (discovered types), `9a29cae` (provided types) and the docs commit (branch `feat/type-extension`). See [Deviations](#deviations-from-this-plan).
 
 **Depends on:** WP1.1, WP0.1, and WP5.1 for factory contributors.
 
@@ -822,11 +841,11 @@ rejections.
 the duplicate-name check) and `ParameterClassifier`, as `TypeCollector` does; do not re-implement them.
 
 **Scope:**
-- `#[ExtendType(Target::class | 'GraphQLName')]` on a class. Its `#[Field]` methods are added to the target output
+- `#[TypeExtension(Target::class | 'GraphQLName')]` on a class. Its `#[Field]` methods are added to the target output
   type. The contributor is resolved from the container, and `#[Root]` receives the parent object.
 - A contributor implementing `TypeFactory` adds dynamic fields.
 - Fields merge in discovery order. A duplicate field name is a `LogicException`.
-- Reject `#[ExtendType]` that targets an input type, with a hint to use `#[Input(replace: true)]`.
+- Reject `#[TypeExtension]` that targets an input type, with a hint to use `#[Input(replace: true)]`.
 
 **Tests:** the `UserBilling` example; `#[Authorize]` on a contributor field; a factory contributor; a duplicate field;
 targeting an input.
@@ -1394,7 +1413,7 @@ class User extends \Vendor\Accounts\User { public ?string $billingReference = nu
 #[Input(replace: true)]                     // the only way to extend an input
 final readonly class CreateUser extends \Vendor\Accounts\CreateUser { /* ... */ }
 
-#[ExtendType(User::class)]                  // output types only
+#[TypeExtension(User::class)]                  // output types only
 final readonly class UserBilling
 {
     public function __construct(private Billing $billing) {}
