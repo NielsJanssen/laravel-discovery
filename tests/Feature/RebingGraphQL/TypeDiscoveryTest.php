@@ -37,8 +37,8 @@ use Tests\Fixtures\RebingGraphQL\Types\Reference\GenreType;
 function referenceSchemaSdl(string ...$classes): string
 {
     isolateGraphQL();
-    discoverGraphQL(...$classes)->apply();
     app(TypeRegistry::class)->register(Genre::class, 'Genre', TypeKind::Enum);
+    discoverGraphQL(...$classes)->apply();
 
     return SchemaPrinter::doPrint(GraphQL::schema());
 }

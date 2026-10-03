@@ -23,20 +23,6 @@ beforeEach(function () {
     GraphQL::addType(BookType::class, 'Book');
 });
 
-/**
- * @return array<string, DiscoveredAction> keyed by method name
- */
-function discoverTypeFixture(string $class): array
-{
-    $items = [];
-
-    foreach (discoverGraphQL($class)->getItems() as $item) {
-        $items[$item->method] = $item;
-    }
-
-    return $items;
-}
-
 function discoveredFieldType(DiscoveredAction $action): string
 {
     return (string) $action->createType(app())->type();
@@ -175,50 +161,50 @@ describe('TypeRegistry::resolve()', function () {
 
 describe('type: and of: on actions', function () {
     it('makes of: a non-null list of non-null items', function () {
-        $action = discoverTypeFixture(ListOfQuery::class)['tags'];
+        $action = discoveredActions(ListOfQuery::class)['tags'];
 
         expect($action->action->list)->toBeTrue()
             ->and(discoveredFieldType($action))->toBe('[String!]!');
     });
 
     it('allows null items with nullableItems:', function () {
-        expect(discoveredFieldType(discoverTypeFixture(ListOfQuery::class)['sparseTags']))->toBe('[String]!');
+        expect(discoveredFieldType(discoveredActions(ListOfQuery::class)['sparseTags']))->toBe('[String]!');
     });
 
     it('resolves of: with a registered class-string', function () {
         app(TypeRegistry::class)->register(Book::class, 'Book', TypeKind::Object);
 
-        expect(discoveredFieldType(discoverTypeFixture(ListOfQuery::class)['books']))->toBe('[Book!]!');
+        expect(discoveredFieldType(discoveredActions(ListOfQuery::class)['books']))->toBe('[Book!]!');
     });
 
     it('widens of: to a nullable list for a nullable return', function () {
-        expect(discoveredFieldType(discoverTypeFixture(ListOfQuery::class)['maybeBooks']))->toBe('[Book!]');
+        expect(discoveredFieldType(discoveredActions(ListOfQuery::class)['maybeBooks']))->toBe('[Book!]');
     });
 
     it('resolves type: with a registered class-string', function () {
         app(TypeRegistry::class)->register(Book::class, 'Book', TypeKind::Object);
 
-        expect(discoveredFieldType(discoverTypeFixture(ListOfQuery::class)['book']))->toBe('Book');
+        expect(discoveredFieldType(discoveredActions(ListOfQuery::class)['book']))->toBe('Book');
     });
 
     it('resolves type: with a built-in scalar name', function () {
-        expect(discoveredFieldType(discoverTypeFixture(ListOfQuery::class)['bookId']))->toBe('ID!');
+        expect(discoveredFieldType(discoveredActions(ListOfQuery::class)['bookId']))->toBe('ID!');
     });
 
     it('reports an unregistered class-string when the type is built', function () {
-        $action = discoverTypeFixture(ListOfQuery::class)['book'];
+        $action = discoveredActions(ListOfQuery::class)['book'];
 
         expect(fn() => discoveredFieldType($action))
             ->toThrow(\RuntimeException::class, Book::class . ' is not a registered GraphQL output type.');
     });
 
     it('rejects type: and of: together at discovery', function () {
-        expect(fn() => discoverTypeFixture(TypeAndOfQuery::class))
+        expect(fn() => discoveredActions(TypeAndOfQuery::class))
             ->toThrow(\LogicException::class, TypeAndOfQuery::class . '::books sets both type: and of:');
     });
 
     it('keeps the discovered type reference serializable', function () {
-        $action = discoverTypeFixture(ListOfQuery::class)['books'];
+        $action = discoveredActions(ListOfQuery::class)['books'];
 
         expect(unserialize(serialize($action))->returnType)->toEqual(TypeRef::class(Book::class, list: true));
     });
@@ -226,7 +212,7 @@ describe('type: and of: on actions', function () {
     it('gives #[Paginated] the registered name of a class-string type', function () {
         app(TypeRegistry::class)->register(Book::class, 'Book', TypeKind::Object);
 
-        $action = discoverTypeFixture(ClassTypedPaginatedQuery::class)['resolve'];
+        $action = discoveredActions(ClassTypedPaginatedQuery::class)['resolve'];
         $type = $action->createType(app())->type();
 
         expect($type)->toBeInstanceOf(GraphQLType::class)

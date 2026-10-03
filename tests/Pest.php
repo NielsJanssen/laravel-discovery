@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use GraphQL\Type\Schema;
 use GraphQL\Utils\SchemaPrinter;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
@@ -40,6 +41,22 @@ function discoverGraphQL(string|DiscoveredType ...$sources): GraphQLDiscovery
     }
 
     return $discovery;
+}
+
+/**
+ * @return array<string, DiscoveredAction> keyed by method name
+ */
+function discoveredActions(string ...$classes): array
+{
+    $actions = [];
+
+    foreach (discoverGraphQL(...$classes)->getItems() as $item) {
+        if ($item instanceof DiscoveredAction) {
+            $actions[$item->method] = $item;
+        }
+    }
+
+    return $actions;
 }
 
 /** Drop the workbench's boot-time GraphQL config, Rebing's cached instance and the type registry. */

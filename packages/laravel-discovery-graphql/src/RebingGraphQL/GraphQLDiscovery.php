@@ -10,10 +10,12 @@ use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\DeprecationReason;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ParameterClassifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeCollector;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeInferrer;
 use Rebing\GraphQL\GraphQL;
 use Rebing\GraphQL\Support\Mutation as RebingMutation;
 use Rebing\GraphQL\Support\Query as RebingQuery;
 use Rebing\GraphQL\Support\Type as RebingType;
+use ReflectionNamedType;
 use RuntimeException;
 use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
@@ -29,6 +31,7 @@ final class GraphQLDiscovery implements Discovery
         private readonly Application $app,
         private readonly ParameterClassifier $parameters,
         private readonly TypeCollector $types,
+        private readonly TypeInferrer $inferrer,
     ) {}
 
     /**
@@ -90,7 +93,9 @@ final class GraphQLDiscovery implements Discovery
                 ));
             }
 
-            if ($action->type === null && $action->of === null) {
+            $typeBuilder = $this->resolveTypeBuilder($class, $method);
+
+            if ($typeBuilder === null && $action->type === null && $action->of === null) {
                 [$action->type, $action->nullable] = $this->discoverActionReturnType($action, $class, $method);
             } elseif ($method->getReturnType()?->isNullable() === true) {
                 // An explicit type: says which type, not whether the field may be null, so a `?Type`
@@ -126,8 +131,6 @@ final class GraphQLDiscovery implements Discovery
                 ...$method->getAttributes(Authorize::class),
             ]);
 
-            $typeBuilder = $this->resolveTypeBuilder($class, $method);
-
             $this->discoveryItems->add($location, new DiscoveredAction(
                 $action,
                 $class->getName(),
@@ -142,7 +145,7 @@ final class GraphQLDiscovery implements Discovery
                 $argProviders,
                 $parameters->argCompositions,
                 $parameters->modelBindings,
-                TypeRef::fromAction($action),
+                $action->type === null && $action->of === null ? null : TypeRef::fromAction($action),
             )->withBindName());
         }
     }
@@ -191,7 +194,7 @@ final class GraphQLDiscovery implements Discovery
     }
 
     /**
-     * Cross-item checks on the discovered types.
+     * Cross-item checks on the discovered types and the class references of actions.
      *
      * @param  list<DiscoveredType>  $types
      */
@@ -215,6 +218,64 @@ final class GraphQLDiscovery implements Discovery
                     $type->class,
                     $taken,
                 ));
+            }
+        }
+
+        $this->assertClassReferencesRegistered($this->app->make(TypeRegistry::class), $types);
+    }
+
+    /**
+     * Every class-string an action return or a type field points at must be a registered output type.
+     *
+     * @param  list<DiscoveredType>  $types
+     */
+    private function assertClassReferencesRegistered(TypeRegistry $registry, array $types): void
+    {
+        foreach ($this->classReferences($types) as [$class, $referrer, $attribute]) {
+            if ($registry->has($class, Position::Output)) {
+                continue;
+            }
+
+            if (is_a($class, RebingType::class, true)) {
+                throw new LogicException(sprintf(
+                    '%s references the Rebing type class %s. Reference a hand-written Rebing type by its GraphQL name with type: (or of: for a list) on #[%s].',
+                    $referrer,
+                    $class,
+                    $attribute,
+                ));
+            }
+
+            throw new LogicException(sprintf(
+                '%s references %s, which is not a registered GraphQL output type. Add #[Type] to %s, or name a registered GraphQL type with type: (or of: for a list) on #[%s].',
+                $referrer,
+                $class,
+                class_basename($class),
+                $attribute,
+            ));
+        }
+    }
+
+    /**
+     * @param  list<DiscoveredType>  $types
+     * @return iterable<array{0: class-string, 1: string, 2: string}> [class, referrer, attribute]
+     */
+    private function classReferences(array $types): iterable
+    {
+        foreach ($this->discoveryItems as $item) {
+            if ($item instanceof DiscoveredAction && $item->returnType?->class !== null) {
+                yield [
+                    $item->returnType->class,
+                    "Method {$item->class}::{$item->method}",
+                    class_basename($item->action::class),
+                ];
+            }
+        }
+
+        foreach ($types as $type) {
+            foreach ($type->fields as $field) {
+                if ($field->type->class !== null) {
+                    yield [$field->type->class, "Field {$type->name}.{$field->name}", 'Field'];
+                }
             }
         }
     }
@@ -308,21 +369,27 @@ final class GraphQLDiscovery implements Discovery
      */
     private function discoverActionReturnType(Action $action, ClassReflector $class, MethodReflector $method): array
     {
-        $returnType = $method->getReturnType();
+        $returnType = $method->getReflection()->getReturnType();
 
-        if ($returnType?->getName() === 'void') {
+        if ($returnType instanceof ReflectionNamedType && $returnType->getName() === 'void') {
             return ['void', true];
         }
 
-        if ($returnType !== null && $returnType->isScalar()) {
-            return [$returnType->getName(), $returnType->isNullable()];
+        try {
+            $ref = $this->inferrer->output(
+                $returnType,
+                $class->getName(),
+                sprintf('Method %s::%s', $class->getName(), $method->getName()),
+                class_basename($action::class),
+                nullable: $action->nullable,
+            );
+        } catch (LogicException $e) {
+            throw new RuntimeException(
+                $e->getMessage() . ' A scalar, void or #[Type] class return type is inferred.',
+                previous: $e,
+            );
         }
 
-        throw new RuntimeException(sprintf(
-            'Method %s::%s has no scalar return type. Specify type: in #[%s], or use a scalar or void return type hint.',
-            $class->getName(),
-            $method->getName(),
-            class_basename($action::class),
-        ));
+        return [(string) ($ref->class ?? $ref->scalar), $ref->nullable];
     }
 }

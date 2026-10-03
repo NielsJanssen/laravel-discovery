@@ -13,6 +13,7 @@ use Tempest\Reflection\ClassReflector;
 use Tests\Fixtures\RebingGraphQL\CustomBuilderQuery;
 use Tests\Fixtures\RebingGraphQL\DuplicateBuilderQuery;
 use Tests\Fixtures\RebingGraphQL\PaginatedBookQuery;
+use Tests\Fixtures\RebingGraphQL\PaginatedContractReturnQuery;
 use Tests\Fixtures\RebingGraphQL\PaginatedScalarReturnQuery;
 use Tests\Fixtures\RebingGraphQL\WrapInListBuilder;
 
@@ -71,6 +72,14 @@ describe('ActionTypeBuilder hook', function () {
             ->assertJsonCount(2, 'data.paginatedBooks.data')
             ->assertJsonPath('data.paginatedBooks.data.0.title', 'The Great Gatsby')
             ->assertJsonPath('data.paginatedBooks.data.1.title', '1984');
+    });
+
+    it('points #[Paginated] without type: on a paginator return at type:, not at #[Type]', function () {
+        $item = discoveredActions(PaginatedContractReturnQuery::class)['resolve'];
+
+        expect($item->returnType)->toBeNull()
+            ->and(fn() => $item->createType(app())->type())
+            ->toThrow(\RuntimeException::class, '#[Paginated] requires an explicit object type');
     });
 
     it('throws from #[Paginated] when the action has no explicit object type', function () {
