@@ -394,7 +394,15 @@ trait AsActionField
         $userRules = $this->resolveRules($binding->paramName);
 
         if ($userRules instanceof Closure) {
-            return $userRules;
+            return static function (array $arguments, array $request) use ($rules, $userRules): array {
+                $resolved = $userRules($arguments, $request);
+
+                return [...$rules, ...match (true) {
+                    is_array($resolved) => array_values($resolved),
+                    is_string($resolved) => explode('|', $resolved),
+                    default => [$resolved],
+                }];
+            };
         }
 
         return array_merge($rules, $userRules);

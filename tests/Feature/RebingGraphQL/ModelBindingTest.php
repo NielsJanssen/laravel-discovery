@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
+use Illuminate\Validation\Rules\In;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use Tempest\Discovery\DiscoveryItems;
@@ -94,6 +95,42 @@ describe('model binding discovery', function () {
         expect($arg['rules'])->toHaveCount(2)
             ->and((string) $arg['rules'][0])->toBe('exists:users,id')
             ->and($arg['rules'][1])->toBe('integer');
+    });
+
+    it('merges closure #[Arg(rules:)] with the auto exists rule', function () {
+        $arg = discoverModelBindings()['closureRules']->createType(app())->args()['id'];
+
+        $rules = ($arg['rules'])([], []);
+
+        expect($rules)->toHaveCount(2)
+            ->and((string) $rules[0])->toBe('exists:users,id')
+            ->and($rules[1])->toBe('integer');
+    });
+
+    it('splits a pipe-delimited string a closure rule returns', function () {
+        $arg = discoverModelBindings()['closurePipeRules']->createType(app())->args()['id'];
+
+        $rules = ($arg['rules'])([], []);
+
+        expect($rules)->toHaveCount(3)
+            ->and((string) $rules[0])->toBe('exists:users,id')
+            ->and(array_slice($rules, 1))->toBe(['integer', 'min:1']);
+    });
+
+    it('keeps a single rule object a closure returns as one rule', function () {
+        $arg = discoverModelBindings()['closureRuleObject']->createType(app())->args()['id'];
+
+        $rules = ($arg['rules'])([], []);
+
+        expect($rules)->toHaveCount(2)
+            ->and((string) $rules[0])->toBe('exists:users,id')
+            ->and($rules[1])->toBeInstanceOf(In::class);
+    });
+
+    it('adds no exists rule to a nullable binding with a closure rule', function () {
+        $arg = discoverModelBindings()['nullableClosureRules']->createType(app())->args()['id'];
+
+        expect(($arg['rules'])([], []))->toBe(['integer']);
     });
 });
 
