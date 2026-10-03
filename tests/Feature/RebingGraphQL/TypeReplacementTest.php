@@ -11,21 +11,21 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
 use Rebing\GraphQL\Support\Facades\GraphQL;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeAccount;
-use Tests\Fixtures\RebingGraphQL\Replacement\AcmeAccountActions;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeAccountOutputOnly;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeAccountWithPlan;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeCreateTeam;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeCreateUser;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeCreateUserWithRole;
-use Tests\Fixtures\RebingGraphQL\Replacement\AcmeTeamMutations;
+use Tests\Fixtures\RebingGraphQL\Replacement\AcmeMutations;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeUser;
-use Tests\Fixtures\RebingGraphQL\Replacement\AcmeUserMutations;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeUserQuery;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeUserWithBilling;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeUserWithTier;
 use Tests\Fixtures\RebingGraphQL\Replacement\Invalid\AcmeFlattenedMutation;
 use Tests\Fixtures\RebingGraphQL\Replacement\Invalid\AcmeOrphanUser;
 use Tests\Fixtures\RebingGraphQL\Replacement\Invalid\AcmeRivalUser;
+
+const MUTATION_SOURCES = [AcmeMutations::class, AcmeCreateUser::class, AcmeCreateTeam::class, AcmeAccount::class];
 
 /** The text of the top-level definition that starts with the prefix. */
 function definitionStartingWith(string $sdl, string $prefix): string
@@ -107,32 +107,35 @@ describe('output types', function () {
 });
 
 describe('input types', function () {
+    beforeEach(function () {
+        AcmeMutations::$received = [];
+    });
+
     it('serves one input under the parent name with the replacer fields', function () {
-        $sdl = schemaSdl(AcmeUserMutations::class, AcmeCreateUserWithRole::class, AcmeCreateUser::class);
+        $sdl = schemaSdl(AcmeMutations::class, AcmeCreateUserWithRole::class, AcmeCreateUser::class, AcmeCreateTeam::class, AcmeAccount::class);
 
         expect(definitionStartingWith($sdl, 'input AcmeCreateUserInput'))->toContain('name: String!')->toContain('role: String')
             ->and($sdl)->not->toContain('AcmeCreateUserWithRole');
     });
 
     it('hydrates the replacer into a resolver typed against the parent', function () {
-        schemaSdl(AcmeUserMutations::class, AcmeCreateUser::class, AcmeCreateUserWithRole::class);
+        schemaSdl(...MUTATION_SOURCES, ...[AcmeCreateUserWithRole::class]);
 
         expect(GraphQL::query('mutation { createUser(input: {name: "Ada", role: "admin"}) }'))->toBe(['data' => ['createUser' => 'Ada']])
-            ->and(AcmeUserMutations::$received)->toBe([AcmeCreateUserWithRole::class]);
+            ->and(AcmeMutations::$received)->toBe([AcmeCreateUserWithRole::class]);
     });
 
     it('hydrates the replacer in nested inputs and lists', function () {
-        schemaSdl(AcmeUserMutations::class, AcmeTeamMutations::class, AcmeCreateUser::class, AcmeCreateUserWithRole::class, AcmeCreateTeam::class);
+        schemaSdl(...MUTATION_SOURCES, ...[AcmeCreateUserWithRole::class]);
 
         $result = GraphQL::query('mutation { createTeam(team: {owner: {name: "Ada", role: "admin"}, members: [{name: "Grace"}, {name: "Alan", role: "owner"}]}) }');
 
         expect($result)->toBe(['data' => ['createTeam' => 'Ada']])
-            ->and(AcmeUserMutations::$received)->toBe(array_fill(0, 3, AcmeCreateUserWithRole::class));
+            ->and(AcmeMutations::$received)->toBe(array_fill(0, 3, AcmeCreateUserWithRole::class));
     });
 
     it('validates the replacer fields and the inherited ones', function () {
-        AcmeUserMutations::$received = [];
-        schemaSdl(AcmeUserMutations::class, AcmeTeamMutations::class, AcmeCreateUser::class, AcmeCreateUserWithRole::class, AcmeCreateTeam::class);
+        schemaSdl(...MUTATION_SOURCES, ...[AcmeCreateUserWithRole::class]);
 
         $response = $this->postJson('/graphql', [
             'query' => 'mutation { createTeam(team: {owner: {name: "A", role: "administrator"}, members: [{name: "Grace", role: "superintendent"}]}) }',
@@ -142,14 +145,14 @@ describe('input types', function () {
             'team.owner.name' => ['The team.owner.name field must be at least 2 characters.'],
             'team.owner.role' => ['The team.owner.role field must not be greater than 10 characters.'],
             'team.members.0.role' => ['The team.members.0.role field must not be greater than 10 characters.'],
-        ])->and(AcmeUserMutations::$received)->toBe([]);
+        ])->and(AcmeMutations::$received)->toBe([]);
     });
 
     it('hydrates the parent when nothing replaces it', function () {
-        schemaSdl(AcmeUserMutations::class, AcmeCreateUser::class);
+        schemaSdl(...MUTATION_SOURCES);
 
         expect(GraphQL::query('mutation { createUser(input: {name: "Ada"}) }'))->toBe(['data' => ['createUser' => 'Ada']])
-            ->and(AcmeUserMutations::$received)->toBe([AcmeCreateUser::class]);
+            ->and(AcmeMutations::$received)->toBe([AcmeCreateUser::class]);
     });
 
     it('applies a replaced input that nothing uses yet', function () {
@@ -161,23 +164,23 @@ describe('input types', function () {
     });
 
     it('serves the replaced input from the discovery cache', function () {
-        applyCachedGraphQL([AcmeUserMutations::class, AcmeCreateUser::class, AcmeCreateUserWithRole::class]);
+        applyCachedGraphQL([...MUTATION_SOURCES, AcmeCreateUserWithRole::class]);
 
         expect(GraphQL::query('mutation { createUser(input: {name: "Ada", role: "admin"}) }'))->toBe(['data' => ['createUser' => 'Ada']])
-            ->and(AcmeUserMutations::$received)->toBe([AcmeCreateUserWithRole::class]);
+            ->and(AcmeMutations::$received)->toBe([AcmeCreateUserWithRole::class]);
     });
 });
 
 describe('a class that is both a type and an input', function () {
     it('replaces each kind that asks for it', function () {
-        $sdl = schemaSdl(AcmeAccountActions::class, AcmeAccount::class, AcmeAccountWithPlan::class);
+        $sdl = schemaSdl(...MUTATION_SOURCES, ...[AcmeAccountWithPlan::class]);
 
         expect(definitionStartingWith($sdl, 'type AcmeAccount'))->toContain('plan: String!')
             ->and(definitionStartingWith($sdl, 'input AcmeAccountInput'))->toContain('plan: String');
     });
 
     it('leaves the other kind alone', function () {
-        $sdl = schemaSdl(AcmeAccountActions::class, AcmeAccount::class, AcmeAccountOutputOnly::class);
+        $sdl = schemaSdl(...MUTATION_SOURCES, ...[AcmeAccountOutputOnly::class]);
 
         expect(definitionStartingWith($sdl, 'type AcmeAccount'))->toContain('plan: String!')
             ->and(definitionStartingWith($sdl, 'input AcmeAccountInput'))->not->toContain('plan');
