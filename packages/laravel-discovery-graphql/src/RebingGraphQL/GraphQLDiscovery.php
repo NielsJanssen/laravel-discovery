@@ -226,6 +226,7 @@ final class GraphQLDiscovery implements Discovery
         $this->bindSingletons($types);
         $this->registerTypes($types, $replacements);
         $this->registerProviders();
+        $this->app->make(TypeRegistry::class)->deferExtensions($extensions->deferred());
         $this->validator->validate($this->discoveryItems, $types);
 
         if (! $this->app->configurationIsCached()) {

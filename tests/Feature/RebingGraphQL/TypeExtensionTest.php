@@ -15,14 +15,20 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\NamingStrategy;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeDefinition;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeExtension;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
+use Rebing\GraphQL\GraphQL as RebingGraphQL;
 use Tests\Fixtures\RebingGraphQL\ContainerService;
 use Tests\Fixtures\RebingGraphQL\Enums\Mood;
 use Tests\Fixtures\RebingGraphQL\Enums\Orphan;
 use Tests\Fixtures\RebingGraphQL\Extensions\AcmeBilledUserPerks;
+use Tests\Fixtures\RebingGraphQL\Extensions\AcmeShipmentNotes;
 use Tests\Fixtures\RebingGraphQL\Extensions\AcmeSnakeNoteByName;
 use Tests\Fixtures\RebingGraphQL\Extensions\AcmeSnakeNoteExtras;
+use Tests\Fixtures\RebingGraphQL\Extensions\AcmeStockedNovelAuthor;
 use Tests\Fixtures\RebingGraphQL\Extensions\AcmeUserExtras;
+use Tests\Fixtures\RebingGraphQL\Extensions\AcmeWarehouseExtras;
 use Tests\Fixtures\RebingGraphQL\Extensions\AcmeWriterExtras;
 use Tests\Fixtures\RebingGraphQL\Extensions\Invalid\AcmeAbstractExtension;
 use Tests\Fixtures\RebingGraphQL\Extensions\Invalid\AcmeDuplicateFactory;
@@ -44,6 +50,10 @@ use Tests\Fixtures\RebingGraphQL\Loaders\Writer;
 use Tests\Fixtures\RebingGraphQL\Naming\OverrideQueries;
 use Tests\Fixtures\RebingGraphQL\Naming\PlainVolume;
 use Tests\Fixtures\RebingGraphQL\Naming\SnakeNote;
+use Tests\Fixtures\RebingGraphQL\Providers\AcmeConfigurableProvider;
+use Tests\Fixtures\RebingGraphQL\Providers\AcmeShipmentProvider;
+use Tests\Fixtures\RebingGraphQL\Providers\AcmeShipmentQuery;
+use Tests\Fixtures\RebingGraphQL\Providers\AcmeWarehouseQuery;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeUser;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeUserQuery;
 use Tests\Fixtures\RebingGraphQL\Replacement\AcmeUserWithBilling;
@@ -72,9 +82,30 @@ function postGraphQL(string $query): array
     return is_array($json) ? $json : [];
 }
 
+/** Provide the definitions with AcmeConfigurableProvider. */
+function provideDefinitions(TypeDefinition ...$definitions): void
+{
+    app()->instance(AcmeConfigurableProvider::class, new AcmeConfigurableProvider($definitions));
+}
+
+/** A class-less provided output type with String fields. */
+function providedType(string $name, string ...$fields): TypeDefinition
+{
+    return new TypeDefinition($name, Position::Output, static fn() => array_map(static fn(string $field): Field => new Field(name: $field, type: 'string'), $fields));
+}
+
+/** Discover the sources with AcmeConfigurableProvider, apply them, and resolve GraphQL so the provider hook runs. */
+function resolveProvided(string ...$sources): void
+{
+    isolateGraphQL();
+    discoverGraphQL(AcmeWarehouseQuery::class, AcmeConfigurableProvider::class, ...$sources)->apply();
+    app(RebingGraphQL::class);
+}
+
 beforeEach(function () {
     AcmeUserExtras::$resolved = [];
     AcmeUserExtras::$contexts = [];
+    AcmeWarehouseExtras::$contexts = [];
 });
 
 describe('a contributor', function () {
@@ -215,6 +246,18 @@ describe('batch loading', function () {
             ['name' => 'Bob', 'books' => [['title' => 'Bob 1']]],
         ]]])->and(DB::getQueryLog())->toHaveCount(2);
     });
+
+    it('loads a relation of a provided type by GraphQL name when its class is a model', function () {
+        provideDefinitions(new TypeDefinition('AcmeStockedNovel', Position::Output, static fn() => [new Field(name: 'title', type: 'string')], Novel::class));
+        schemaSdl(LoaderQueries::class, Writer::class, Review::class, AcmeConfigurableProvider::class, AcmeStockedNovelAuthor::class);
+        DB::enableQueryLog();
+
+        expect(postGraphQL('{ novels { title writtenBy { name } } }'))->toBe(['data' => ['novels' => [
+            ['title' => 'Ann 1', 'writtenBy' => ['name' => 'Ann']],
+            ['title' => 'Bob 1', 'writtenBy' => ['name' => 'Bob']],
+            ['title' => 'Ann 2', 'writtenBy' => ['name' => 'Ann']],
+        ]]])->and(DB::getQueryLog())->toHaveCount(2);
+    });
 });
 
 describe('a contributor that is a TypeFactory', function () {
@@ -252,6 +295,69 @@ describe('the discovery cache', function () {
 
         expect(array_column($registry->typeNamed('AcmeUser')->fields ?? [], 'name'))->toBe(['billingReference', 'name', 'perks']);
     });
+});
+
+describe('provided types', function () {
+    it('extends a provided type by GraphQL name with static and factory fields', function () {
+        provideDefinitions(providedType('AcmeWarehouse', 'name', 'region'));
+
+        expect(typeDefinition(schemaSdl(AcmeWarehouseQuery::class, AcmeConfigurableProvider::class, AcmeWarehouseExtras::class), 'AcmeWarehouse'))->toBe(<<<'GRAPHQL'
+            type AcmeWarehouse {
+              name: String!
+              region: String!
+              manager(title: String = "Ms"): String!
+              zone: String!
+            }
+            GRAPHQL)->and(postGraphQL('{ warehouse { name manager(title: "Dr") zone } }'))->toBe(['data' => ['warehouse' => ['name' => 'North', 'manager' => 'Dr Manager of North', 'zone' => 'NORTH']]]);
+
+        $context = AcmeWarehouseExtras::$contexts[0] ?? null;
+
+        expect([$context?->name, $context?->class, $context?->declaredFields])->toBe(['AcmeWarehouse', null, ['name', 'region', 'manager']]);
+    });
+
+    it('extends a provided type by its TypeDefinition(class:)', function () {
+        schemaSdl(AcmeShipmentQuery::class, AcmeShipmentProvider::class, AcmeShipmentNotes::class);
+
+        expect(postGraphQL('{ shipment { reference note } }'))->toBe(['data' => ['shipment' => ['reference' => 'S-1', 'note' => 'S-1 weighs 12']]]);
+    });
+
+    it('keeps an unknown target for the providers instead of rejecting it at apply()', function () {
+        provideDefinitions(providedType('AcmeWarehouse', 'name'));
+        isolateGraphQL();
+        discoverGraphQL(AcmeWarehouseQuery::class, AcmeConfigurableProvider::class, AcmeUnknownExtension::class)->apply();
+
+        expect(array_map(static fn(DiscoveredExtension $extension): string => $extension->class, app(TypeRegistry::class)->deferredExtensions()))->toBe([AcmeUnknownExtension::class]);
+    });
+
+    it('rejects a target no provider yields, each time GraphQL is resolved', function () {
+        provideDefinitions(providedType('AcmeWarehouse', 'name'));
+        $message = sprintf('#[TypeExtension(AcmeNowhere)] on %s names no discovered #[Type] and no provided type.', AcmeUnknownExtension::class);
+
+        expect(fn() => resolveProvided(AcmeUnknownExtension::class))->toThrow(LogicException::class, $message)
+            ->and(fn() => app(RebingGraphQL::class))->toThrow(LogicException::class, $message);
+    });
+
+    it('rejects when GraphQL is resolved', function (string $contributor, TypeDefinition $definition, string $message) {
+        provideDefinitions(providedType('AcmeWarehouse', 'name'), $definition);
+
+        expect(fn() => resolveProvided($contributor))->toThrow(LogicException::class, sprintf($message, $contributor));
+    })->with([
+        'a provided field and a contributed field with one name' => [
+            AcmeUserRename::class,
+            providedType('AcmeUser', 'name'),
+            sprintf('Type [AcmeUser] gets the field "name" from both the type provider %s and %%s::name().', AcmeConfigurableProvider::class),
+        ],
+        'a provided input' => [
+            AcmeUnusedInputExtension::class,
+            new TypeDefinition('UnusedInput', Position::Input, static fn() => [new Field(name: 'shade', type: 'string')]),
+            '#[TypeExtension(UnusedInput)] on %s targets the input type [UnusedInput], and inputs cannot be extended.',
+        ],
+        '#[Relation] on a provided type without a model class' => [
+            AcmeUserRelation::class,
+            providedType('AcmeUser', 'name'),
+            'Method %s::posts() has #[Relation], but its type is not an Eloquent model',
+        ],
+    ]);
 });
 
 describe('rejections', function () {
@@ -342,9 +448,9 @@ describe('rejections', function () {
 
         expect(fn() => discoverGraphQL(...$sources)->apply())->toThrow(LogicException::class, $message);
     })->with([
-        'an unknown target' => [
+        'an unknown target without providers' => [
             [...ACME_USERS, AcmeUnknownExtension::class],
-            sprintf('#[TypeExtension(AcmeNowhere)] on %s names no discovered #[Type]. Add #[Type] to the class, or name an existing type by its class or GraphQL name.', AcmeUnknownExtension::class),
+            sprintf('#[TypeExtension(AcmeNowhere)] on %s names no discovered #[Type] and no provided type. Add #[Type] to the class, or name an existing type by its class or GraphQL name.', AcmeUnknownExtension::class),
         ],
         'an input by name' => [
             [...ACME_USERS, Unused::class, AcmeUnusedInputExtension::class],

@@ -9,6 +9,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredExtension;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredTypeField;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredTypeProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeFactory;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use Tempest\Discovery\DiscoveryItems;
@@ -19,6 +20,9 @@ final class Extensions
     /** @var array<class-string, list<DiscoveredExtension>> keyed by the class of the extended type */
     private array $matched = [];
 
+    /** @var list<DiscoveredExtension> the extensions left for the type providers */
+    private array $deferred = [];
+
     private function __construct() {}
 
     public static function from(DiscoveryItems $items, Replacements $replacements): self
@@ -28,6 +32,7 @@ final class Extensions
         $byName = [];
         $handWritten = [];
         $contributors = [];
+        $providers = false;
 
         foreach ($items as $item) {
             $type = $item instanceof DiscoveredType ? $replacements->effective($item) : null;
@@ -39,6 +44,8 @@ final class Extensions
                 $handWritten[$name] = $item->class;
             } elseif ($item instanceof DiscoveredExtension) {
                 $contributors[] = $item;
+            } elseif ($item instanceof DiscoveredTypeProvider) {
+                $providers = true;
             }
         }
 
@@ -56,6 +63,8 @@ final class Extensions
                     $extension->label(),
                     $handWritten[$extension->target],
                 ));
+            } elseif ($providers) {
+                $extensions->deferred[] = $extension;
             } else {
                 throw self::unknown($extension);
             }
@@ -76,6 +85,14 @@ final class Extensions
                 array_map(static fn(DiscoveredTypeField $field): string => $field->member(), $type->fields),
             ))
             : $type, $types);
+    }
+
+    /**
+     * @return list<DiscoveredExtension>
+     */
+    public function deferred(): array
+    {
+        return $this->deferred;
     }
 
     /**
@@ -135,7 +152,7 @@ final class Extensions
     public static function unknown(DiscoveredExtension $extension): LogicException
     {
         return new LogicException(sprintf(
-            '%s names no discovered #[Type]. Add #[Type] to the class, or name an existing type by its class or GraphQL name.',
+            '%s names no discovered #[Type] and no provided type. Add #[Type] to the class, or name an existing type by its class or GraphQL name.',
             $extension->label(),
         ));
     }
