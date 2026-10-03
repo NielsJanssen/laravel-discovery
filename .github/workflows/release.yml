@@ -91,6 +91,7 @@ jobs:
             echo "tag=$tag"
             echo "prerelease=$(case "$VERSION" in *-*) echo true ;; *) echo false ;; esac)"
             echo "tag_pattern=^$PACKAGE@v[0-9]"
+            git tag --list "$PACKAGE@v*" | .github/scripts/changelog-tags.sh "$PACKAGE" "$VERSION"
             echo "include_path=packages/$PACKAGE/**"
             echo "changelog=packages/$PACKAGE/CHANGELOG.md"
           } >> "$GITHUB_OUTPUT"
@@ -103,7 +104,7 @@ jobs:
           args: >-
             --unreleased
             --tag '${{ steps.target.outputs.tag }}'
-            --tag-pattern '${{ steps.target.outputs.tag_pattern }}'
+            --tag-pattern '${{ steps.target.outputs.notes_tag_pattern }}'
             --include-path '${{ steps.target.outputs.include_path }}'
             --strip header
         env:
@@ -118,6 +119,7 @@ jobs:
           args: >-
             --tag '${{ steps.target.outputs.tag }}'
             --tag-pattern '${{ steps.target.outputs.tag_pattern }}'
+            --ignore-tags '${{ steps.target.outputs.ignore_tags }}'
             --include-path '${{ steps.target.outputs.include_path }}'
         env:
           OUTPUT: ${{ steps.target.outputs.changelog }}
@@ -129,7 +131,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "${{ steps.target.outputs.changelog }}"
-          git commit -m "release: $PACKAGE v${{ steps.target.outputs.version }}"
+          git diff --cached --quiet || git commit -m "release: $PACKAGE v${{ steps.target.outputs.version }}"
           git tag "${{ steps.target.outputs.tag }}"
           git push
           git push origin "${{ steps.target.outputs.tag }}"
