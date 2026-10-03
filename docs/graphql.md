@@ -597,6 +597,52 @@ too, since only a factory field can set them. At build time a field that repeats
 or sets both `type:` and `of:` is a `LogicException`, as is an arg with `rules:`: Rebing does not validate the args of
 nested fields.
 
+### Whole types from a type provider
+
+When whole types are only known at runtime, such as one type per entry of a metadata table, implement `TypeProvider`.
+Discovery finds the class by its interface; only its class name is cached.
+
+```php
+final readonly class AcmeResourceTypes implements TypeProvider
+{
+    public function __construct(private AcmeResources $resources) {}
+
+    public function types(): iterable
+    {
+        foreach ($this->resources->all() as $resource) {
+            yield new TypeDefinition(
+                name: $resource->name,
+                kind: Position::Output,
+                fields: fn (TypeContext $context) => array_map(
+                    fn ($field) => new Field(name: $field->name, type: $field->type, nullable: ! $field->required),
+                    $resource->fields,
+                ),
+                class: $resource->class,
+                description: $resource->label,
+            );
+        }
+    }
+}
+```
+
+- The provider is resolved from the container when Rebing's `GraphQL` is first resolved, so it takes constructor
+  dependencies. It never runs during discovery, and its types are added to Rebing directly, never written to config.
+- `fields` receives a `TypeContext` (`class` is `null` without a `class:`) and yields `Field`s, built like a type
+  factory's: `type:` or `of:`, `description`, `deprecationReason`, `nullable`, and for output types `resolve` and
+  `args`. Without `resolve` an object or array root is read by field name.
+- `class:` maps a PHP class to the type, so `#[Query] public function shipment(): AcmeShipment` infers the provided
+  type. Without it, name the type with `#[Query(type: 'Name')]` or `of:`.
+- `kind: Position::Input` provides an input type. It takes no `class:`: name it with `#[Arg(type: 'Name')]` on an
+  `array` parameter, and the action receives the value as a plain array keyed by field name. Input fields take no
+  `resolve`, `args` or `rules`.
+- With a provider present, the check that every class an action or type points at is a registered type runs when
+  `GraphQL` is resolved instead of at discovery, since the provider's classes are not known before then. The error is
+  the same one, naming the referrer.
+
+**Errors.** A provider that yields anything but a `TypeDefinition`, a name already registered (by another provider, a
+`#[Type]` or `graphql.types`), a class a `#[Type]` already maps, `class:` or `rules:` on an input type, `resolve` or
+`args` on an input field, and the field errors of a type factory are a `LogicException`.
+
 ## Enums
 
 Any PHP enum, backed or not, becomes a GraphQL enum as soon as a query, a mutation, a `#[Type]` field or an argument
