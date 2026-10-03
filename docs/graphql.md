@@ -643,6 +643,50 @@ final readonly class AcmeResourceTypes implements TypeProvider
 `#[Type]` or `graphql.types`), a class a `#[Type]` already maps, `class:` or `rules:` on an input type, `resolve` or
 `args` on an input field, and the field errors of a type factory are a `LogicException`.
 
+### Replacing a type
+
+A subclass of a discovered type can take its place. `replace: true` gives the subclass the parent's GraphQL name, so the
+schema keeps one type, now with the subclass's fields. Use it to extend a type or an input that a package ships.
+
+```php
+#[Type(replace: true)]
+class AcmeUser extends \Vendor\Accounts\User
+{
+    public ?string $billingReference = null;
+}
+
+#[Input(replace: true)]
+class AcmeCreateUser extends \Vendor\Accounts\CreateUser
+{
+    public function __construct(string $name, public string $role = 'member')
+    {
+        parent::__construct($name);
+    }
+}
+```
+
+- The parent is the nearest parent class that is a discovered type of the same kind, so the packages' `#[Type]` must
+  not be `final`. The replacer takes its name, and its description unless it sets one. Its fields are its own, inherited
+  members included.
+- A resolver that returns the parent class still resolves through the replaced type. Fields only the subclass has
+  resolve to `null`, without an error.
+- An `#[Input]` argument typed as the parent is hydrated as the subclass, also inside other inputs and lists, so the
+  package's resolver receives your subclass. Validation rules on the subclass's fields and on the inherited ones apply.
+- A replaced input changes every operation that takes the parent, and the package's resolver only reads the fields it
+  knows. An added field matters only to code that reads the subclass, such as an action or a model you bind in the
+  container, or a listener for an event the resolver dispatches. Keep added fields optional: a required field breaks
+  every existing client of those operations.
+- A replacement can be replaced again, and a class with both `#[Type]` and `#[Input]` replaces each kind on its own:
+  `replace:` on one attribute leaves the other as a separate type.
+- Discovery throws a `LogicException` for `replace: true` with `name:`, on a class without a parent, with no discovered
+  parent of the same kind (a type from `TypeDefinition(class:)` cannot be replaced), and for two classes replacing one
+  parent. `apply()` rejects an `#[AsArgs]` parameter whose input is replaced, since flattened args are fixed at
+  discovery: take the input as an `#[Input]` arg, or type the parameter as the subclass.
+
+**Missing fields.** A `#[Type]` field whose property or method the returned object does not have now resolves to `null`
+instead of throwing `Cannot resolve …`; an object with `__get` is still read through it. A non-null field then fails as
+GraphQL's own non-null error.
+
 ## Enums
 
 Any PHP enum, backed or not, becomes a GraphQL enum as soon as a query, a mutation, a `#[Type]` field or an argument
