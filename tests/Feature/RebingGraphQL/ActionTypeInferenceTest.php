@@ -193,15 +193,15 @@ describe('unregistered class references', function () {
         ],
         'an object type as an action arg' => [
             [Invalid\ObjectTypeArgQuery::class, Novel::class],
-            'Argument novel of method ' . Invalid\ObjectTypeArgQuery::class . '::review references ' . Novel::class . ', which is not a registered GraphQL input type (it is registered as object type [Novel]). Use a scalar or an enum, or name a registered GraphQL input type with #[Arg(type: ...)].',
+            'Argument novel of method ' . Invalid\ObjectTypeArgQuery::class . '::review references ' . Novel::class . ', which is not a registered GraphQL input type (it is registered as object type [Novel]). Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[Arg(type: ...)].',
         ],
         'an unregistered class as an action arg' => [
             [Invalid\UnregisteredArgQuery::class],
-            'Argument thing of method ' . Invalid\UnregisteredArgQuery::class . '::find references ' . Invalid\Unregistered::class . ', which is not a registered GraphQL input type. Use a scalar or an enum, or name a registered GraphQL input type with #[Arg(type: ...)].',
+            'Argument thing of method ' . Invalid\UnregisteredArgQuery::class . '::find references ' . Invalid\Unregistered::class . ', which is not a registered GraphQL input type. Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[Arg(type: ...)].',
         ],
         'an unregistered class as a field arg' => [
             [Invalid\UnregisteredFieldArg::class],
-            'Argument thing of field UnregisteredFieldArg.label references ' . Invalid\Unregistered::class . ', which is not a registered GraphQL input type. Use a scalar or an enum, or name a registered GraphQL input type with #[Arg(type: ...)].',
+            'Argument thing of field UnregisteredFieldArg.label references ' . Invalid\Unregistered::class . ', which is not a registered GraphQL input type. Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[Arg(type: ...)].',
         ],
     ])->with([
         'config written' => [false],

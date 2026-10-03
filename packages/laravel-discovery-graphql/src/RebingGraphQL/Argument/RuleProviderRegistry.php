@@ -42,4 +42,35 @@ final class RuleProviderRegistry
 
         return new ArgumentRules($rules, $messages);
     }
+
+    /**
+     * The rules and messages every InputRuleProvider contributes for one input object, accumulated per property.
+     *
+     * @param  class-string  $class
+     * @param  array<string, mixed>  $values  keyed by property name
+     */
+    public function rulesForInput(string $class, array $values): ArgumentRules
+    {
+        $rules = [];
+        $messages = [];
+
+        foreach ($this->providers as $provider) {
+            if (! $provider instanceof InputRuleProvider) {
+                continue;
+            }
+
+            $set = $provider->rulesForInput($class, $values);
+
+            foreach ($set->rules as $property => $contributed) {
+                $rules[$property] = [
+                    ...$rules[$property] ?? [],
+                    ...is_array($contributed) ? $contributed : [$contributed],
+                ];
+            }
+
+            $messages = [...$messages, ...$set->messages];
+        }
+
+        return new ArgumentRules($rules, $messages);
+    }
 }

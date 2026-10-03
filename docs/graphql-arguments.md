@@ -16,7 +16,8 @@ An adapter may implement either or both.
 | Adapter | Hook | Active when |
 |---|---|---|
 | `ComposedFromArgsHydrator` | `Hydrator` | always |
-| `LaravelValidationRules` | `RuleProvider` | `nielsjanssen/laravel-validation` is installed |
+| `InputHydrator` | `Hydrator` | always, for [`#[Input]`](graphql.md#input-types) classes |
+| `LaravelValidationRules` | `RuleProvider`, `InputRuleProvider` | `nielsjanssen/laravel-validation` is installed |
 
 `nielsjanssen/laravel-validation` is a **suggestion, not a requirement**. Without it you simply have
 one fewer rules provider, and `#[Arg(rules: [...])]` keeps working exactly as before.
@@ -83,6 +84,23 @@ Every tagged provider is asked, and rules for the same argument accumulate, so s
 Whatever they return is merged **on top of** Rebing's own arg-level rules, which includes
 `#[Arg(rules:)]` and the automatic `exists` rule on a model binding — a provider can add to those but
 never silently replaces them.
+
+An `#[Input]` is validated on its own fields instead, before anything is hydrated, and Rebing prefixes the paths
+(`input.shipTo.city`). A provider joins that by also implementing `InputRuleProvider`, which is asked per input object
+with its values keyed by property name. It returns `ArgumentRules` with rules keyed by property name and messages keyed
+by property name and rule (`title.min`); both are reported at the full path, such as `input.title`:
+
+```php
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\{ArgumentRules, InputRuleProvider};
+
+final class SpatieDataRules implements RuleProvider, InputRuleProvider
+{
+    public function rulesForInput(string $class, array $values): ArgumentRules
+    {
+        return new ArgumentRules(is_a($class, Data::class, true) ? $class::getValidationRules($values) : []);
+    }
+}
+```
 
 `DiscoveredAction` gives you what you need to speak the boundary's language:
 

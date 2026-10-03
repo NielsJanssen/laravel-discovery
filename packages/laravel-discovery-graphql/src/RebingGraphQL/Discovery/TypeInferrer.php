@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery;
 
+use Illuminate\Database\Eloquent\Model as EloquentModel;
 use LogicException;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
+use ReflectionClass;
 use ReflectionIntersectionType;
 use ReflectionNamedType;
 use ReflectionType;
@@ -112,6 +116,45 @@ final readonly class TypeInferrer
         return TypeRef::class($name, nullable: $nullable);
     }
 
+    /**
+     * Infers the GraphQL input type of a PHP type that is not an Eloquent model.
+     *
+     * @param  class-string  $declaringClass
+     */
+    public function input(
+        ?ReflectionType $type,
+        string $declaringClass,
+        string $label,
+        string $attribute,
+        ?string $explicitType = null,
+        ?string $of = null,
+        bool $nullable = false,
+        bool $nullableItems = false,
+        ?Member $member = null,
+    ): TypeRef {
+        if ($explicitType === null && $of === null) {
+            if ($member !== null && ! $this->isInputClass($type) && ($mapped = $this->map($type, $member)) !== null) {
+                return $mapped->orNullable($nullable || $this->allowsNull($type));
+            }
+
+            $this->assertInputShape($type, $label, $attribute);
+        }
+
+        $ref = $this->output($type, $declaringClass, $label, $attribute, $explicitType, $of, $nullable, $nullableItems);
+
+        if ($ref->class !== null) {
+            $this->assertInputClass($ref->class, $label, $attribute);
+        }
+
+        return $ref;
+    }
+
+    /** An #[Input] class is always its own input type, never a mapper's. */
+    private function isInputClass(?ReflectionType $type): bool
+    {
+        return $type instanceof ReflectionNamedType && Input::marks($type->getName());
+    }
+
     /** Untyped and `mixed` members are never offered to the mappers. */
     private function map(?ReflectionType $type, Member $member): ?TypeRef
     {
@@ -120,6 +163,63 @@ final readonly class TypeInferrer
         }
 
         return $this->mappers->map(new TypeReflector($type), $member);
+    }
+
+    private function assertInputShape(?ReflectionType $type, string $member, string $attribute): void
+    {
+        if ($type instanceof ReflectionUnionType || $type instanceof ReflectionIntersectionType) {
+            throw new LogicException(sprintf(
+                '%s has the %s type %s, which has no GraphQL input type. Use a single type, or name one with #[%s(type: ...)].',
+                $member,
+                $type instanceof ReflectionUnionType ? 'union' : 'intersection',
+                $type,
+                $attribute,
+            ));
+        }
+
+        if (! $type instanceof ReflectionNamedType || ! $type->isBuiltin()) {
+            return;
+        }
+
+        if (! in_array($type->getName(), [...self::SCALARS, 'array', 'iterable', 'mixed'], true)) {
+            throw new LogicException(sprintf(
+                '%s has type %s, which has no GraphQL input type. Name one with #[%s(type: ...)].',
+                $member,
+                $type,
+                $attribute,
+            ));
+        }
+    }
+
+    /**
+     * @param  class-string  $class
+     */
+    private function assertInputClass(string $class, string $member, string $attribute): void
+    {
+        if (enum_exists($class) || Input::marks($class)) {
+            return;
+        }
+
+        $reflection = new ReflectionClass($class);
+
+        $problem = match (true) {
+            $reflection->isInterface() => 'an interface, which has no GraphQL input type',
+            is_a($class, EloquentModel::class, true) => 'an Eloquent model, which is only bound as a single ID; a list of models is not supported',
+            $reflection->getAttributes(Type::class) !== [] => sprintf('an output-only #[Type]. Add #[Input] to %s to accept it as input too', $reflection->getShortName()),
+            default => null,
+        };
+
+        if ($problem === null) {
+            return;
+        }
+
+        throw new LogicException(sprintf(
+            '%s references %s, which is %s. Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[%s(type: ...)].',
+            $member,
+            $class,
+            $problem,
+            $attribute,
+        ));
     }
 
     private function allowsNull(?ReflectionType $type): bool

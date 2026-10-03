@@ -12,8 +12,7 @@ interface ActionArgProvider
      * GraphQL arg definitions to merge into the field's args(), in Rebing's array shape:
      *   ['argName' => ['type' => GraphQLType, 'defaultValue' => ..., 'rules' => [...]], ...]
      *
-     * Called at field-init time (after cache rehydration), so GraphQLType instances are
-     * safe to construct here.
+     * Discovery calls it too, to check arg names, so it must not resolve discovered types such as `GraphQL::type(...)`.
      *
      * @return array<string, array<string, mixed>>
      */

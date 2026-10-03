@@ -18,7 +18,7 @@ use NielsJanssen\Laravel\Validation\RuleCompiler;
  * Registered only when that package is installed; it is a suggestion, not a requirement. Swap it for
  * an adapter over any other library by tagging your own RuleProvider implementation.
  */
-final class LaravelValidationRules implements RuleProvider
+final class LaravelValidationRules implements InputRuleProvider, RuleProvider
 {
     public function __construct(
         private readonly RuleCompiler $compiler,
@@ -41,6 +41,20 @@ final class LaravelValidationRules implements RuleProvider
         }
 
         return new ArgumentRules($rules, $messages);
+    }
+
+    public function rulesForInput(string $class, array $values): ArgumentRules
+    {
+        $compiled = $this->compiler->forValues($class, $values);
+        $rules = [];
+
+        foreach ($compiled->rules as $path => $pathRules) {
+            if (! str_contains($path, '.')) {
+                $rules[$path] = array_values($pathRules);
+            }
+        }
+
+        return new ArgumentRules($rules, $compiled->messages);
     }
 
     /**

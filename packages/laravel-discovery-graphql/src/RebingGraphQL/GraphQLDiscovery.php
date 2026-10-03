@@ -9,6 +9,7 @@ use Illuminate\Foundation\Application;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\DeprecationReason;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\EnumCollector;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\InputCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ParameterClassifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeInferrer;
@@ -36,6 +37,7 @@ final class GraphQLDiscovery implements Discovery
         private readonly TypeCollector $types,
         private readonly TypeInferrer $inferrer,
         private readonly EnumCollector $enums,
+        private readonly InputCollector $inputs,
     ) {}
 
     /**
@@ -55,6 +57,15 @@ final class GraphQLDiscovery implements Discovery
 
         if ($type !== null) {
             $collected = $this->types->collect($class, $type);
+
+            $this->addType($location, $collected);
+            $this->addReferencedEnums($location, $this->fieldTypeReferences($collected));
+        }
+
+        $input = $class->getAttribute(Input::class);
+
+        if ($input !== null) {
+            $collected = $this->inputs->collect($class, $input);
 
             $this->addType($location, $collected);
             $this->addReferencedEnums($location, $this->fieldTypeReferences($collected));
@@ -231,7 +242,8 @@ final class GraphQLDiscovery implements Discovery
     }
 
     /**
-     * The discovered types, without implicit enums that an #[Enum], an earlier item or a hand registration covers.
+     * The discovered types, without unused inputs, and without implicit enums that nothing kept references or
+     * that an #[Enum], an earlier item or a hand registration covers.
      *
      * @return list<DiscoveredType>
      */
@@ -245,6 +257,8 @@ final class GraphQLDiscovery implements Discovery
             }
         }
 
+        $usedInputs = $this->usedInputs();
+        $referenced = $this->referencedClasses($usedInputs);
         $registry = $this->app->make(TypeRegistry::class);
         $seen = [];
         $types = [];
@@ -254,15 +268,96 @@ final class GraphQLDiscovery implements Discovery
                 continue;
             }
 
-            if ($item->implicit && (isset($explicit[$item->class]) || isset($seen[$item->class]) || $registry->has($item->class))) {
+            if ($item->kind === TypeKind::Input && ! isset($usedInputs[$item->class])) {
                 continue;
             }
 
-            $seen[$item->class] = true;
+            if ($item->implicit && (! isset($referenced[$item->class]) || isset($explicit[$item->class]) || isset($seen[$item->class]) || $registry->has($item->class))) {
+                continue;
+            }
+
+            if ($item->implicit) {
+                $seen[$item->class] = true;
+            }
+
             $types[] = $item;
         }
 
         return $types;
+    }
+
+    /**
+     * The #[Input] types an argument uses, directly or through the fields of another used input.
+     *
+     * @return array<class-string, DiscoveredType>
+     */
+    private function usedInputs(): array
+    {
+        $inputs = [];
+        $byName = [];
+        $pending = [];
+
+        foreach ($this->discoveryItems as $item) {
+            if ($item instanceof DiscoveredType && $item->kind === TypeKind::Input) {
+                $inputs[$item->class] = $item;
+                $byName[$item->name] = $item->class;
+            } elseif ($item instanceof DiscoveredAction) {
+                $pending = [...$pending, ...array_map(static fn(DiscoveredArg $arg): string => $arg->ref()->class ?? $arg->type, $item->args)];
+            }
+        }
+
+        $used = [];
+
+        while ($pending !== []) {
+            $reference = array_pop($pending);
+            $class = $byName[$reference] ?? $reference;
+            $input = $inputs[$class] ?? null;
+
+            if ($input === null || isset($used[$class])) {
+                continue;
+            }
+
+            $used[$input->class] = $input;
+
+            foreach ($input->fields as $field) {
+                $pending[] = (string) ($field->type->class ?? $field->type->name);
+            }
+        }
+
+        return $used;
+    }
+
+    /**
+     * Every class an action, an output type or a used input refers to.
+     *
+     * @param  array<class-string, DiscoveredType>  $usedInputs
+     * @return array<string, true>
+     */
+    private function referencedClasses(array $usedInputs): array
+    {
+        $referenced = [];
+
+        foreach ($this->discoveryItems as $item) {
+            if ($item instanceof DiscoveredAction) {
+                $references = [$item->returnType?->class, ...array_map(static fn(DiscoveredArg $arg): string => $arg->ref()->class ?? $arg->type, $item->args)];
+            } elseif ($item instanceof DiscoveredType && $item->kind !== TypeKind::Input) {
+                $references = $this->fieldTypeReferences($item);
+            } else {
+                continue;
+            }
+
+            foreach ($references as $class) {
+                $referenced[(string) $class] = true;
+            }
+        }
+
+        foreach ($usedInputs as $input) {
+            foreach ($this->fieldTypeReferences($input) as $class) {
+                $referenced[(string) $class] = true;
+            }
+        }
+
+        return $referenced;
     }
 
     /**
@@ -333,6 +428,7 @@ final class GraphQLDiscovery implements Discovery
 
         foreach ($types as $type) {
             $registry->register($type->class, $type->name, $type->kind);
+            $registry->describe($type);
         }
     }
 
@@ -366,7 +462,45 @@ final class GraphQLDiscovery implements Discovery
             }
         }
 
+        $this->assertNoInputFieldArgs();
         $this->assertClassReferencesRegistered($this->app->make(TypeRegistry::class), $types);
+    }
+
+    /**
+     * A #[Type] field's args are neither validated, hydrated nor authorized, so none may take a discovered input.
+     */
+    private function assertNoInputFieldArgs(): void
+    {
+        $inputs = [];
+
+        foreach ($this->discoveryItems as $item) {
+            if ($item instanceof DiscoveredType && $item->kind === TypeKind::Input) {
+                $inputs[$item->class] = $item->name;
+                $inputs[$item->name] = $item->name;
+            }
+        }
+
+        foreach ($this->discoveryItems as $item) {
+            if (! $item instanceof DiscoveredType || $item->kind === TypeKind::Input) {
+                continue;
+            }
+
+            foreach ($item->fields as $field) {
+                foreach ($field->parameters->args as $arg) {
+                    $input = $inputs[trim($arg->ref()->target(), '[]!')] ?? null;
+
+                    if ($input !== null) {
+                        throw new LogicException(sprintf(
+                            'Argument %s of field %s.%s takes the input type [%s], which fields do not support yet: field args are neither validated, hydrated nor authorized. Take scalar args instead, or move the operation to a #[Query] or #[Mutation].',
+                            $arg->name,
+                            $item->name,
+                            $field->name,
+                            $input,
+                        ));
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -384,10 +518,21 @@ final class GraphQLDiscovery implements Discovery
 
             if ($position === Position::Input) {
                 throw new LogicException(sprintf(
-                    '%s references %s, which is not a registered GraphQL input type%s. Use a scalar or an enum, or name a registered GraphQL input type with #[Arg(type: ...)].',
+                    '%s references %s, which is not a registered GraphQL input type%s. Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[%s(type: ...)].',
                     $referrer,
                     $class,
                     $registry->has($class) ? ' (it is registered as ' . $registry->kindOf($class, Position::Output)->value . ' type [' . $registry->nameOf($class, Position::Output) . '])' : '',
+                    $attribute,
+                ));
+            }
+
+            if (Input::marks($class)) {
+                throw new LogicException(sprintf(
+                    '%s references %s, which is an #[Input] and has no output type. Add #[Type] to %s to return it too, or name a registered GraphQL type with type: (or of: for a list) on #[%s].',
+                    $referrer,
+                    $class,
+                    class_basename($class),
+                    $attribute,
                 ));
             }
 
@@ -431,11 +576,13 @@ final class GraphQLDiscovery implements Discovery
         }
 
         foreach ($types as $type) {
+            $position = $type->kind === TypeKind::Input ? Position::Input : Position::Output;
+
             foreach ($type->fields as $field) {
                 $member = "Field {$type->name}.{$field->name}";
 
                 if ($field->type->class !== null) {
-                    yield [$field->type->class, $member, 'Field', Position::Output];
+                    yield [$field->type->class, $member, 'Field', $position];
                 }
 
                 yield from $this->argClassReferences($field->parameters->args, $member);
@@ -461,6 +608,17 @@ final class GraphQLDiscovery implements Discovery
     private function addType(DiscoveryLocation $location, DiscoveredType $type): void
     {
         foreach ($this->discoveryItems as $item) {
+            if ($item instanceof DiscoveredType && $item->name === $type->name && $item->class === $type->class && $item->kind !== $type->kind) {
+                throw new LogicException(sprintf(
+                    'GraphQL type name [%s] is used by both #[%s] and #[%s] on %s. Rename one with #[%s(name: ...)].',
+                    $type->name,
+                    $this->attributeOf($item),
+                    $this->attributeOf($type),
+                    $type->class,
+                    $this->attributeOf($type),
+                ));
+            }
+
             if ($item instanceof DiscoveredType && $item->name === $type->name && $item->class !== $type->class) {
                 throw new LogicException(sprintf(
                     'GraphQL type name [%s] is used by both %s and %s. %s',
@@ -477,13 +635,17 @@ final class GraphQLDiscovery implements Discovery
 
     private function attributeOf(DiscoveredType $type): string
     {
-        return $type->kind === TypeKind::Enum ? 'Enum' : 'Type';
+        return match ($type->kind) {
+            TypeKind::Enum => 'Enum',
+            TypeKind::Input => 'Input',
+            default => 'Type',
+        };
     }
 
     private function renameHint(DiscoveredType $type): string
     {
         if ($type->kind !== TypeKind::Enum) {
-            return 'Rename one with #[Type(name: ...)].';
+            return sprintf('Rename one with #[%s(name: ...)].', $this->attributeOf($type));
         }
 
         return sprintf(

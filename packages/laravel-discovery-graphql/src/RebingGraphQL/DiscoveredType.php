@@ -38,6 +38,7 @@ class DiscoveredType
         return match ($this->kind) {
             TypeKind::Object => new DiscoveredObjectType($app, $this),
             TypeKind::Enum => new DiscoveredEnumType($this),
+            TypeKind::Input => new DiscoveredInputType($app, $this),
             default => throw new LogicException(sprintf(
                 'Cannot build GraphQL type [%s] for %s: %s types are not supported yet.',
                 $this->name,
@@ -45,6 +46,25 @@ class DiscoveredType
                 $this->kind->value,
             )),
         };
+    }
+
+    /**
+     * Re-keys an input object's values from GraphQL field name to PHP property name, dropping unknown keys.
+     *
+     * @param  array<array-key, mixed>  $values
+     * @return array<string, mixed>
+     */
+    public function toProperties(array $values): array
+    {
+        $properties = [];
+
+        foreach ($this->fields as $field) {
+            if (array_key_exists($field->name, $values)) {
+                $properties[$field->phpName] = $values[$field->name];
+            }
+        }
+
+        return $properties;
     }
 
     public function withBindName(): static

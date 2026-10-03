@@ -84,6 +84,24 @@ check it against, so put it on the model-bound parameter or use a gate.
 
 The default `Forbidden` is `Authorize::DEFAULT_MESSAGE`.
 
+The same works on a model property of an [`#[Input]`](graphql.md#input-types). The check runs before validation, for
+the input argument and for every nested input and list item that carries the property, with the same nullability rules.
+
+```php
+#[Input]
+final readonly class CreateBook
+{
+    public function __construct(
+        public string $title,
+        #[Authorize('attach')] public Publisher $publisher,   // PublisherPolicy::attach($user, $publisher)
+    ) {}
+}
+```
+
+On an input property, discovery rejects `#[Authorize]` on a property that binds no model, one without an ability,
+`gate:` and `onDenied:`, as it does on a parameter. A class that is both `#[Type]` and `#[Input]` is the exception for
+non-model properties: there `#[Authorize]` guards the output field, as described below, and input ignores it.
+
 ## Authorizing a field
 
 On a property or `#[Field]` method of a [`#[Type]`](graphql.md#object-types), `#[Authorize]` guards that one field. It
