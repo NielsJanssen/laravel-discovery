@@ -252,7 +252,8 @@ final readonly class Uppercase implements FieldDiscoveryVerifier, FieldDecorator
 ```
 
 `FieldBlueprint` offers `nullable()` to make the field nullable, `wrapResolver()` to run code around the resolver,
-and `addPrivacy()` to add a check that resolves the field to `null` without running the resolver (Rebing's `privacy`).
+`resolveWith()` to replace where the value comes from while every wrapper still runs around it, and `addPrivacy()` to
+add a check that resolves the field to `null` without running the resolver (Rebing's `privacy`).
 Its `app` property is the application, for resolving services. Decorators run in declaration order, which sets the
 order at resolve time: every privacy check runs first, in declaration order, and the field is `null` as soon as one
 fails. Then the resolver wrappers run, the last-declared one outermost, so it sees the call first and the result last.
@@ -363,6 +364,143 @@ type Mutation {
 - **Dates need a GraphQL type.** `CarbonImmutable` has no GraphQL counterpart by default: map it once in
   [the scalar map](#the-scalar-map), or name one per field with `#[Field(type: ...)]`.
 - Discovery reads the model through reflection only: it never instantiates the model or queries the database.
+
+### Batch loading
+
+A field that loads related data per parent runs one query per parent: a list of 50 authors with their books is 51
+queries. A batched field collects every parent the query reaches at one level and loads them together, so the same
+list is two queries.
+
+```php
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\KeyLoader;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\Load;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\Relation;
+
+#[Type]
+class Author extends Model
+{
+    public string $name { get => $this->getAttribute('name'); }
+
+    #[Field(of: Book::class), Relation]                              // relation 'books'
+    public function books(): HasMany { return $this->hasMany(Book::class); }
+}
+
+#[Type]
+class Book extends Model
+{
+    #[Field(name: 'writer', type: Author::class), Relation]          // relation 'author', field 'writer'
+    public function author(): BelongsTo { return $this->belongsTo(Author::class); }
+}
+
+#[Type]
+final class Review
+{
+    public function __construct(public int $authorId) {}
+
+    #[Load(KeyLoader::class, model: Author::class, key: 'authorId')]
+    public ?Author $author = null;
+
+    #[Load(KeyLoader::class, model: Book::class, key: 'authorId', column: 'author_id', many: true), Field(of: Book::class)]
+    public array $books = [];
+}
+```
+
+- **`#[Relation]`** eager loads an Eloquent relation on every parent that has not loaded it yet, one query per parent
+  class, and reads it with `getRelation()`. The relation defaults to the PHP method name, also when `#[Field(name:)]`
+  renames the field; `#[Relation('author')]` names another. A relation loaded beforehand, by `with()` for example, is
+  not loaded again. The relation method itself is only called by Eloquent, never as a resolver.
+- **`#[Relation]` fields need `type:` or `of:`** on their `#[Field]`: `type:` for a single record, `of:` for a list.
+  The type is never read from the relation, so discovery never instantiates a model.
+- **`#[Load(LoaderClass::class, ...)]`** resolves the field through any `BatchLoader`. The named arguments after the
+  loader become its options.
+- **`KeyLoader`** loads `model:` records whose `column:` (default: the model's key name) matches the parent's `key:`
+  property, which must be public. A parent without a match gets `null`; with `many: true` it gets every match, or an
+  empty list. Without `many: true`, `column:` must be the model's key, since only that is known to be unique.
+- **Field arguments** reach the loader as `$args`, and a field selected twice with different arguments loads twice:
+  a batch is one loader, one set of options and one set of arguments.
+
+**Your own loader.** A `BatchLoader` gets the parents, each once, and returns one result per parent, in the same order:
+
+```php
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\BatchLoader;
+
+final class FileLoader implements BatchLoader
+{
+    public function __construct(private readonly MediaLibrary $media) {}
+
+    public function load(array $roots, array $options, array $args): array
+    {
+        $files = $this->media->forOwners($roots, $options['collection']);
+
+        return array_map(fn(object $root): array => $files[$root->id] ?? [], $roots);
+    }
+}
+```
+
+Loaders are resolved from the container. A result list of another length, or with other keys, is a `LogicException`.
+A `null` for a non-null field is a field error; make the field nullable when a parent can lack a value.
+
+**Your own attribute.** Implement `BatchedFieldDecorator` and `use ResolvesThroughBatchLoader`, which supplies `decorate()`:
+
+```php
+use Attribute;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\BatchedFieldDecorator;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\ResolvesThroughBatchLoader;
+
+#[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_METHOD)]
+final readonly class Files implements BatchedFieldDecorator
+{
+    use ResolvesThroughBatchLoader;
+
+    public function __construct(public string $collection = 'default') {}
+
+    public function loader(): string { return FileLoader::class; }
+
+    public function options(string $fieldName): array { return ['collection' => $this->collection]; }
+}
+
+#[Field(of: 'String'), Files('covers')]
+public function covers(?string $size = null): array { return []; }   // $size is an argument, passed as $args
+```
+
+`options()` receives the PHP member name. A loader that also implements `VerifiesLoadOptions` checks its options at
+discovery, as `KeyLoader` and `RelationLoader` do.
+
+**Inside a field method.** For a case an attribute cannot express, take `Loaders` as a parameter and defer to a loader
+yourself. The method returns a `Deferred`, so name the field's type with `type:` or `of:`:
+
+```php
+use GraphQL\Deferred;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\Loaders;
+
+#[Field(type: Author::class, nullable: true)]
+public function reviewer(Loaders $loaders): Deferred
+{
+    return $loaders->defer(KeyLoader::class, $this, ['model' => Author::class, 'key' => 'reviewerId']);
+}
+```
+
+`defer()` joins the same batch as a `#[Load]` with that loader and those options.
+
+**One registry per execution.** Batches live in a `Loaders` registry that every GraphQL execution gets fresh, through
+`LoadersExecutionMiddleware`. The package adds it in front of `graphql.execution_middleware` and of every schema's own
+`execution_middleware` list once the application has booted, so a batch never carries over to the next request, also
+in tests and long-running workers. Resolving `Loaders` outside an execution throws a `LogicException`. A schema list
+set at runtime, after boot, needs the middleware added by hand.
+
+**Composing with other decorators.** `#[Authorize]` runs per parent before the parent joins a batch, in either
+attribute order, so a denied parent never reaches the loader. A decorator's `wrapResolver()` around a batched field
+receives a `Deferred` from `$next`; chain on it with `->then()` rather than reading the value directly.
+
+**Errors at discovery.** `#[Relation]` without `type:` or `of:`, on a class that is not a model, or naming a method the
+model lacks; a `KeyLoader` without `model:` or `key:`, with an unknown option, with a `key:` that is not a public
+property of a plain `#[Type]` class, whose `many:` does not match a list field, or with a `column:` other than the key
+without `many: true`; an option that is not named or does not serialize (a closure); a loader that does not implement
+`BatchLoader` or cannot be instantiated; and two batched attributes on one field. Each
+is a `LogicException` naming the class, the member and the fix. Selection-aware eager loading (Rebing's
+`SelectFields`) is not supported.
 
 ## Enums
 

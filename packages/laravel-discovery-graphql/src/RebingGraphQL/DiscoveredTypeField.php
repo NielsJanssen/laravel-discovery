@@ -11,6 +11,7 @@ final readonly class DiscoveredTypeField
 {
     /**
      * @param  list<FieldDecorator|FieldDecoratorReference>  $decorators  serializable instances, or references to re-read
+     * @param  class-string|null  $typeClass  the #[Type] class the field belongs to
      */
     public function __construct(
         public string $phpName,
@@ -21,6 +22,7 @@ final readonly class DiscoveredTypeField
         public ?string $description = null,
         public ?string $deprecationReason = null,
         public array $decorators = [],
+        public ?string $typeClass = null,
     ) {}
 
     /**

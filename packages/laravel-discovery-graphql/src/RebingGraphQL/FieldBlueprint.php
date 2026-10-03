@@ -14,9 +14,25 @@ final class FieldBlueprint
     /** @var list<Closure(mixed, array<string, mixed>, mixed, ResolveInfo): bool> */
     private array $checks = [];
 
+    /** @var list<Closure(mixed, array<string, mixed>, mixed, ?ResolveInfo, Closure(mixed, array<string, mixed>, mixed, ?ResolveInfo): mixed): mixed> */
+    private array $wrappers = [];
+
     /** Rebing's `privacy`: the field resolves to null without running the resolver when any check fails. */
     public ?Closure $privacy {
         get => $this->checks === [] ? null : $this->allows(...);
+    }
+
+    /** The source resolver inside every wrapResolver() layer, the last-added layer outermost. */
+    public Closure $resolver {
+        get {
+            $resolver = $this->source;
+
+            foreach ($this->wrappers as $wrapper) {
+                $resolver = new WrappedResolver($wrapper, $resolver)(...);
+            }
+
+            return $resolver;
+        }
     }
 
     public function __construct(
@@ -24,7 +40,7 @@ final class FieldBlueprint
         public readonly DiscoveredType $type,
         public readonly DiscoveredTypeField $field,
         public private(set) TypeRef $typeRef,
-        public private(set) Closure $resolver,
+        private Closure $source,
     ) {}
 
     public function nullable(): void
@@ -37,7 +53,17 @@ final class FieldBlueprint
      */
     public function wrapResolver(Closure $wrapper): void
     {
-        $this->resolver = new WrappedResolver($wrapper, $this->resolver)(...);
+        $this->wrappers[] = $wrapper;
+    }
+
+    /**
+     * Replaces where the value comes from; every wrapResolver() layer still runs around it, whatever the order.
+     *
+     * @param  Closure(mixed, array<string, mixed>, mixed, ?ResolveInfo): mixed  $resolver
+     */
+    public function resolveWith(Closure $resolver): void
+    {
+        $this->source = $resolver;
     }
 
     /**
