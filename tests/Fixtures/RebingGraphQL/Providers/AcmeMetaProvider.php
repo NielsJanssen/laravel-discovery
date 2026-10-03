@@ -9,14 +9,21 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeContext;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeDefinition;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeProvider;
+use Tests\Fixtures\RebingGraphQL\ContainerService;
 
 final readonly class AcmeMetaProvider implements TypeProvider
 {
-    public function __construct(private AcmeMeta $meta) {}
+    /** The field types of each resource, keyed by field name. */
+    private const array RESOURCES = [
+        'AcmeWarehouse' => ['name' => 'string', 'capacity' => 'int'],
+        'AcmeDepot' => ['code' => 'string'],
+    ];
+
+    public function __construct(private ContainerService $service) {}
 
     public function types(): iterable
     {
-        foreach ($this->meta->resources() as $name => $fields) {
+        foreach (self::RESOURCES as $name => $fields) {
             yield new TypeDefinition(
                 name: $name,
                 kind: Position::Output,
@@ -25,7 +32,7 @@ final readonly class AcmeMetaProvider implements TypeProvider
                         yield new Field(name: $field, type: $type, description: "The {$context->name} $field");
                     }
                 },
-                description: "A provided $name",
+                description: "A provided $name{$this->service->suffix()}",
             );
         }
     }

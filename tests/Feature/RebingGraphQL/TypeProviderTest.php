@@ -17,26 +17,26 @@ use Rebing\GraphQL\GraphQL as RebingGraphQL;
 use Rebing\GraphQL\Support\Facades\GraphQL;
 use stdClass;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeConfigurableProvider;
-use Tests\Fixtures\RebingGraphQL\Providers\AcmeDepotQuery;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeFilterProvider;
-use Tests\Fixtures\RebingGraphQL\Providers\AcmeFilterQuery;
-use Tests\Fixtures\RebingGraphQL\Providers\AcmeListed;
-use Tests\Fixtures\RebingGraphQL\Providers\AcmeListedProvider;
-use Tests\Fixtures\RebingGraphQL\Providers\AcmeListedQuery;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeMetaProvider;
+use Tests\Fixtures\RebingGraphQL\Providers\AcmeProvidedQueries;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeShipment;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeShipmentProvider;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeShipmentQuery;
 use Tests\Fixtures\RebingGraphQL\Providers\AcmeWarehouseQuery;
+use Tests\Fixtures\RebingGraphQL\Replacement\AcmeUser;
+
+const PROVIDED_SOURCES = [AcmeWarehouseQuery::class, AcmeProvidedQueries::class, AcmeMetaProvider::class, AcmeFilterProvider::class];
 
 /**
  * @param  list<mixed>  $definitions
+ * @param  class-string  ...$sources
  */
-function provideTypes(array $definitions): string
+function provideTypes(array $definitions, string ...$sources): string
 {
     app()->instance(AcmeConfigurableProvider::class, new AcmeConfigurableProvider($definitions));
 
-    return schemaSdl(AcmeWarehouseQuery::class, AcmeConfigurableProvider::class);
+    return schemaSdl(AcmeWarehouseQuery::class, AcmeConfigurableProvider::class, ...$sources);
 }
 
 /**
@@ -80,11 +80,11 @@ describe('discovery', function () {
 });
 
 describe('output types', function () {
-    it('yields two types from the meta the provider is injected with', function () {
-        $definitions = sdlDefinitions(schemaSdl(AcmeWarehouseQuery::class, AcmeDepotQuery::class, AcmeMetaProvider::class));
+    it('yields two types, described by the service the provider is injected with', function () {
+        $definitions = sdlDefinitions(schemaSdl(...PROVIDED_SOURCES));
 
         expect($definitions)->toContain(<<<'GRAPHQL'
-            "A provided AcmeWarehouse"
+            "A provided AcmeWarehouse!"
             type AcmeWarehouse {
               "The AcmeWarehouse name"
               name: String!
@@ -94,7 +94,7 @@ describe('output types', function () {
             }
             GRAPHQL)
             ->and($definitions)->toContain(<<<'GRAPHQL'
-            "A provided AcmeDepot"
+            "A provided AcmeDepot!"
             type AcmeDepot {
               "The AcmeDepot code"
               code: String!
@@ -103,7 +103,7 @@ describe('output types', function () {
     });
 
     it('resolves a provided type from an array root', function () {
-        schemaSdl(AcmeWarehouseQuery::class, AcmeDepotQuery::class, AcmeMetaProvider::class);
+        schemaSdl(...PROVIDED_SOURCES);
 
         expect(GraphQL::query('{ warehouse { name capacity } depots { code } }'))->toBe(['data' => [
             'warehouse' => ['name' => 'North', 'capacity' => 40],
@@ -138,13 +138,13 @@ describe('output types', function () {
     });
 
     it('serves a provided type from the discovery cache', function () {
-        applyCachedGraphQL([AcmeWarehouseQuery::class, AcmeDepotQuery::class, AcmeMetaProvider::class]);
+        applyCachedGraphQL(PROVIDED_SOURCES);
 
         expect(GraphQL::query('{ warehouse { name } }'))->toBe(['data' => ['warehouse' => ['name' => 'North']]]);
     });
 
     it('keeps the config out of it', function () {
-        schemaSdl(AcmeWarehouseQuery::class, AcmeDepotQuery::class, AcmeMetaProvider::class);
+        schemaSdl(...PROVIDED_SOURCES);
 
         expect(config('graphql.types'))->not->toHaveKey('AcmeWarehouse');
     });
@@ -152,7 +152,7 @@ describe('output types', function () {
 
 describe('input types', function () {
     it('prints a provided input type', function () {
-        expect(sdlDefinitions(schemaSdl(AcmeFilterQuery::class, AcmeFilterProvider::class)))->toContain(<<<'GRAPHQL'
+        expect(sdlDefinitions(schemaSdl(...PROVIDED_SOURCES)))->toContain(<<<'GRAPHQL'
             "What to look for"
             input AcmeFilter {
               term: String!
@@ -165,14 +165,14 @@ describe('input types', function () {
     });
 
     it('hands the action the value as a plain array', function () {
-        schemaSdl(AcmeFilterQuery::class, AcmeFilterProvider::class);
+        schemaSdl(...PROVIDED_SOURCES);
 
         expect(GraphQL::query('{ describeFilter(filter: {term: "bolt", tags: ["a"]}) }'))
             ->toBe(['data' => ['describeFilter' => '{"term":"bolt","tags":["a"]}']]);
     });
 
     it('rejects a missing required field of the provided input', function () {
-        schemaSdl(AcmeFilterQuery::class, AcmeFilterProvider::class);
+        schemaSdl(...PROVIDED_SOURCES);
 
         $result = GraphQL::query('{ describeFilter(filter: {limit: 1}) }');
 
@@ -263,8 +263,8 @@ describe('class mapping', function () {
     });
 
     it('rejects a class a #[Type] already maps', function () {
-        expect(fn() => schemaSdl(AcmeListedQuery::class, AcmeListed::class, AcmeListedProvider::class))
-            ->toThrow(LogicException::class, sprintf('Cannot register %s as object type [AcmeOtherListed]: it is already registered as [AcmeListed].', AcmeListed::class));
+        expect(fn() => provideTypes([acmeWarehouse(), acmeDefinition('AcmeOtherUser', Position::Output, [new Field(name: 'name', type: 'string')], AcmeUser::class)], AcmeUser::class))
+            ->toThrow(LogicException::class, sprintf('Cannot register %s as object type [AcmeOtherUser]: it is already registered as [AcmeUser].', AcmeUser::class));
     });
 });
 
