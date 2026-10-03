@@ -11,11 +11,18 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorize;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Ignore;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
+use Tests\Fixtures\RebingGraphQL\Types\Eloquent\Concerns\HasSlug;
+use Tests\Fixtures\RebingGraphQL\Types\Eloquent\Concerns\InteractsWithMedia;
 
 #[Type(description: 'An article stored in the database')]
 class Article extends Model
 {
+    use HasSlug;
+    use InteractsWithMedia;
+
     public static int $constructed = 0;
+
+    public $timestamps = false;
 
     protected $table = 'hooked_articles';
 

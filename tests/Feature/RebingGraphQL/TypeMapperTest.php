@@ -10,8 +10,8 @@ use GraphQL\Utils\SchemaPrinter;
 use Illuminate\Support\ServiceProvider;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorization;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredArg;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscoveryServiceProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
@@ -20,42 +20,33 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\ScalarMap;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapper;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use Rebing\GraphQL\Support\Facades\GraphQL;
-use Tempest\Discovery\DiscoveryItems;
+use RuntimeException;
 use Tempest\Reflection\TypeReflector;
 use Tests\Fixtures\RebingGraphQL\ContainerService;
+use Tests\Fixtures\RebingGraphQL\Enums;
 use Tests\Fixtures\RebingGraphQL\Mappers;
 
-/** Tag type mappers, discarding the registry so the new tags and the current scalar map take effect. */
-function tagTypeMappers(string ...$mappers): void
+const MAPPED_SCALARS = ['Money' => Mappers\MoneyScalar::class, 'DateTime' => Mappers\DateTimeScalar::class];
+
+function idsAreIds(): TypeMapper
 {
-    app()->tag($mappers, TypeMapper::TAG);
-    app()->forgetInstance(TypeMapperRegistry::class);
-    app()->forgetInstance(GraphQLDiscovery::class);
+    return closureMapper(static fn(TypeReflector $type, Member $member) => $member->name === 'id' && in_array($type->getName(), ['int', 'string'], true)
+        ? TypeRef::named('ID', nullable: $type->isNullable())
+        : null);
 }
 
-/** Print the default schema with the Money and DateTime scalars registered by hand. */
-function mappedSchemaSdl(string ...$classes): string
+function idsAreInts(): TypeMapper
 {
-    isolateGraphQL();
-    config()->set('graphql.types', ['Money' => Mappers\MoneyScalar::class, 'DateTime' => Mappers\DateTimeScalar::class]);
-    discoverGraphQL(...$classes)->apply();
-
-    return SchemaPrinter::doPrint(GraphQL::schema());
+    return closureMapper(static fn(TypeReflector $type, Member $member) => $member->name === 'id' ? TypeRef::scalar('Int') : null);
 }
 
-/** Apply discovery items, as they come back from the discovery cache, with the scalars registered. */
-function applyMappedItems(DiscoveryItems $items): string
+function moneyMapper(): TypeMapper
 {
-    isolateGraphQL();
-    config()->set('graphql.types', ['Money' => Mappers\MoneyScalar::class, 'DateTime' => Mappers\DateTimeScalar::class]);
-
-    $discovery = app(GraphQLDiscovery::class);
-    $discovery->setItems($items);
-    $discovery->apply();
-
-    return SchemaPrinter::doPrint(GraphQL::schema());
+    return closureMapper(static fn(TypeReflector $type) => $type->matches(Mappers\Money::class) ? TypeRef::named('Money') : null);
 }
 
 const PRODUCT_SDL = <<<'GRAPHQL'
@@ -84,14 +75,14 @@ describe('the contract', function () {
 
     it('asks ScalarMap after the tagged mappers, so a consumer mapper wins', function () {
         config()->set(ScalarMap::CONFIG, [CarbonInterface::class => 'DateTime']);
-        tagTypeMappers();
+        refreshMappers();
 
         $date = new TypeReflector(CarbonImmutable::class);
         $member = new Member('listedAt', Mappers\Listing::class, Position::Output, MemberKind::Property);
 
         expect(app(TypeMapperRegistry::class)->map($date, $member))->toEqual(TypeRef::named('DateTime'));
 
-        tagTypeMappers(Mappers\GreedyMapper::class);
+        refreshMappers(greedyMapper());
 
         expect(app(TypeMapperRegistry::class)->map($date, $member))->toEqual(TypeRef::scalar('String'));
     });
@@ -123,26 +114,26 @@ describe('the contract', function () {
     });
 
     it('does not infer ID for an id without a mapper', function () {
-        expect(mappedSchemaSdl(Mappers\PlainIdQuery::class))->toContain('find(id: Int!): Int!');
+        expect(schemaSdlWith(MAPPED_SCALARS, Mappers\PlainIdQuery::class))->toContain('find(id: Int!): Int!');
 
-        tagTypeMappers(Mappers\IdsAreIds::class);
+        refreshMappers(idsAreIds());
 
-        expect(mappedSchemaSdl(Mappers\PlainIdQuery::class))->toContain('find(id: ID!): Int!');
+        expect(schemaSdlWith(MAPPED_SCALARS, Mappers\PlainIdQuery::class))->toContain('find(id: ID!): Int!');
     });
 
-    it('lets the first mapper that answers win, in tag order', function (array $mappers, string $expected) {
-        tagTypeMappers(...$mappers);
+    it('lets the first mapper that answers win, in tag order', function (array $mappers, TypeRef $expected) {
+        refreshMappers(...$mappers);
 
         $ref = app(TypeMapperRegistry::class)->map(
             new TypeReflector('int'),
             new Member('id', Mappers\Product::class, Position::Output, MemberKind::Property),
         );
 
-        expect($ref)->toEqual($expected === 'ID' ? TypeRef::named('ID') : TypeRef::scalar($expected));
+        expect($ref)->toEqual($expected);
     })->with([
-        'ID first' => [[Mappers\IdsAreIds::class, Mappers\IdsAreInts::class], 'ID'],
-        'Int first' => [[Mappers\IdsAreInts::class, Mappers\IdsAreIds::class], 'Int'],
-        'a null answer passes on' => [[Mappers\MoneyMapper::class, Mappers\IdsAreInts::class], 'Int'],
+        'ID first' => fn() => [[idsAreIds(), idsAreInts()], TypeRef::named('ID')],
+        'Int first' => fn() => [[idsAreInts(), idsAreIds()], TypeRef::scalar('Int')],
+        'a null answer passes on' => fn() => [[moneyMapper(), idsAreInts()], TypeRef::scalar('Int')],
     ]);
 
     it('rejects a scalar map entry that is not a class-string to a type name', function () {
@@ -156,10 +147,10 @@ describe('the contract', function () {
 });
 
 describe('mapped types', function () {
-    beforeEach(fn() => tagTypeMappers(Mappers\IdsAreIds::class, Mappers\MoneyMapper::class));
+    beforeEach(fn() => refreshMappers(idsAreIds(), moneyMapper()));
 
     it('maps an id to ID and a Money value object to a custom scalar, on fields, field args, action args and returns', function () {
-        expect(mappedSchemaSdl(Mappers\ProductQuery::class, Mappers\Product::class))
+        expect(schemaSdlWith(MAPPED_SCALARS, Mappers\ProductQuery::class, Mappers\Product::class))
             ->toContain(PRODUCT_SDL)
             ->toContain(PRODUCT_QUERY_SDL)
             ->toContain(<<<'GRAPHQL'
@@ -172,7 +163,7 @@ describe('mapped types', function () {
     });
 
     it('lets an explicit type: or of: beat a mapper on #[Field], #[Arg] and #[Query]', function () {
-        expect(mappedSchemaSdl(Mappers\ExplicitOverMapperQuery::class, Mappers\ExplicitOverMapper::class))
+        expect(schemaSdlWith(MAPPED_SCALARS, Mappers\ExplicitOverMapperQuery::class, Mappers\ExplicitOverMapper::class))
             ->toContain(<<<'GRAPHQL'
                 type ExplicitOverMapper {
                   id: String!
@@ -185,9 +176,11 @@ describe('mapped types', function () {
     });
 
     it('takes a list from a mapper on an action return', function () {
-        tagTypeMappers(Mappers\PricesAreLists::class);
+        refreshMappers(closureMapper(static fn(TypeReflector $type, Member $member) => $member->kind === MemberKind::MethodReturn && $member->name === 'prices'
+            ? TypeRef::named('Money', list: true, nullableItems: true)
+            : null));
 
-        expect(mappedSchemaSdl(Mappers\PriceListQuery::class))->toContain('prices: [Money]!');
+        expect(schemaSdlWith(MAPPED_SCALARS, Mappers\PriceListQuery::class))->toContain('prices: [Money]!');
 
         $this->postJson('/graphql', ['query' => '{ prices }'])
             ->assertOk()
@@ -196,7 +189,7 @@ describe('mapped types', function () {
     });
 
     it('resolves a mapped arg and return end to end', function () {
-        mappedSchemaSdl(Mappers\ProductQuery::class, Mappers\Product::class);
+        schemaSdlWith(MAPPED_SCALARS, Mappers\ProductQuery::class, Mappers\Product::class);
 
         $this->postJson('/graphql', ['query' => '{ price(amount: "12.5 USD") product(id: "7") { id price discount total(shipping: "2.25 EUR") related(id: "8") } }'])
             ->assertOk()
@@ -207,30 +200,35 @@ describe('mapped types', function () {
             ]]);
     });
 
-    it('round-trips a mapped action through serialize()', function () {
-        $action = discoveredActions(Mappers\ProductQuery::class)['price'];
+    it('keeps mapped types through the discovery cache, without the mappers', function () {
+        $items = cachedGraphQLItems(Mappers\ProductQuery::class, Mappers\Product::class);
 
-        expect(unserialize(serialize($action)))->toEqual($action)
+        $action = array_find(
+            iterator_to_array($items, false),
+            static fn(mixed $item): bool => $item instanceof DiscoveredAction && $item->method === 'price',
+        );
+
+        expect($action)->toBeInstanceOf(DiscoveredAction::class)
             ->and($action->args[0]->typeRef)->toEqual(TypeRef::named('Money'))
             ->and($action->returnType)->toEqual(TypeRef::named('Money'));
-    });
-
-    it('keeps mapped types through the discovery cache, without the mappers', function () {
-        $items = unserialize(serialize(discoverGraphQL(Mappers\ProductQuery::class, Mappers\Product::class)->getItems()));
 
         app()->instance(TypeMapperRegistry::class, new TypeMapperRegistry());
         app()->forgetInstance(GraphQLDiscovery::class);
+        applyGraphQLItems($items, MAPPED_SCALARS);
 
-        expect($items)->toBeInstanceOf(DiscoveryItems::class)
-            ->and(applyMappedItems($items))->toContain(PRODUCT_SDL)->toContain(PRODUCT_QUERY_SDL);
+        expect(SchemaPrinter::doPrint(GraphQL::schema()))->toContain(PRODUCT_SDL)->toContain(PRODUCT_QUERY_SDL);
     });
 });
 
 describe('nullability', function () {
-    beforeEach(fn() => tagTypeMappers(Mappers\IdsAreIds::class, Mappers\MoneyMapper::class, Mappers\NullableNotes::class));
+    beforeEach(fn() => refreshMappers(
+        idsAreIds(),
+        moneyMapper(),
+        closureMapper(static fn(TypeReflector $type, Member $member) => $member->name === 'notes' ? TypeRef::scalar('String', nullable: true) : null),
+    ));
 
     it('only ever widens: a nullable PHP type, #[Field(nullable:)] or a nullable mapping each make it nullable', function () {
-        expect(mappedSchemaSdl(Mappers\TicketQuery::class, Mappers\Ticket::class))
+        expect(schemaSdlWith(MAPPED_SCALARS, Mappers\TicketQuery::class, Mappers\Ticket::class))
             ->toContain(<<<'GRAPHQL'
                 type Ticket {
                   id: ID
@@ -242,24 +240,29 @@ describe('nullability', function () {
     });
 
     it('rejects a nullable mapping for a parameter that accepts no null', function () {
-        discoverGraphQL(Mappers\NonNullNotesQuery::class);
-    })->throws(LogicException::class, 'A type mapper makes the argument $notes in Tests\Fixtures\RebingGraphQL\Mappers\NonNullNotesQuery::annotate nullable (String), but the parameter accepts no null. Make the parameter nullable or give it a default.');
+        expectRejected(
+            new class {
+                #[Query]
+                public function annotate(string $notes): string
+                {
+                    return $notes;
+                }
+            },
+            'A type mapper makes the argument $notes in %1$s::annotate nullable (String), but the parameter accepts no null. Make the parameter nullable or give it a default.',
+        );
+    });
 
     it('keeps a mapper non-null when nothing widens it', function () {
-        $discovered = array_find(
-            iterator_to_array(discoverGraphQL(Mappers\Product::class)->getItems(), false),
-            static fn(mixed $item): bool => $item instanceof DiscoveredType,
-        );
+        $discovered = discoveredTypes(Mappers\Product::class)[0];
 
-        expect($discovered)->toBeInstanceOf(DiscoveredType::class)
-            ->and($discovered->fields[1]->type)->toEqual(TypeRef::named('Money'))
+        expect($discovered->fields[1]->type)->toEqual(TypeRef::named('Money'))
             ->and($discovered->fields[2]->type)->toEqual(TypeRef::named('Money', nullable: true));
     });
 });
 
 describe('what mappers never claim', function () {
     it('leaves model bindings, container injections, value objects and resolver injections alone', function () {
-        tagTypeMappers(Mappers\GreedyMapper::class);
+        refreshMappers(greedyMapper());
 
         $action = discoveredActions(Mappers\NotPreemptedQuery::class)['owner'];
 
@@ -271,11 +274,11 @@ describe('what mappers never claim', function () {
             ->and(array_map(static fn($arg) => [$arg->paramName, $arg->ref()], $action->args))->toEqual([['note', TypeRef::scalar('String')]])
             ->and($action->returnType)->toEqual(TypeRef::scalar('String'));
 
-        expect(mappedSchemaSdl(Mappers\NotPreemptedQuery::class))->toContain('owner(note: String!, id: ID!): String!');
+        expect(schemaSdlWith(MAPPED_SCALARS, Mappers\NotPreemptedQuery::class))->toContain('owner(note: String!, id: ID!): String!');
     });
 
     it('leaves a class-typed parameter without #[Arg] to the container', function () {
-        tagTypeMappers(Mappers\MoneyMapper::class);
+        refreshMappers(moneyMapper());
 
         $action = discoveredActions(Mappers\ContainerMoneyQuery::class)['charge'];
 
@@ -285,23 +288,40 @@ describe('what mappers never claim', function () {
             ->and($action->args[0]->ref())->toEqual(TypeRef::named('Money'));
     });
 
-    it('still reports an untyped or mixed member, even with a mapper that claims everything', function (string $class, string $message) {
-        tagTypeMappers(Mappers\GreedyMapper::class);
+    it('still reports an untyped or mixed member, even with a mapper that claims everything', function (object $shape, string $format, string $exception) {
+        refreshMappers(greedyMapper());
 
-        expect(fn() => discoverGraphQL($class))->toThrow($message);
+        expectRejected($shape, $format, exception: $exception);
     })->with([
-        'an untyped property' => [Mappers\Untyped::class, 'Property Tests\Fixtures\RebingGraphQL\Mappers\Untyped::$loose declares no type.'],
-        'an untyped return' => [Mappers\UntypedReturnQuery::class, 'Method Tests\Fixtures\RebingGraphQL\Mappers\UntypedReturnQuery::anything declares no type.'],
-        'a mixed return' => [Mappers\MixedReturnQuery::class, 'Method Tests\Fixtures\RebingGraphQL\Mappers\MixedReturnQuery::whatever declares the type mixed.'],
+        'an untyped property' => [
+            fn() => new #[Type] class {
+                public $loose;
+            },
+            'Property %1$s::$loose declares no type.',
+            LogicException::class,
+        ],
+        'a mixed return' => [
+            fn() => new class {
+                #[Query]
+                public function whatever(): mixed
+                {
+                    return 'x';
+                }
+            },
+            'Method %1$s::whatever declares the type mixed.',
+            RuntimeException::class,
+        ],
     ]);
 
     it('hands static and union types to the mapper unresolved, and self as PHP reports it', function () {
-        Mappers\RecordingMapper::$seen = [];
-        tagTypeMappers(Mappers\RecordingMapper::class);
+        $seen = [];
+        refreshMappers(closureMapper(static function (TypeReflector $type, Member $member) use (&$seen): TypeRef {
+            $seen[$member->name] = $type;
+
+            return TypeRef::scalar('String');
+        }));
 
         discoverGraphQL(Mappers\Linked::class);
-
-        $seen = Mappers\RecordingMapper::$seen;
 
         expect($seen['itself']->getName())->toBe('static')
             ->and($seen['next']->getName())->toBe(Mappers\Linked::class)
@@ -313,37 +333,38 @@ describe('what mappers never claim', function () {
 
 describe('enums a mapper points at', function () {
     it('registers an enum that only a mapped field and a mapped arg reference', function () {
-        tagTypeMappers(Mappers\TierCodes::class);
+        refreshMappers(closureMapper(static fn(TypeReflector $type, Member $member) => $member->name === 'tier' ? TypeRef::class(Enums\Mood::class) : null));
 
-        expect(mappedSchemaSdl(Mappers\TierQuery::class, Mappers\Customer::class))
+        expect(schemaSdlWith(MAPPED_SCALARS, Mappers\TierQuery::class, Mappers\Customer::class))
             ->toContain(<<<'GRAPHQL'
-                enum Tier {
-                  Gold
-                  Silver
+                enum Mood {
+                  Calm
+                  Cheerful
+                  Gloomy
                 }
                 GRAPHQL)
             ->toContain(<<<'GRAPHQL'
                 type Customer {
-                  tier: Tier!
+                  tier: Mood!
                 }
                 GRAPHQL)
-            ->toContain('tierOf(tier: Tier!): String!');
+            ->toContain('tierOf(tier: Mood!): String!');
 
-        $this->postJson('/graphql', ['query' => '{ tierOf(tier: Silver) }'])
+        $this->postJson('/graphql', ['query' => '{ tierOf(tier: Cheerful) }'])
             ->assertOk()
             ->assertJsonMissingPath('errors')
-            ->assertJsonPath('data.tierOf', Mappers\Tier::class . '::Silver');
+            ->assertJsonPath('data.tierOf', Enums\Mood::class . '::Cheerful');
     });
 });
 
 describe('ScalarMap', function () {
     beforeEach(function () {
         config()->set(ScalarMap::CONFIG, [CarbonInterface::class => 'DateTime']);
-        tagTypeMappers();
+        refreshMappers();
     });
 
     it('serves a list action whose item type the scalar map names', function () {
-        expect(mappedSchemaSdl(Mappers\ListedDaysQuery::class))->toContain('listedDays: [DateTime!]!');
+        expect(schemaSdlWith(MAPPED_SCALARS, Mappers\ListingQuery::class, Mappers\Listing::class))->toContain('listedDays: [DateTime!]!');
 
         buildAllSchemas();
     });
@@ -382,7 +403,7 @@ describe('ScalarMap', function () {
     });
 
     it('matches a CarbonImmutable against a CarbonInterface entry, even for a type name that is also a PHP class', function () {
-        expect(mappedSchemaSdl(Mappers\ListingQuery::class, Mappers\Listing::class))
+        expect(schemaSdlWith(MAPPED_SCALARS, Mappers\ListingQuery::class, Mappers\Listing::class))
             ->toContain(<<<'GRAPHQL'
                 type Listing {
                   listedAt: DateTime!
@@ -395,7 +416,7 @@ describe('ScalarMap', function () {
     });
 
     it('resolves a mapped date arg and return end to end', function () {
-        mappedSchemaSdl(Mappers\ListingQuery::class, Mappers\Listing::class);
+        schemaSdlWith(MAPPED_SCALARS, Mappers\ListingQuery::class, Mappers\Listing::class);
 
         $this->postJson('/graphql', ['query' => '{ dayAfter(date: "2026-01-02T03:04:05+00:00") listing { listedAt delistedAt } }'])
             ->assertOk()
@@ -404,15 +425,6 @@ describe('ScalarMap', function () {
                 'dayAfter' => '2026-01-03T03:04:05+00:00',
                 'listing' => ['listedAt' => '2026-01-02T03:04:05+00:00', 'delistedAt' => null],
             ]]);
-    });
-
-    it('maps a scalar entry to the built-in scalar', function () {
-        config()->set(ScalarMap::CONFIG, [CarbonInterface::class => 'String']);
-
-        expect(app(ScalarMap::class)->map(
-            new TypeReflector(CarbonImmutable::class),
-            new Member('listedAt', Mappers\Listing::class, Position::Output, MemberKind::Property),
-        ))->toEqual(TypeRef::scalar('String'));
     });
 
     it('ignores scalars, unions and unmapped classes', function (string $type) {

@@ -12,6 +12,7 @@ use Tests\Fixtures\RebingGraphQL\ThirdParty\Acme\Resource;
 final class ArticleDraft extends Resource
 {
     use HasAudit;
+    use QueuesDrafts;
 
     public string $title = '';
 }

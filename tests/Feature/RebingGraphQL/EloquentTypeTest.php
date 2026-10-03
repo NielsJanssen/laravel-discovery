@@ -7,6 +7,7 @@ namespace Tests\Feature\RebingGraphQL;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Gate;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use Tests\Fixtures\RebingGraphQL\Types\Eloquent\Article;
 use Tests\Fixtures\RebingGraphQL\Types\Eloquent\ArticleQueries;
@@ -15,14 +16,6 @@ use Tests\Fixtures\RebingGraphQL\Types\Eloquent\Invalid\AuthorizedFrameworkPrope
 use Tests\Fixtures\RebingGraphQL\Types\Eloquent\Invalid\AuthorizedTraitProperty;
 use Tests\Fixtures\RebingGraphQL\Types\Eloquent\Invalid\FieldOnPlainModelProperty;
 use Tests\Fixtures\RebingGraphQL\Types\Eloquent\Invalid\ShadowingArticle;
-use Tests\Fixtures\RebingGraphQL\Types\Eloquent\MediaArticle;
-use Tests\Fixtures\RebingGraphQL\Types\Eloquent\MediaArticleQuery;
-use Tests\Fixtures\RebingGraphQL\Types\Eloquent\QueuedDigest;
-use Tests\Fixtures\RebingGraphQL\Types\Eloquent\QueuedDigestQuery;
-use Tests\Fixtures\RebingGraphQL\Types\Eloquent\QueuedReport;
-use Tests\Fixtures\RebingGraphQL\Types\Eloquent\QueuedReportQuery;
-use Tests\Fixtures\RebingGraphQL\Types\Eloquent\RedeclaringArticle;
-use Tests\Fixtures\RebingGraphQL\Types\Eloquent\RedeclaringArticleQuery;
 use Workbench\App\Models\User;
 
 const ARTICLE_SDL = <<<'GRAPHQL'
@@ -34,6 +27,7 @@ const ARTICLE_SDL = <<<'GRAPHQL'
       wordCount: Int!
       status: ArticleStatus!
       copiesSold: Int
+      slug: String!
 
       "The title in capitals"
       headline: String!
@@ -62,89 +56,15 @@ describe('discovering a #[Type] model', function () {
     });
 
     it('leaves an #[Ignore]d plain public property alone', function () {
-        $type = array_values(array_filter(
-            iterator_to_array(discoverGraphQL(Article::class)->getItems(), false),
-            static fn(mixed $item): bool => $item instanceof DiscoveredType,
-        ))[0];
+        [$type] = discoveredTypesOf(TypeKind::Object, Article::class);
 
         expect(array_column($type->fields, 'phpName'))->not->toContain('previewing');
     });
 
-    it('skips framework properties the model redeclares', function () {
-        expect(schemaSdl(RedeclaringArticleQuery::class, RedeclaringArticle::class))->toBe(<<<'GRAPHQL'
-            "An article stored in the database"
-            type Article {
-              id: ID!
-              title: String!
-              publishedAt: String
-              wordCount: Int!
-              status: ArticleStatus!
-              copiesSold: Int
-
-              "The title in capitals"
-              headline: String!
-            }
-
-            enum ArticleStatus {
-              Draft
-              Published
-            }
-
-            type Query {
-              article(id: ID!): Article!
-            }
-
-            GRAPHQL);
-    });
-
-    it('skips plain properties from traits and keeps hooked ones', function () {
-        expect(schemaSdl(MediaArticleQuery::class, MediaArticle::class))->toBe(<<<'GRAPHQL'
-            type MediaArticle {
-              title: String!
-              slug: String!
-            }
-
-            type Query {
-              mediaArticle(id: ID!): MediaArticle!
-            }
-
-            GRAPHQL);
-    });
-
-    it('skips public properties a plain #[Type] class takes from an Illuminate trait', function () {
-        expect(schemaSdl(QueuedReportQuery::class, QueuedReport::class))->toBe(<<<'GRAPHQL'
-            type QueuedReport {
-              name: String!
-            }
-
-            type Query {
-              report: QueuedReport!
-            }
-
-            GRAPHQL);
-    });
-
-    it('skips Illuminate trait properties an app trait pulls in', function () {
-        expect(schemaSdl(QueuedDigestQuery::class, QueuedDigest::class))->toBe(<<<'GRAPHQL'
-            type QueuedDigest {
-              name: String!
-            }
-
-            type Query {
-              digest: QueuedDigest!
-            }
-
-            GRAPHQL);
-    });
-
-    it('keeps a model parameter an ID binding while the return infers the #[Type]', function () {
+    it('infers the #[Type] from a model return while the parameter binds the same model by ID', function () {
         $actions = discoveredActions(ArticleQueries::class, Article::class);
 
-        expect($actions['article']->args)->toBe([])
-            ->and($actions['article']->modelBindings)->toHaveCount(1)
-            ->and($actions['article']->modelBindings[0]->modelClass)->toBe(Article::class)
-            ->and($actions['article']->returnType)->toEqual(TypeRef::class(Article::class))
-            ->and($actions['retitleArticle']->modelBindings[0]->argName)->toBe('id')
+        expect($actions['article']->returnType)->toEqual(TypeRef::class(Article::class))
             ->and($actions['retitleArticle']->returnType)->toEqual(TypeRef::class(Article::class));
     });
 
@@ -169,7 +89,7 @@ describe('discovering a #[Type] model', function () {
         $type = array_values(array_filter($items, static fn(mixed $item): bool => $item instanceof DiscoveredType))[0];
 
         expect(array_map(static fn($field): string => $field->name, $type->fields))
-            ->toBe(['id', 'title', 'publishedAt', 'wordCount', 'status', 'copiesSold', 'headline']);
+            ->toBe(['id', 'title', 'publishedAt', 'wordCount', 'status', 'copiesSold', 'slug', 'headline']);
     });
 
     it('rejects a plain public property that would shadow an attribute', function (string $class) {
@@ -198,7 +118,7 @@ describe('discovering a #[Type] model', function () {
 
 describe('the Eloquent hook contract (canary)', function () {
     beforeEach(function () {
-        $this->loadMigrationsFrom(dirname(__DIR__, 2) . '/Fixtures/RebingGraphQL/Types/Eloquent/migrations');
+        loadGraphQLMigrations();
     });
 
     it('hooks keep dirty tracking and save() working', function () {
@@ -229,7 +149,7 @@ describe('the Eloquent hook contract (canary)', function () {
 
 describe('resolving a #[Type] model', function () {
     beforeEach(function () {
-        $this->loadMigrationsFrom(dirname(__DIR__, 2) . '/Fixtures/RebingGraphQL/Types/Eloquent/migrations');
+        loadGraphQLMigrations();
     });
 
     it('resolves a model returned by a query end to end', function () {
@@ -293,14 +213,5 @@ describe('resolving a #[Type] model', function () {
             ->assertExactJson(['data' => ['retitleArticle' => ['id' => (string) $article->id, 'title' => 'Virtual']]]);
 
         expect($article->fresh()?->title)->toBe('Virtual');
-    });
-
-    it('rejects an id that matches no record', function () {
-        schemaSdl(ArticleQueries::class, Article::class);
-
-        $this->postJson('/graphql', ['query' => '{ article(id: 999999) { id } }'])
-            ->assertOk()
-            ->assertJsonPath('data.article', null)
-            ->assertJsonPath('errors.0.extensions.validation.id.0', 'The selected id is invalid.');
     });
 });

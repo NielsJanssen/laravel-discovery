@@ -11,9 +11,17 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredTypeField;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscoveryServiceProvider;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\KeyLoader;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\Load;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\Loaders;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\LoadersExecutionMiddleware;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\Relation;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\RelationLoader;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use Rebing\GraphQL\Support\ExecutionMiddleware\AddAuthUserContextValueMiddleware;
 use Rebing\GraphQL\Support\ExecutionMiddleware\AutomaticPersistedQueriesMiddleware;
 use Rebing\GraphQL\Support\ExecutionMiddleware\ValidateOperationParamsMiddleware;
@@ -23,22 +31,7 @@ use Tests\Fixtures\RebingGraphQL\Loaders\Crate;
 use Tests\Fixtures\RebingGraphQL\Loaders\CrateQueries;
 use Tests\Fixtures\RebingGraphQL\Loaders\FileLoader;
 use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\AbstractLoader;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\AbstractLoaderField;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\ClosureOption;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\KeyWithoutKey;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\KeyWithoutModel;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\ManyOnSingleField;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\NotALoader;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\PositionalOption;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\ProtectedKey;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\RelationOnPlainClass;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\RelationToMissingMethod;
 use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\RelationWithoutType;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\SingleOnListField;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\SingleOnNonUniqueColumn;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\TwoLoaders;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\UnknownKey;
-use Tests\Fixtures\RebingGraphQL\Loaders\Invalid\UnknownOption;
 use Tests\Fixtures\RebingGraphQL\Loaders\LoaderQueries;
 use Tests\Fixtures\RebingGraphQL\Loaders\Novel;
 use Tests\Fixtures\RebingGraphQL\Loaders\NullLoader;
@@ -79,16 +72,6 @@ const LOADER_SDL = <<<'GRAPHQL'
     }
 
     GRAPHQL;
-
-/**
- * @return array<string, mixed>
- */
-function loaderQuery(string $query): array
-{
-    DB::flushQueryLog();
-
-    return test()->postJson('/graphql', ['query' => $query])->assertOk()->json();
-}
 
 /**
  * @return list<string>
@@ -160,79 +143,152 @@ describe('discovering batched fields', function () {
         expect(array_column($writer->fields, 'typeClass'))->each->toBe(Writer::class);
     });
 
-    it('rejects a field it cannot load', function (string $class, string $message) {
-        expect(fn() => discoverGraphQL($class))->toThrow(LogicException::class, $message);
+    it('rejects a field it cannot load', function (string|object $shape, string $format) {
+        expectRejected($shape, $format);
     })->with([
         '#[Relation] without type: or of:' => [
             RelationWithoutType::class,
-            'Method ' . RelationWithoutType::class . '::novels() has #[Relation], so its #[Field] needs type: for a single record or of: for a list, as in #[Field(of: Book::class)]. The type is not read from the relation.',
-        ],
-        '#[Relation] on a class that is not a model' => [
-            RelationOnPlainClass::class,
-            'Method ' . RelationOnPlainClass::class . '::novels() has #[Relation], but ' . RelationOnPlainClass::class . ' is not an Eloquent model, so it has no relations to load. Use #[Load(KeyLoader::class, ...)] or your own BatchLoader instead.',
-        ],
-        '#[Relation] naming a missing method' => [
-            RelationToMissingMethod::class,
-            'Method ' . RelationToMissingMethod::class . "::novels() has #[Relation] for the relation 'books', but " . RelationToMissingMethod::class . ' has no method books(). Name an existing relation method.',
+            'Method %1$s::novels() has #[Relation], so its #[Field] needs type: for a single record or of: for a list, as in #[Field(of: Book::class)]. The type is not read from the relation.',
         ],
         'a KeyLoader key: the parent does not have' => [
-            UnknownKey::class,
-            'Property ' . UnknownKey::class . "::\$writer has #[Load] with key: 'authorId', but " . UnknownKey::class . ' has no public property $authorId. Name a public property of ' . UnknownKey::class . '.',
-        ],
-        'a KeyLoader key: that is not public' => [
-            ProtectedKey::class,
-            'Property ' . ProtectedKey::class . "::\$writer has #[Load] with key: 'writerId', but " . ProtectedKey::class . ' has no public property $writerId. Name a public property of ' . ProtectedKey::class . '.',
-        ],
-        'a single KeyLoader on a column that is not the key' => [
-            SingleOnNonUniqueColumn::class,
-            'Property ' . SingleOnNonUniqueColumn::class . "::\$novel has #[Load] with column: 'writer_id' and loads a single record, but only the key column 'id' of " . Novel::class . " is known to be unique. Add many: true to load every match, or key on the unique column 'id'.",
+            fn() => new #[Type] class {
+                public int $writerId = 0;
+
+                #[Load(KeyLoader::class, model: Writer::class, key: 'authorId')]
+                public ?Writer $writer = null;
+            },
+            'Property %1$s::$writer has #[Load] with key: \'authorId\', but %1$s has no public property $authorId. Name a public property of %1$s.',
         ],
         'a loader that cannot be instantiated' => [
-            AbstractLoaderField::class,
-            'Property ' . AbstractLoaderField::class . '::$label has #[Load], whose loader ' . AbstractLoader::class . ' cannot be instantiated. Name a concrete BatchLoader class.',
-        ],
-        'an unknown KeyLoader option' => [
-            UnknownOption::class,
-            'Property ' . UnknownOption::class . '::$writer has #[Load] with the unknown option colum. KeyLoader takes model, key, column, many.',
-        ],
-        'a KeyLoader without model:' => [
-            KeyWithoutModel::class,
-            'Property ' . KeyWithoutModel::class . '::$writer has #[Load] without model:, or with one that is not an Eloquent model. Name the model to load, as in model: Author::class.',
-        ],
-        'a KeyLoader without key:' => [
-            KeyWithoutKey::class,
-            'Property ' . KeyWithoutKey::class . "::\$writer has #[Load] without key:. Name the property of the parent that holds the value to match, as in key: 'authorId'.",
-        ],
-        'many: true on a single field' => [
-            ManyOnSingleField::class,
-            'Property ' . ManyOnSingleField::class . '::$novel has #[Load] with many: true, which loads a list, but the field is a single value. Use #[Field(of: ...)].',
-        ],
-        'a single KeyLoader on a list field' => [
-            SingleOnListField::class,
-            'Property ' . SingleOnListField::class . '::$novels has #[Load], which loads a single record, but the field is a list. Add many: true, or make the field a single value.',
-        ],
-        'a closure in the options' => [
-            ClosureOption::class,
-            'Property ' . ClosureOption::class . "::\$label has #[Load] with an option that cannot be cached with discovery (Serialization of 'Closure' is not allowed). Options must be scalars, arrays, enums or other serializable values, never closures.",
-        ],
-        'an option without a name' => [
-            PositionalOption::class,
-            'Property ' . PositionalOption::class . "::\$writer has #[Load(KeyLoader, ...)] with an option at position 2. Name every option, as in #[Load(KeyLoader, key: 'authorId')].",
-        ],
-        'two loaders on one field' => [
-            TwoLoaders::class,
-            'Method ' . TwoLoaders::class . '::novels() has #[Relation] and #[Load], but a field loads through one loader. Remove all but one.',
+            fn() => new #[Type] class {
+                #[Load(AbstractLoader::class)]
+                public ?string $label = null;
+            },
+            'Property %1$s::$label has #[Load], whose loader ' . AbstractLoader::class . ' cannot be instantiated. Name a concrete BatchLoader class.',
         ],
         'a loader that is not a BatchLoader' => [
-            NotALoader::class,
-            'Property ' . NotALoader::class . '::$label has #[Load], whose loader ' . Novel::class . ' does not implement NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\BatchLoader.',
+            fn() => new #[Type] class {
+                #[Load(Novel::class)]
+                public ?string $label = null;
+            },
+            'Property %1$s::$label has #[Load], whose loader ' . Novel::class . ' does not implement NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\BatchLoader.',
+        ],
+        'a closure in the options' => [
+            fn() => new #[Type] class {
+                #[Load(NullLoader::class, format: static function (string $value): string {
+                    return strtoupper($value);
+                })]
+                public ?string $label = null;
+            },
+            'Property %1$s::$label has #[Load] with an option that cannot be cached with discovery (Serialization of \'Closure\' is not allowed). Options must be scalars, arrays, enums or other serializable values, never closures.',
+        ],
+        'an option without a name' => [
+            fn() => new #[Type] class {
+                public int $writerId = 0;
+
+                #[Load(KeyLoader::class, Writer::class, key: 'writerId')]
+                public ?Writer $writer = null;
+            },
+            'Property %1$s::$writer has #[Load(KeyLoader, ...)] with an option at position 2. Name every option, as in #[Load(KeyLoader, key: \'authorId\')].',
+        ],
+        'two loaders on one field' => [
+            fn() => new #[Type] class {
+                #[Field(of: Novel::class), Relation, Load(NullLoader::class)]
+                public function novels(): array
+                {
+                    return [];
+                }
+            },
+            'Method %1$s::novels() has #[Relation] and #[Load], but a field loads through one loader. Remove all but one.',
+        ],
+    ]);
+
+    it('rejects options a loader verifies', function (string $loader, string $attribute, array $options, string $typeClass, TypeRef $type, string $message) {
+        $field = new DiscoveredTypeField('field', 'field', $type, typeClass: $typeClass);
+
+        expect(fn() => $loader::verifyOptions('Member', $attribute, $field, $options))
+            ->toThrow(LogicException::class, sprintf($message, $typeClass, $attribute));
+    })->with([
+        'an unknown KeyLoader option' => [
+            KeyLoader::class,
+            '#[Load]',
+            ['model' => Writer::class, 'key' => 'writerId', 'colum' => 'id'],
+            Review::class,
+            TypeRef::class(Writer::class, nullable: true),
+            'Member has %2$s with the unknown option colum. KeyLoader takes model, key, column, many.',
+        ],
+        'a KeyLoader without model:' => [
+            KeyLoader::class,
+            '#[Load]',
+            ['key' => 'writerId'],
+            Review::class,
+            TypeRef::class(Writer::class, nullable: true),
+            'Member has %2$s without model:, or with one that is not an Eloquent model. Name the model to load, as in model: Author::class.',
+        ],
+        'a KeyLoader without key:' => [
+            KeyLoader::class,
+            '#[Load]',
+            ['model' => Writer::class],
+            Review::class,
+            TypeRef::class(Writer::class, nullable: true),
+            'Member has %2$s without key:. Name the property of the parent that holds the value to match, as in key: \'authorId\'.',
+        ],
+        'a KeyLoader key: that is not public' => [
+            KeyLoader::class,
+            '#[Load]',
+            ['model' => Writer::class, 'key' => 'writerId'],
+            new class {
+                protected int $writerId = 0;
+            }::class,
+            TypeRef::class(Writer::class, nullable: true),
+            'Member has %2$s with key: \'writerId\', but %1$s has no public property $writerId. Name a public property of %1$s.',
+        ],
+        'a single KeyLoader on a column that is not the key' => [
+            KeyLoader::class,
+            '#[Load]',
+            ['model' => Novel::class, 'key' => 'writerId', 'column' => 'writer_id'],
+            Review::class,
+            TypeRef::class(Novel::class, nullable: true),
+            'Member has %2$s with column: \'writer_id\' and loads a single record, but only the key column \'id\' of ' . Novel::class . ' is known to be unique. Add many: true to load every match, or key on the unique column \'id\'.',
+        ],
+        'many: true on a single field' => [
+            KeyLoader::class,
+            '#[Load]',
+            ['model' => Novel::class, 'key' => 'writerId', 'column' => 'writer_id', 'many' => true],
+            Review::class,
+            TypeRef::class(Novel::class, nullable: true),
+            'Member has %2$s with many: true, which loads a list, but the field is a single value. Use #[Field(of: ...)].',
+        ],
+        'a single KeyLoader on a list field' => [
+            KeyLoader::class,
+            '#[Load]',
+            ['model' => Novel::class, 'key' => 'writerId', 'column' => 'writer_id'],
+            Review::class,
+            TypeRef::class(Novel::class, list: true),
+            'Member has %2$s, which loads a single record, but the field is a list. Add many: true, or make the field a single value.',
+        ],
+        '#[Relation] on a class that is not a model' => [
+            RelationLoader::class,
+            '#[Relation]',
+            ['relation' => 'novels'],
+            Review::class,
+            TypeRef::class(Novel::class, list: true),
+            'Member has %2$s, but %1$s is not an Eloquent model, so it has no relations to load. Use #[Load(KeyLoader::class, ...)] or your own BatchLoader instead.',
+        ],
+        '#[Relation] naming a missing method' => [
+            RelationLoader::class,
+            '#[Relation]',
+            ['relation' => 'books'],
+            Writer::class,
+            TypeRef::class(Novel::class, list: true),
+            'Member has %2$s for the relation \'books\', but %1$s has no method books(). Name an existing relation method.',
         ],
     ]);
 });
 
 describe('loading in batches', function () {
     beforeEach(function () {
-        $this->loadMigrationsFrom(dirname(__DIR__, 2) . '/Fixtures/RebingGraphQL/Loaders/migrations');
+        loadGraphQLMigrations();
         seedWriters();
         FileLoader::$calls = [];
         Review::$registries = [];
@@ -242,7 +298,7 @@ describe('loading in batches', function () {
     });
 
     it('loads a has-many relation for every parent in one query', function () {
-        $result = loaderQuery('{ writers { name novels { title } } }');
+        $result = queryGraphQL('{ writers { name novels { title } } }');
 
         expect($result)->toBe(['data' => ['writers' => [
             ['name' => 'Ann', 'novels' => [['title' => 'Ann 1'], ['title' => 'Ann 2']]],
@@ -252,7 +308,7 @@ describe('loading in batches', function () {
     });
 
     it('loads a belongs-to relation named after the PHP method, under the field name', function () {
-        $result = loaderQuery('{ novels { title author { name } } }');
+        $result = queryGraphQL('{ novels { title author { name } } }');
 
         expect($result)->toBe(['data' => ['novels' => [
             ['title' => 'Ann 1', 'author' => ['name' => 'Ann']],
@@ -262,21 +318,21 @@ describe('loading in batches', function () {
     });
 
     it('batches each level of a nested selection once', function () {
-        $result = loaderQuery('{ writers { novels { author { novels { title } } } } }');
+        $result = queryGraphQL('{ writers { novels { author { novels { title } } } } }');
 
         expect($result['data']['writers'][0]['novels'][0]['author']['novels'])->toBe([['title' => 'Ann 1'], ['title' => 'Ann 2']])
             ->and(loggedQueries())->toHaveCount(4);
     });
 
     it('does not reload a relation that is already loaded', function () {
-        $result = loaderQuery('{ writersWithNovels { name novels { title } } }');
+        $result = queryGraphQL('{ writersWithNovels { name novels { title } } }');
 
         expect($result['data']['writersWithNovels'][0])->toBe(['name' => 'Ann', 'novels' => [['title' => 'Ann 1'], ['title' => 'Ann 2']]])
             ->and(loggedQueries())->toHaveCount(2);
     });
 
     it('loads by key for a plain #[Type], single and many', function () {
-        $result = loaderQuery('{ reviews { id writer { name } novelsByWriter { title } } }');
+        $result = queryGraphQL('{ reviews { id writer { name } novelsByWriter { title } } }');
 
         expect($result)->toBe(['data' => ['reviews' => [
             ['id' => '1', 'writer' => ['name' => 'Ann'], 'novelsByWriter' => [['title' => 'Ann 1'], ['title' => 'Ann 2']]],
@@ -287,27 +343,27 @@ describe('loading in batches', function () {
     });
 
     it('defers through Loaders inside a field method', function () {
-        $result = loaderQuery('{ reviews { deferredWriter { name } } }');
+        $result = queryGraphQL('{ reviews { deferredWriter { name } } }');
 
         expect(array_column($result['data']['reviews'], 'deferredWriter'))->toBe([['name' => 'Ann'], ['name' => 'Bob'], ['name' => 'Ann'], null])
             ->and(loggedQueries())->toHaveCount(1);
     });
 
     it('shares a batch between Loaders::defer() and #[Load] with the same loader and options', function () {
-        loaderQuery('{ reviews { writer { name } deferredWriter { name } } }');
+        queryGraphQL('{ reviews { writer { name } deferredWriter { name } } }');
 
         expect(loggedQueries())->toHaveCount(1);
     });
 
     it('runs a custom BatchedFieldDecorator through its loader once for all parents', function () {
-        $result = loaderQuery('{ writers { covers } }');
+        $result = queryGraphQL('{ writers { covers } }');
 
         expect(array_column($result['data']['writers'], 'covers'))->toBe([['covers/Ann'], ['covers/Bob'], ['covers/Cy']])
             ->and(FileLoader::$calls)->toBe([['collection' => 'covers', 'args' => [], 'roots' => ['Ann', 'Bob', 'Cy']]]);
     });
 
     it('keys a batch by the field args', function () {
-        $result = loaderQuery('{ writers { small: covers(size: "s") large: covers(size: "l") again: covers(size: "s") } }');
+        $result = queryGraphQL('{ writers { small: covers(size: "s") large: covers(size: "l") again: covers(size: "s") } }');
 
         expect($result['data']['writers'][0])->toBe(['small' => ['covers/Ann.s'], 'large' => ['covers/Ann.l'], 'again' => ['covers/Ann.s']])
             ->and(FileLoader::$calls)->toBe([
@@ -317,10 +373,10 @@ describe('loading in batches', function () {
     });
 
     it('gives every execution its own Loaders', function () {
-        loaderQuery('{ reviews { deferredWriter { name } } }');
-        loaderQuery('{ writers { covers } }');
+        queryGraphQL('{ reviews { deferredWriter { name } } }');
+        queryGraphQL('{ writers { covers } }');
         Writer::create(['name' => 'Di']);
-        loaderQuery('{ reviews { deferredWriter { name } } writers { covers } }');
+        queryGraphQL('{ reviews { deferredWriter { name } } writers { covers } }');
 
         $registries = array_unique(array_map(spl_object_id(...), Review::$registries));
 
@@ -349,7 +405,7 @@ describe('loading in batches', function () {
 
 describe('a batched field with #[Authorize]', function () {
     beforeEach(function () {
-        $this->loadMigrationsFrom(dirname(__DIR__, 2) . '/Fixtures/RebingGraphQL/Loaders/migrations');
+        loadGraphQLMigrations();
         seedWriters();
         FileLoader::$calls = [];
         Gate::define('seeFiles', fn(?User $user, Writer $writer) => $writer->name === 'Ann');
@@ -358,7 +414,7 @@ describe('a batched field with #[Authorize]', function () {
     });
 
     it('resolves a denied parent to null without handing it to the loader', function () {
-        $result = loaderQuery('{ writers { name privateFiles } }');
+        $result = queryGraphQL('{ writers { name privateFiles } }');
 
         expect(array_column($result['data']['writers'], 'privateFiles'))->toBe([['private/Ann'], null, null])
             ->and($result)->not->toHaveKey('errors')
@@ -366,7 +422,7 @@ describe('a batched field with #[Authorize]', function () {
     });
 
     it('reports a denied parent as an error without handing it to the loader, in either attribute order', function (string $field) {
-        $result = loaderQuery("{ writers { name $field } }");
+        $result = queryGraphQL("{ writers { name $field } }");
 
         expect(array_column($result['data']['writers'], $field))->toBe([["$field/Ann"], null, null])
             ->and(array_column($result['errors'], 'message'))->toBe(['Forbidden', 'Forbidden'])
