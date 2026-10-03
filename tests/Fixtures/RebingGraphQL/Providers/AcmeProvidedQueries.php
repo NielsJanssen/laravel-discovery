@@ -7,8 +7,17 @@ namespace Tests\Fixtures\RebingGraphQL\Providers;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Arg;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
 
-final class AcmeFilterQuery
+final class AcmeProvidedQueries
 {
+    /**
+     * @return list<array<string, mixed>>
+     */
+    #[Query(of: 'AcmeDepot')]
+    public function depots(): array
+    {
+        return [['code' => 'D1'], ['code' => 'D2']];
+    }
+
     /**
      * @param  array<string, mixed>  $filter
      */
