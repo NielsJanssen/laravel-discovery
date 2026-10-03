@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Closure;
+use GraphQL\Type\Definition\ResolveInfo;
 use Illuminate\Foundation\Application;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
@@ -59,10 +60,16 @@ final readonly class FactoryFields
      */
     private function definition(DiscoveredType $type, string $factory, string $name, Field $field, Position $position): array
     {
+        $path = "{$type->name}.$name";
+        $args = $this->args($type, $factory, $name, $field);
         $definition = [
-            'type' => $this->registry->resolve($this->typeRef($type, $factory, $name, $field), $position),
-            'resolve' => $this->resolver("{$type->name}.$name", $name),
+            'type' => $this->registry->resolve($this->typeRef($type, $factory, 'Field', $name, $field), $position),
+            'resolve' => $this->resolver($path, $name, $field->resolve, array_map(static fn(array $arg): string => $arg['key'], $args)),
         ];
+
+        if ($args !== []) {
+            $definition['args'] = array_map(static fn(array $arg): array => $arg['definition'], $args);
+        }
 
         if ($field->description !== null) {
             $definition['description'] = $field->description;
@@ -75,19 +82,73 @@ final readonly class FactoryFields
         return $definition;
     }
 
-    private function typeRef(DiscoveredType $type, string $factory, string $name, Field $field): TypeRef
+    /**
+     * @return array<string, array{key: string, definition: array<string, mixed>}> keyed by GraphQL arg name
+     */
+    private function args(DiscoveredType $type, string $factory, string $name, Field $field): array
     {
-        if ($field->type !== null && $field->of !== null) {
-            throw new LogicException(sprintf('Field "%s" from the type factory %s for type [%s] sets both type: and of:. Use of: for a list of that type, or type: for a single value.', $name, $factory, $type->name));
+        $naming = $this->names->arguments($type->naming, sprintf('#[Type(naming:)] on %s', $type->class));
+        $args = [];
+
+        foreach ($field->args as $key => $arg) {
+            $argName = $this->names->name($naming, (string) $key, "Argument $key of field $name");
+            $label = "$name($argName)";
+
+            if (isset($args[$argName])) {
+                throw new LogicException(sprintf('Field "%s" from the type factory %s for type [%s] has two args named "%s". Rename one.', $name, $factory, $type->name, $argName));
+            }
+
+            if ($arg->hasRules()) {
+                throw new LogicException(sprintf('Argument "%s" of field "%s" from the type factory %s for type [%s] sets rules:, which are not applied to the args of a type field. Remove rules:.', $argName, $name, $factory, $type->name));
+            }
+
+            $definition = ['type' => $this->registry->resolve($this->typeRef($type, $factory, 'Argument', $label, $arg), Position::Input)];
+
+            if ($arg->description !== null) {
+                $definition['description'] = $arg->description;
+            }
+
+            if ($arg->deprecationReason !== null) {
+                $definition['deprecationReason'] = $arg->deprecationReason;
+            }
+
+            $args[$argName] = ['key' => (string) $key, 'definition' => $definition];
         }
 
-        $target = $field->of ?? $field->type ?? throw new LogicException(sprintf('Field "%s" from the type factory %s for type [%s] (%s) has no type. Set type:, or of: for a list.', $name, $factory, $type->name, $type->class));
+        return $args;
+    }
+
+    private function typeRef(DiscoveredType $type, string $factory, string $kind, string $name, Field $field): TypeRef
+    {
+        if ($field->type !== null && $field->of !== null) {
+            throw new LogicException(sprintf('%s "%s" from the type factory %s for type [%s] sets both type: and of:. Use of: for a list of that type, or type: for a single value.', $kind, $name, $factory, $type->name));
+        }
+
+        $target = $field->of ?? $field->type ?? throw new LogicException(sprintf('%s "%s" from the type factory %s for type [%s] (%s) has no type. Set type:, or of: for a list.', $kind, $name, $factory, $type->name, $type->class));
 
         return TypeRef::from($target, $field->of !== null, $field->nullable, $field->nullableItems);
     }
 
-    private function resolver(string $path, string $name): Closure
+    /**
+     * @param  Closure(mixed, array<string, mixed>, mixed, ResolveInfo): mixed|null  $resolve
+     * @param  array<string, string>  $argKeys  the key each GraphQL arg name has in the Field's args
+     */
+    private function resolver(string $path, string $name, ?Closure $resolve, array $argKeys): Closure
     {
+        if ($resolve !== null) {
+            return static function (mixed $root, array $args, mixed $context, ResolveInfo $info) use ($resolve, $argKeys): mixed {
+                $keyed = [];
+
+                foreach ($argKeys as $argName => $key) {
+                    if (array_key_exists($argName, $args)) {
+                        $keyed[$key] = $args[$argName];
+                    }
+                }
+
+                return $resolve($root, $keyed, $context, $info);
+            };
+        }
+
         return static fn(mixed $root): mixed => match (true) {
             is_array($root) => $root[$name] ?? null,
             is_object($root) => $root->{$name} ?? null,

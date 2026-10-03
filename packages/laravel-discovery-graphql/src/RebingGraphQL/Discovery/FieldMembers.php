@@ -35,6 +35,10 @@ final readonly class FieldMembers
             $reflector,
         );
 
+        if ($field?->isFactoryOnly()) {
+            throw new LogicException("{$member->label} has #[Field(resolve:)] or #[Field(args:)], which only a field yielded by a TypeFactory can set. Remove it, or yield the field from a factory.");
+        }
+
         if ($reflector->hasAttribute(Ignore::class)) {
             return $field === null ? null : throw new LogicException("{$member->label} has both #[Field] and #[Ignore]. Remove one.");
         }
