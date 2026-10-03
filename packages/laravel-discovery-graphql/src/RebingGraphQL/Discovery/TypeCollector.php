@@ -19,6 +19,9 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDecoratorReference;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDiscoveryVerifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldSource;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Ignore;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\BatchedFieldDecorator;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\BatchLoader;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\VerifiesLoadOptions;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
@@ -33,6 +36,7 @@ use ReflectionType;
 use Tempest\Reflection\ClassReflector;
 use Tempest\Reflection\MethodReflector;
 use Tempest\Reflection\PropertyReflector;
+use Throwable;
 
 /** Reads a #[Type] class's members into a DiscoveredType. */
 final readonly class TypeCollector
@@ -164,6 +168,7 @@ final readonly class TypeCollector
             source: FieldSource::Property,
             description: $field?->description,
             deprecationReason: $field?->deprecationReason,
+            typeClass: $class->getName(),
         ));
     }
 
@@ -209,6 +214,7 @@ final readonly class TypeCollector
             parameters: $parameters,
             description: $field->description,
             deprecationReason: $field->deprecationReason ?? DeprecationReason::from($method->getAttribute(Deprecated::class)),
+            typeClass: $class->getName(),
         ));
     }
 
@@ -301,11 +307,66 @@ final readonly class TypeCollector
             }
         }
 
+        $this->assertLoadable($label, $field, array_values(array_filter(
+            $decorators,
+            static fn(FieldDecorator $decorator): bool => $decorator instanceof BatchedFieldDecorator,
+        )));
+
         return $decorators === [] ? $field : $field->withDecorators(array_map(
             static fn(FieldDecorator $decorator, int $index) => FieldDecoratorReference::storable($decorator, $field->source, $field->phpName, $index),
             $decorators,
             array_keys($decorators),
         ));
+    }
+
+    /**
+     * A batched field has one loader, a BatchLoader, with options that survive the discovery cache.
+     *
+     * @param  list<BatchedFieldDecorator>  $batched
+     */
+    private function assertLoadable(string $label, DiscoveredTypeField $field, array $batched): void
+    {
+        if (count($batched) > 1) {
+            throw new LogicException(sprintf(
+                '%s has %s, but a field loads through one loader. Remove all but one.',
+                $label,
+                implode(' and ', array_map(static fn(BatchedFieldDecorator $attribute): string => '#[' . class_basename($attribute::class) . ']', $batched)),
+            ));
+        }
+
+        $attribute = $batched[0] ?? null;
+
+        if ($attribute === null) {
+            return;
+        }
+
+        $name = '#[' . class_basename($attribute::class) . ']';
+        $loader = $attribute->loader();
+
+        if (! class_exists($loader) || ! in_array(BatchLoader::class, class_implements($loader), true)) {
+            throw new LogicException(sprintf('%s has %s, whose loader %s does not implement %s.', $label, $name, $loader, BatchLoader::class));
+        }
+
+        if (! new ReflectionClass($loader)->isInstantiable()) {
+            throw new LogicException(sprintf('%s has %s, whose loader %s cannot be instantiated. Name a concrete BatchLoader class.', $label, $name, $loader));
+        }
+
+        $options = $attribute->options($field->phpName);
+
+        try {
+            serialize($options);
+        } catch (Throwable $exception) {
+            throw new LogicException(sprintf(
+                '%s has %s with an option that cannot be cached with discovery (%s). Options must be scalars, arrays, enums or other serializable values, never closures.',
+                $label,
+                $name,
+                $exception->getMessage(),
+            ), previous: $exception);
+        }
+
+        if (is_a($loader, VerifiesLoadOptions::class, true)) {
+            $loader::verifyOptions($label, $name, $field, $options);
+        }
     }
 
     /**

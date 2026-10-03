@@ -132,6 +132,10 @@ object too, and with it every field the caller was allowed to see.
 Several `#[Authorize]` on one field must all pass. Checks that resolve to `null` run before checks that report an error,
 so a field that has both and fails a `null` check is `null` without an error.
 
+On a [batched field](graphql.md#batch-loading), such as `#[Relation]` or `#[Load]`, the check runs per parent before
+the parent joins the batch, in either attribute order. A denied parent is never handed to the loader, so the loader
+only ever sees parents the caller may read.
+
 `#[Authorize]` on the `#[Type]` class itself never reaches the fields. When the class also holds `#[Query]` or
 `#[Mutation]` methods, it guards those actions, as on any other class; on a class without actions it is an error.
 

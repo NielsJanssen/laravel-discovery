@@ -12,6 +12,8 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\LaravelValidationRules;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\Loaders;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\LoadersExecutionMiddleware;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\ScalarMap;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapper;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
@@ -76,6 +78,39 @@ final class GraphQLDiscoveryServiceProvider extends ServiceProvider
                 $this->tagged(RuleProvider::TAG, RuleProvider::class),
             ),
         );
+
+        $this->app->singleton(LoadersExecutionMiddleware::class);
+        $this->app->bind(Loaders::class, fn(): Loaders => $this->app->make(LoadersExecutionMiddleware::class)->current());
+    }
+
+    public function boot(): void
+    {
+        $this->app->booted($this->addLoadersMiddleware(...));
+    }
+
+    /** Runs every GraphQL execution inside LoadersExecutionMiddleware, also for a schema with its own middleware list. */
+    private function addLoadersMiddleware(): void
+    {
+        $config = $this->app->make('config');
+        $config->set('graphql.execution_middleware', $this->withLoaders($config->get('graphql.execution_middleware')));
+
+        foreach ($config->array('graphql.schemas', []) as $name => $schema) {
+            if (is_array($schema) && is_array($schema['execution_middleware'] ?? null)) {
+                $config->set("graphql.schemas.$name.execution_middleware", $this->withLoaders($schema['execution_middleware']));
+            }
+        }
+    }
+
+    /**
+     * @return array<mixed>
+     */
+    private function withLoaders(mixed $middleware): array
+    {
+        $middleware = is_array($middleware) ? $middleware : [];
+
+        return in_array(LoadersExecutionMiddleware::class, $middleware, true)
+            ? $middleware
+            : [LoadersExecutionMiddleware::class, ...$middleware];
     }
 
     /** Fills `discovery.graphql` from the package defaults, a published `config/discovery-graphql.php`, then `discovery.graphql` itself. */
