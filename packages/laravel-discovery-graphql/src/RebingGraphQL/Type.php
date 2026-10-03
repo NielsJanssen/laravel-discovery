@@ -14,10 +14,12 @@ final readonly class Type
 {
     /**
      * @param  FieldCase|class-string<NamingStrategy>|null  $naming  names this type's fields and field args instead of the configured strategies
+     * @param  class-string<TypeFactory>|null  $factory  adds fields when the type is built
      */
     public function __construct(
         public ?string $name = null,
         public ?string $description = null,
         public FieldCase|string|null $naming = null,
+        public ?string $factory = null,
     ) {}
 }

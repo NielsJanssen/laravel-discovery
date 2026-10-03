@@ -6,6 +6,8 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Illuminate\Foundation\Application;
 use LogicException;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\FieldCase;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\NamingStrategy;
 use Rebing\GraphQL\Support\Type as RebingType;
 
 class DiscoveredType
@@ -19,6 +21,7 @@ class DiscoveredType
      * @param  list<class-string>  $interfaces
      * @param  list<DiscoveredEnumValue>  $values  the cases of an enum, in declaration order
      * @param  bool  $implicit  registered because something references it, not by its own attribute
+     * @param  FieldCase|class-string<NamingStrategy>|null  $naming  the override of #[Type(naming:)], kept for a factory
      */
     public function __construct(
         public string $name,
@@ -31,6 +34,7 @@ class DiscoveredType
         public array $interfaces = [],
         public array $values = [],
         public bool $implicit = false,
+        public FieldCase|string|null $naming = null,
     ) {}
 
     public function createType(Application $app): RebingType

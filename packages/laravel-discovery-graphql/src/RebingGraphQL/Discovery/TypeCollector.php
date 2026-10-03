@@ -28,6 +28,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\NamingStrategy;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeFactory;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use PropertyHookType;
@@ -90,7 +91,26 @@ final readonly class TypeCollector
             kind: TypeKind::Object,
             description: $type->description,
             fields: $this->fields($class, $fieldNaming, $argumentNaming),
+            factory: $this->factory($class, $type),
+            naming: $type->naming,
         );
+    }
+
+    /**
+     * @param  ClassReflector<object>  $class
+     * @return class-string<TypeFactory>|null
+     */
+    private function factory(ClassReflector $class, Type $type): ?string
+    {
+        if ($type->factory === null) {
+            return null;
+        }
+
+        if (! class_exists($type->factory) || ! is_a($type->factory, TypeFactory::class, true)) {
+            throw new LogicException(sprintf('#[Type(factory:)] on %s names %s, which is no class implementing %s.', $class->getName(), $type->factory, TypeFactory::class));
+        }
+
+        return $type->factory;
     }
 
     /**

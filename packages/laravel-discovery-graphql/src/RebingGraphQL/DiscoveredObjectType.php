@@ -32,6 +32,10 @@ final class DiscoveredObjectType extends RebingType
             $fields[$field->name] = $this->fieldDefinition($field);
         }
 
+        if ($this->discoveredType->factory !== null) {
+            $fields += $this->app->make(FactoryFields::class)->definitions($this->discoveredType, Position::Output);
+        }
+
         return $fields;
     }
 
