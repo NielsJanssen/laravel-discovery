@@ -83,6 +83,8 @@ final readonly class InputCollector
             throw new LogicException(sprintf('#[Input(factory:)] on %s is not supported yet: a type factory only contributes fields to a #[Type]. Remove factory:.', $class->getName()));
         }
 
+        Replacements::assertDeclarable($class, TypeKind::Input, $input->replace, $input->name !== null);
+
         $shared = $class->hasAttribute(Type::class);
 
         if (! $shared) {
@@ -100,6 +102,7 @@ final readonly class InputCollector
             kind: TypeKind::Input,
             description: $input->description,
             fields: $fields,
+            replace: $input->replace,
         );
     }
 

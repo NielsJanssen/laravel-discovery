@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
 
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Model;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredModelBinding;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\OmittableType;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
@@ -20,6 +23,10 @@ final class InputHydrator implements Hydrator
 {
     /** @var array<class-string, bool> */
     private array $inputs = [];
+
+    public function __construct(
+        private readonly Container $container,
+    ) {}
 
     public function hydrates(string $class): bool
     {
@@ -115,7 +122,7 @@ final class InputHydrator implements Hydrator
         }
 
         if (is_array($value) && $this->hydrates($class)) {
-            return $this->hydrate($class, array_filter($value, is_string(...), ARRAY_FILTER_USE_KEY));
+            return $this->hydrate($this->container->make(TypeRegistry::class)->effective($class, TypeKind::Input), array_filter($value, is_string(...), ARRAY_FILTER_USE_KEY));
         }
 
         return $value;

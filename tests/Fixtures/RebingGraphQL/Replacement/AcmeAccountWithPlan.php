@@ -1,0 +1,20 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Fixtures\RebingGraphQL\Replacement;
+
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
+
+#[Type(replace: true)]
+#[Input(replace: true)]
+class AcmeAccountWithPlan extends AcmeAccount
+{
+    public function __construct(
+        string $label = 'Main',
+        public string $plan = 'free',
+    ) {
+        parent::__construct($label);
+    }
+}

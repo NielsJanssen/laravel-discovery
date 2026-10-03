@@ -124,7 +124,7 @@ final class DiscoveredObjectType extends RebingType
         $path = "{$this->discoveredType->name}.{$field->name}";
 
         return static fn(mixed $root): mixed => is_object($root)
-            ? $root->{$property}
+            ? (property_exists($root, $property) || method_exists($root, '__get') ? $root->{$property} : null)
             : throw new RuntimeException("Cannot resolve $path: expected an object, got " . get_debug_type($root) . '.');
     }
 
@@ -150,13 +150,7 @@ final class DiscoveredObjectType extends RebingType
             $method = [$root, $field->phpName];
 
             if (! is_callable($method)) {
-                throw new RuntimeException(sprintf(
-                    'Cannot resolve %s.%s: %s has no public method %s().',
-                    $this->discoveredType->name,
-                    $field->name,
-                    $root::class,
-                    $field->phpName,
-                ));
+                return null;
             }
 
             return $this->app->call($method, $mapped);

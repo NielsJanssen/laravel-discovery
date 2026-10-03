@@ -99,7 +99,7 @@ final class TypeUsage
      *
      * @return list<DiscoveredType>
      */
-    public function typesToRegister(DiscoveryItems $items): array
+    public function typesToRegister(DiscoveryItems $items, Replacements $replacements): array
     {
         $explicit = [];
 
@@ -109,13 +109,15 @@ final class TypeUsage
             }
         }
 
-        $usedInputs = $this->usedInputs($items);
-        $referenced = $this->referencedClasses($items, $usedInputs);
+        $usedInputs = $this->usedInputs($items, $replacements);
+        $referenced = $this->referencedClasses($items, $usedInputs, $replacements);
         $seen = [];
         $types = [];
 
-        foreach ($items as $item) {
-            if (! $item instanceof DiscoveredType || $item->bindName === null) {
+        foreach ($items as $declared) {
+            $item = $declared instanceof DiscoveredType ? $replacements->effective($declared) : null;
+
+            if ($item === null || $item->bindName === null) {
                 continue;
             }
 
@@ -165,13 +167,15 @@ final class TypeUsage
      *
      * @return array<class-string, DiscoveredType>
      */
-    private function usedInputs(DiscoveryItems $items): array
+    private function usedInputs(DiscoveryItems $items, Replacements $replacements): array
     {
         $inputs = [];
         $byName = [];
         $pending = [];
 
-        foreach ($items as $item) {
+        foreach ($items as $declared) {
+            $item = $declared instanceof DiscoveredType ? $replacements->effective($declared) : $declared;
+
             if ($item instanceof DiscoveredType && $item->kind === TypeKind::Input) {
                 $inputs[$item->class] = $item;
                 $byName[$item->name] = $item->class;
@@ -181,6 +185,12 @@ final class TypeUsage
                         $pending[] = $reference->ref->target();
                     }
                 }
+            }
+        }
+
+        foreach ($replacements->pairs() as [$replaced, $replacement, $kind]) {
+            if ($kind === TypeKind::Input && isset($inputs[$replacement])) {
+                $inputs[$replaced] = $inputs[$replacement];
             }
         }
 
@@ -211,12 +221,14 @@ final class TypeUsage
      * @param  array<class-string, DiscoveredType>  $usedInputs
      * @return array<string, true>
      */
-    private function referencedClasses(DiscoveryItems $items, array $usedInputs): array
+    private function referencedClasses(DiscoveryItems $items, array $usedInputs, Replacements $replacements): array
     {
         $types = array_values($usedInputs);
 
-        foreach ($items as $item) {
-            if ($item instanceof DiscoveredType && $item->kind !== TypeKind::Input) {
+        foreach ($items as $declared) {
+            $item = $declared instanceof DiscoveredType ? $replacements->effective($declared) : null;
+
+            if ($item !== null && $item->kind !== TypeKind::Input) {
                 $types[] = $item;
             }
         }

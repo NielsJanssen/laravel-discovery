@@ -29,6 +29,10 @@ final class SchemaValidator
     public function assertNameAvailable(DiscoveryItems $items, DiscoveredType $type): void
     {
         foreach ($items as $item) {
+            if ($item instanceof DiscoveredType && ($item->replace || $type->replace)) {
+                continue;
+            }
+
             if ($item instanceof DiscoveredType && $item->name === $type->name && $item->class === $type->class && $item->kind !== $type->kind) {
                 throw new LogicException(sprintf(
                     'GraphQL type name [%s] is used by both #[%s] and #[%s] on %s. Rename one with #[%s(name: ...)].',

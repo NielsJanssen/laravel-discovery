@@ -327,7 +327,7 @@ describe('hydration', function () {
     });
 
     it('builds enums from case names or cases, and refuses an unknown name', function () {
-        $hydrator = new InputHydrator();
+        $hydrator = new InputHydrator(app());
 
         expect($hydrator->hydrates(Inputs\Chapter::class))->toBeTrue()
             ->and($hydrator->hydrates(Inputs\Clock::class))->toBeFalse()

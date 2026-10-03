@@ -110,6 +110,20 @@ describe('the object type adapter', function () {
             ->and(($label->resolveFn)(new Shelf('Poetry'), [], null, null))->toBe('Poetry');
     });
 
+    it('reads a property field through __get when the root has no such property', function () {
+        schemaSdl(ShelfQuery::class, shelfType());
+
+        $label = GraphQL::type('Shelf')->getField('label');
+        $root = new class {
+            public function __get(string $name): string
+            {
+                return "magic $name";
+            }
+        };
+
+        expect(($label->resolveFn)($root, [], null, null))->toBe('magic label');
+    });
+
     it('rejects a root that is not an object', function () {
         schemaSdl(ShelfQuery::class, shelfType());
 
@@ -128,13 +142,12 @@ describe('the object type adapter', function () {
             ->toThrow(\RuntimeException::class, 'Cannot resolve Shelf.summary: expected an object, got null.');
     });
 
-    it('names the missing method when the root lacks it', function () {
+    it('resolves a missing method to null', function () {
         schemaSdl(ShelfQuery::class, singleFieldType(new DiscoveredTypeField('shout', 'shout', TypeRef::scalar('string'), FieldSource::Method)));
 
         $shout = GraphQL::type('Shelf')->getField('shout');
 
-        expect(fn() => ($shout->resolveFn)(new Shelf(), [], null, null))
-            ->toThrow(\RuntimeException::class, 'Cannot resolve Shelf.shout: ' . Shelf::class . ' has no public method shout().');
+        expect(($shout->resolveFn)(new Shelf(), [], null, null))->toBeNull();
     });
 
     it('rejects a factory field until type factories exist', function () {
