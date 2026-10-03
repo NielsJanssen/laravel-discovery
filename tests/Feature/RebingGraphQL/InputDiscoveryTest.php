@@ -194,19 +194,19 @@ describe('input args', function () {
     it('classifies an #[Input] parameter as an arg named after the parameter', function () {
         $actions = discoveredActions(Inputs\BookMutations::class);
 
-        expect(array_map(static fn($arg) => [$arg->name, $arg->paramName, $arg->type->target(), $arg->type->nullable, $arg->input], [...$actions['createBook']->args, ...$actions['draftBook']->args]))->toBe([
+        expect(array_map(static fn($arg) => [$arg->name, $arg->paramName, $arg->type->target(), $arg->type->nullable, $arg->input], [...$actions['createBook']->parameters->args, ...$actions['draftBook']->parameters->args]))->toBe([
             ['input', 'input', Inputs\CreateBook::class, false, true],
             ['data', 'draft', Inputs\CreateBook::class, true, true],
         ])
-            ->and($actions['draftBook']->args[0]->description)->toBe('Draft contents')
-            ->and($actions['createBook']->containerInjections)->toBe([]);
+            ->and($actions['draftBook']->parameters->args[0]->description)->toBe('Draft contents')
+            ->and($actions['createBook']->parameters->containerInjections)->toBe([]);
     });
 
     it('still injects a class without #[Input] from the container', function () {
         $action = discoveredActions(Inputs\ClockQuery::class)['time'];
 
-        expect($action->args)->toBe([])
-            ->and($action->containerInjections)->toBe(['clock' => Inputs\Clock::class]);
+        expect($action->parameters->args)->toBe([])
+            ->and($action->parameters->containerInjections)->toBe(['clock' => Inputs\Clock::class]);
 
         schemaSdl(Inputs\ClockQuery::class);
 
@@ -899,7 +899,7 @@ describe('type mappers in input position', function () {
     it('never offers an #[Input] parameter or property to a mapper', function () {
         refreshMappers(greedyMapper());
 
-        $arg = discoveredActions(Inputs\BookMutations::class)['createBook']->args[0];
+        $arg = discoveredActions(Inputs\BookMutations::class)['createBook']->parameters->args[0];
         $fields = [];
 
         foreach (discoveredTypesOf(TypeKind::Input, Inputs\CreateBook::class) as $type) {

@@ -258,13 +258,13 @@ describe('discovery', function () {
     it('classifies an enum parameter as an arg, not a container injection', function () {
         $action = discoveredActions(Enums\MoodArgQuery::class)['mood'];
 
-        expect(array_map(static fn($arg) => [$arg->name, $arg->type->target(), $arg->type->nullable], $action->args))->toBe([
+        expect(array_map(static fn($arg) => [$arg->name, $arg->type->target(), $arg->type->nullable], $action->parameters->args))->toBe([
             ['mood', Enums\Mood::class, false],
             ['fallback', Enums\Mood::class, true],
             ['preset', Enums\Mood::class, true],
         ])
-            ->and($action->args[2]->defaultValue)->toBe(Enums\Mood::Calm)
-            ->and($action->containerInjections)->toBe([]);
+            ->and($action->parameters->args[2]->defaultValue)->toBe(Enums\Mood::Calm)
+            ->and($action->parameters->containerInjections)->toBe([]);
     });
 
     it('collects an enum that survives serialization, keeping case order', function () {

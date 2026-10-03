@@ -141,9 +141,9 @@ describe('the flattened schema', function () {
     it('classifies the parameter as a flattened input, not as an arg or a container injection', function () {
         $action = discoveredActions(AsArgs\SearchQueries::class)['sortedBooks'];
 
-        expect($action->args)->toBe([])
-            ->and($action->containerInjections)->toBe([])
-            ->and(array_map(static fn(DiscoveredFlattenedInput $flattened): array => [$flattened->paramName, $flattened->type->class], $action->flattenedInputs))->toBe([
+        expect($action->parameters->args)->toBe([])
+            ->and($action->parameters->containerInjections)->toBe([])
+            ->and(array_map(static fn(DiscoveredFlattenedInput $flattened): array => [$flattened->paramName, $flattened->type->class], $action->parameters->flattenedInputs))->toBe([
                 ['search', AsArgs\BookSearch::class],
                 ['sorting', AsArgs\Sorting::class],
             ]);
@@ -425,9 +425,9 @@ describe('the discovery cache', function () {
         $action = discoveredActions(...PLACE_ORDER_SOURCES)['placeOrder'];
 
         expect(unserialize(serialize($action)))->toEqual($action)
-            ->and($action->flattenedInputs[0]->type->class)->toBe(AsArgs\PlaceOrder::class)
-            ->and($action->flattenedInputs[0]->type->fields[2]->binding?->modelClass)->toBe(User::class)
-            ->and($action->flattenedInputs[0]->type->fields[5]->hasRules)->toBeTrue();
+            ->and($action->parameters->flattenedInputs[0]->type->class)->toBe(AsArgs\PlaceOrder::class)
+            ->and($action->parameters->flattenedInputs[0]->type->fields[2]->binding?->modelClass)->toBe(User::class)
+            ->and($action->parameters->flattenedInputs[0]->type->fields[5]->hasRules)->toBeTrue();
     });
 
     it('resolves, validates and authorizes from serialized items', function () {

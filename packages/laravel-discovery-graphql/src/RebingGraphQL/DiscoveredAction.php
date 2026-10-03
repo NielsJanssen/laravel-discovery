@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Illuminate\Foundation\Application;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ClassifiedParameters;
 use Rebing\GraphQL\Support\Field as RebingField;
 use Rebing\GraphQL\Support\Middleware as RebingMiddleware;
 
@@ -18,27 +18,16 @@ class DiscoveredAction
         /** @var class-string */
         public string $class,
         public string $method,
-        /** @var DiscoveredArg[] */
-        public array $args = [],
-        /** @var array<string, 'root'|'context'|'info'> keyed by paramName */
-        public array $injections = [],
+        public ClassifiedParameters $parameters = new ClassifiedParameters(),
         /** @var list<class-string<RebingMiddleware>> outermost first */
         public array $middleware = [],
         public ?string $deprecationReason = null,
         /** @var list<Authorize> class-first then method-first, all must pass */
         public array $authorizations = [],
         public ?ActionTypeBuilder $typeBuilder = null,
-        /** @var array<string, class-string> keyed by paramName */
-        public array $containerInjections = [],
         /** @var list<ActionArgProvider> */
         public array $argProviders = [],
-        /** @var array<string, class-string> keyed by paramName; hydrated by a Hydrator */
-        public array $argCompositions = [],
-        /** @var list<DiscoveredModelBinding> */
-        public array $modelBindings = [],
         public ?TypeRef $returnType = null,
-        /** @var list<DiscoveredFlattenedInput> #[AsArgs] parameters, whose fields are top-level args */
-        public array $flattenedInputs = [],
     ) {}
 
     public function createType(Application $app): RebingField
@@ -119,11 +108,11 @@ class DiscoveredAction
     {
         $names = [];
 
-        foreach ($this->args as $arg) {
+        foreach ($this->parameters->args as $arg) {
             $names[$arg->paramName] = $arg->name;
         }
 
-        foreach ($this->modelBindings as $binding) {
+        foreach ($this->parameters->modelBindings as $binding) {
             $names[$binding->paramName] = $binding->argName;
         }
 
