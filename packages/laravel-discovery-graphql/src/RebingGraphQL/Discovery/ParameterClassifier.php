@@ -16,6 +16,10 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorize;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Context;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredArg;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredModelBinding;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Root;
 use RuntimeException;
 use Tempest\Reflection\ClassReflector;
@@ -30,6 +34,7 @@ final readonly class ParameterClassifier
 
     public function __construct(
         private HydratorRegistry $hydrators,
+        private TypeMapperRegistry $mappers,
     ) {}
 
     /**
@@ -286,9 +291,25 @@ final readonly class ParameterClassifier
     private function discoverArg(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method): DiscoveredArg
     {
         $typeReflector = $param->getType();
+        $hasDefault = $param->hasDefaultValue();
+        $nullable = $typeReflector->isNullable() || $hasDefault;
+        $mapped = null;
 
         if ($argAttr !== null && $argAttr->type !== null) {
             $typeName = $argAttr->type;
+        } elseif ($typeReflector->getName() !== 'mixed' && ($mapped = $this->mappers->map($typeReflector, $this->member($param, $method))) !== null) {
+            if ($mapped->nullable && ! $nullable) {
+                throw new LogicException(sprintf(
+                    'A type mapper makes the argument $%s in %s::%s nullable (%s), but the parameter accepts no null. Make the parameter nullable or give it a default.',
+                    $param->getName(),
+                    $class->getName(),
+                    $method->getName(),
+                    $mapped->target(),
+                ));
+            }
+
+            $mapped = $mapped->orNullable($nullable);
+            $typeName = $mapped->target();
         } elseif ($typeReflector->isScalar() || enum_exists($typeReflector->getName())) {
             $typeName = $typeReflector->getName();
         } else {
@@ -301,18 +322,28 @@ final readonly class ParameterClassifier
         }
 
         $hasRules = $argAttr !== null && ! empty($argAttr->rules);
-        $hasDefault = $param->hasDefaultValue();
 
         return new DiscoveredArg(
             name: $argAttr !== null && $argAttr->name !== null ? $argAttr->name : $param->getName(),
             paramName: $param->getName(),
             type: $typeName,
-            nullable: $typeReflector->isNullable() || $hasDefault,
+            nullable: $nullable,
             description: $argAttr?->description,
             hasRules: $hasRules,
             hasDefault: $hasDefault,
             defaultValue: $hasDefault ? $param->getDefaultValue() : null,
             deprecationReason: $argAttr?->deprecationReason,
+            typeRef: $mapped,
+        );
+    }
+
+    private function member(ParameterReflector $param, MethodReflector $method): Member
+    {
+        return new Member(
+            $param->getName(),
+            $method->getReflection()->getDeclaringClass()->getName(),
+            Position::Input,
+            MemberKind::Parameter,
         );
     }
 }

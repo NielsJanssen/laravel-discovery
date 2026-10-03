@@ -19,6 +19,9 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDecoratorReference;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDiscoveryVerifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldSource;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Ignore;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
@@ -120,16 +123,16 @@ final readonly class TypeCollector
     {
         $reflection = $property->getReflection();
         $field = $property->getAttribute(Field::class);
-        $member = sprintf('Property %s::$%s', $reflection->getDeclaringClass()->getName(), $property->getName());
+        $label = sprintf('Property %s::$%s', $reflection->getDeclaringClass()->getName(), $property->getName());
 
         if ($property->hasAttribute(Ignore::class)) {
-            return $field === null ? null : throw new LogicException("$member has both #[Field] and #[Ignore]. Remove one.");
+            return $field === null ? null : throw new LogicException("$label has both #[Field] and #[Ignore]. Remove one.");
         }
 
         if (! $reflection->isPublic() || $reflection->isStatic()) {
             return $field === null ? null : throw new LogicException(sprintf(
                 '%s has #[Field] but is %s. Only public, non-static properties become fields.',
-                $member,
+                $label,
                 $reflection->isStatic() ? 'static' : 'not public',
             ));
         }
@@ -141,7 +144,7 @@ final readonly class TypeCollector
 
             throw new LogicException(sprintf(
                 '%s is a plain public property on an Eloquent model, so it shadows the attribute \'%s\'. Make it a virtual hooked property, as in `public string $%s { get => $this->getAttribute(\'%s\'); }`, or add #[Ignore] to keep it out of the type.',
-                $member,
+                $label,
                 $property->getName(),
                 $property->getName(),
                 $property->getName(),
@@ -149,13 +152,15 @@ final readonly class TypeCollector
         }
 
         if ($reflection->isVirtual() && ! $reflection->hasHook(PropertyHookType::Get)) {
-            return $field === null ? null : throw new LogicException("$member has #[Field] but no get hook, so it cannot be read.");
+            return $field === null ? null : throw new LogicException("$label has #[Field] but no get hook, so it cannot be read.");
         }
 
-        return $this->decorate($member, $property, new DiscoveredTypeField(
+        $member = new Member($property->getName(), $reflection->getDeclaringClass()->getName(), Position::Output, MemberKind::Property);
+
+        return $this->decorate($label, $property, new DiscoveredTypeField(
             phpName: $property->getName(),
             name: $field->name ?? $this->fieldName($property),
-            type: $this->inferType($reflection->getType(), $class, $member, $field),
+            type: $this->inferType($reflection->getType(), $class, $label, $field, $member),
             source: FieldSource::Property,
             description: $field?->description,
             deprecationReason: $field?->deprecationReason,
@@ -174,30 +179,32 @@ final readonly class TypeCollector
         }
 
         $reflection = $method->getReflection();
-        $member = sprintf('Method %s::%s()', $reflection->getDeclaringClass()->getName(), $method->getName());
+        $label = sprintf('Method %s::%s()', $reflection->getDeclaringClass()->getName(), $method->getName());
 
         if ($method->hasAttribute(Ignore::class)) {
-            throw new LogicException("$member has both #[Field] and #[Ignore]. Remove one.");
+            throw new LogicException("$label has both #[Field] and #[Ignore]. Remove one.");
         }
 
         if (! $reflection->isPublic() || $reflection->isStatic()) {
             throw new LogicException(sprintf(
                 '%s has #[Field] but is %s. Only public, non-static methods become fields.',
-                $member,
+                $label,
                 $reflection->isStatic() ? 'static' : 'not public',
             ));
         }
 
-        $this->assertNoActionAttributes($member, $method);
+        $this->assertNoActionAttributes($label, $method);
 
         $parameters = $this->parameters->classify($class, $method);
 
-        $this->assertResolvableParameters($member, $parameters);
+        $this->assertResolvableParameters($label, $parameters);
 
-        return $this->decorate($member, $method, new DiscoveredTypeField(
+        $member = new Member($method->getName(), $reflection->getDeclaringClass()->getName(), Position::Output, MemberKind::MethodReturn);
+
+        return $this->decorate($label, $method, new DiscoveredTypeField(
             phpName: $method->getName(),
             name: $field->name ?? $this->fieldName($method),
-            type: $this->inferType($reflection->getReturnType(), $class, $member, $field),
+            type: $this->inferType($reflection->getReturnType(), $class, $label, $field, $member),
             source: FieldSource::Method,
             parameters: $parameters,
             description: $field->description,
@@ -266,17 +273,18 @@ final readonly class TypeCollector
     /**
      * @param  ClassReflector<object>  $class
      */
-    private function inferType(?ReflectionType $type, ClassReflector $class, string $member, ?Field $field): TypeRef
+    private function inferType(?ReflectionType $type, ClassReflector $class, string $label, ?Field $field, Member $member): TypeRef
     {
         return $this->inferrer->output(
             $type,
             $class->getName(),
-            $member,
+            $label,
             'Field',
             $field?->type,
             $field?->of,
             $field !== null && $field->nullable,
             $field !== null && $field->nullableItems,
+            $member,
         );
     }
 

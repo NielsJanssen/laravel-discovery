@@ -75,7 +75,8 @@ public function count(): int
 
 ### Return types
 
-A scalar return type is mapped for you: `string`, `int`, `float`, and `bool` become the matching GraphQL scalar. A
+A [type mapper](#type-mappers) gets the first say on a return type without `type:` or `of:`. After that, a scalar
+return type is mapped for you: `string`, `int`, `float`, and `bool` become the matching GraphQL scalar. A
 `void` return becomes a `Null` scalar, which suits a mutation that reports nothing back.
 
 A return type that is a [`#[Type]` class](#object-types) is inferred as that type, so `public function book(): Book`
@@ -197,7 +198,7 @@ class is resolved from the container. The method is called on the object being r
 | `description`       | `?string` | `null`          | The field description.                                                         |
 | `deprecationReason` | `?string` | `null`          | Marks the field deprecated. On methods, native `#[\Deprecated]` works too.     |
 
-**Inferred types.** `string`, `int`, `float` and `bool` map to their scalars. A PHP enum maps to a
+**Inferred types.** A [type mapper](#type-mappers) is asked first. Then `string`, `int`, `float` and `bool` map to their scalars. A PHP enum maps to a
 [GraphQL enum](#enums). A class maps to the GraphQL type it is
 registered as, which is looked up when the schema is built, so classes can reference each other in any order. A class
 that is not registered is reported at boot. `?T` makes a field nullable; a default value does not. `array`, `iterable`
@@ -359,8 +360,8 @@ type Mutation {
 - **Models in input position stay bindings.** A model parameter is still an `ID` argument with a route-key lookup, as
   described under [Model binding](#model-binding), even when the model is a `#[Type]`. Only the return type uses the
   object type.
-- **Dates need an explicit type for now.** `CarbonImmutable` has no GraphQL counterpart yet, so name one with
-  `#[Field(type: 'String')]`; the value is printed through its `__toString()`.
+- **Dates need a GraphQL type.** `CarbonImmutable` has no GraphQL counterpart by default: map it once in
+  [the scalar map](#the-scalar-map), or name one per field with `#[Field(type: ...)]`.
 - Discovery reads the model through reflection only: it never instantiates the model or queries the database.
 
 ## Enums
@@ -430,11 +431,112 @@ public function boot(): void
 }
 ```
 
+## Type mappers
+
+A type mapper decides the GraphQL type of a PHP type before the built-in inference does. Use one for value objects and
+dates, or for a convention such as "a property named `id` is an `ID`". Inference never infers `ID` on its own: a
+`string $id` is a `String!` until a mapper says otherwise.
+
+### The scalar map
+
+The package ships one mapper, which reads `discovery.graphql.scalars`. Each entry maps a class to a GraphQL scalar or
+type name. Classes are matched with `is_a()`, so an interface entry covers every class that implements it:
+
+Publish the config file to set it:
+
+```bash
+php artisan vendor:publish --tag=discovery-graphql-config
+```
+
+```php
+// config/discovery-graphql.php
+return [
+    'scalars' => [
+        CarbonInterface::class => 'DateTime',
+    ],
+];
+```
+
+A `graphql` key in `config/discovery.php` works too, and wins over the published file. With that entry, `public CarbonImmutable $publishedAt` becomes `publishedAt: DateTime!`, and so does a
+`CarbonImmutable` return or an `#[Arg] CarbonImmutable $since` argument. The first matching entry wins. A name that is
+not a built-in scalar (`DateTime` here) must be a type you register with Rebing yourself, usually a custom scalar in
+`graphql.types` that serializes the value and parses it back into the PHP class. The map is empty by default. A key
+that is not a class or interface, or a value that is not a type name, throws a `LogicException`.
+
+### Writing your own mapper
+
+Implement `TypeMapper` and tag it in a service provider's `register()` method:
+
+```php
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapper;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
+use Tempest\Reflection\TypeReflector;
+
+final class IdsAreIds implements TypeMapper
+{
+    public function map(TypeReflector $type, Member $member): ?TypeRef
+    {
+        return $member->name === 'id' && in_array($type->getName(), ['int', 'string'], true)
+            ? TypeRef::scalar('ID', nullable: $type->isNullable())
+            : null;
+    }
+}
+
+$this->app->tag([IdsAreIds::class], TypeMapper::TAG);
+```
+
+Return `null` for anything the mapper does not handle. Mappers are asked in tag order, and the first one that returns a
+`TypeRef` wins. The scalar map is asked last, after every tagged mapper, so your own mapper can take over a class the
+scalar map also covers.
+
+A mapper sees the type as PHP reflection reports it. A union arrives whole (`$type->isUnion()`, `$type->split()`),
+`static` arrives as `static`, and `self` arrives as the class name. Untyped and `mixed` members never reach a mapper,
+so they keep their discovery error.
+
+`Member` describes what is being typed:
+
+| Property         | Type           | Holds                                                                    |
+|------------------|----------------|--------------------------------------------------------------------------|
+| `name`           | `string`       | The property, method or parameter name.                                  |
+| `declaringClass` | `class-string` | The class that declares the member.                                      |
+| `position`       | `Position`     | `Output` for fields and returns, `Input` for arguments.                  |
+| `kind`           | `MemberKind`   | `Property`, `MethodReturn` (fields and actions) or `Parameter`.          |
+
+A `TypeRef` can name a scalar (`TypeRef::scalar('String')`), a GraphQL type by name (`TypeRef::named('DateTime')`) or a
+class (`TypeRef::class(Status::class)`). A class must be registered, as an inferred one must; a PHP enum named this way
+is registered as a [GraphQL enum](#enums), even when nothing else refers to it. Pass `list: true` (and
+`nullableItems: true`) for a list, as in `TypeRef::named('Money', list: true)` for an `array` return.
+
+**Where mappers run.** On `#[Type]` properties and `#[Field]` method returns, on arguments of field methods, queries and
+mutations, and on query and mutation returns. An explicit type always wins: a mapper is not asked when `#[Field]` sets
+`type:` or `of:`, when `#[Arg]` sets `type:`, or when `#[Query]` or `#[Mutation]` sets `type:` or `of:` or the method
+has a type builder such as `#[Paginated]`.
+
+A mapper only types a parameter that is already an argument. Model binding, `#[Root]`, `#[Context]`, `ResolveInfo`,
+value objects built from args, and container injection are decided first. A class-typed parameter without `#[Arg]` is
+resolved from the container, so put `#[Arg]` on a parameter like `CarbonImmutable $since` to make it an argument.
+
+**Nullability** only widens, as with inference. The field or argument is nullable when the mapper returns a nullable
+`TypeRef`, when the PHP type is nullable, when `nullable: true` is set on the attribute, or, for an argument, when the
+parameter has a default value. A mapper cannot make a `?T` member non-null. A nullable mapping for a parameter that
+accepts no `null` (`string $notes`, no default) throws a `LogicException` at discovery, since the resolver could not
+take the `null` the schema allows.
+
+The value an argument receives is what the GraphQL type produces: an `ID` arrives as a string, and a custom scalar
+arrives as whatever its `parseValue()` returns. Type the parameter to match.
+
+**Caching.** Mappers run at discovery time, and their results are cached with the discovery items. Decide from the
+reflection alone, and run `php artisan discovery:clear` after changing a mapper or the scalar map in an environment
+that caches discovery.
+
 ## Arguments
 
 Every parameter becomes a GraphQL argument unless it is one of the injections described below. A scalar or enum
 parameter needs no attribute; its GraphQL type comes from the PHP type, and the argument is nullable when the parameter
 is nullable or has a default value. An enum parameter becomes an argument of that [enum](#enums) and receives the case.
+A [type mapper](#type-mappers) can give an argument a different type, and it can type a class parameter that carries
+`#[Arg]`, such as a date.
 
 ```php
 #[Query(type: 'Order', list: true)]
@@ -449,7 +551,7 @@ public function orders(string $status, int $limit = 25): array
 | Parameter           | Type                            | Purpose                                                                 |
 |---------------------|---------------------------------|--------------------------------------------------------------------------|
 | `name`              | `?string`                       | The argument name, when it should differ from the parameter name.        |
-| `type`              | `?string`                       | The GraphQL type. Required for a parameter that is not scalar or enum.   |
+| `type`              | `?string`                       | The GraphQL type. Required for a class no type mapper handles.           |
 | `rules`             | `array\|Closure\|null`          | Validation rules, evaluated per request when a closure is given.         |
 | `description`       | `?string`                       | Surfaced in GraphiQL.                                                    |
 | `deprecationReason` | `?string`                       | Marks the argument deprecated.                                           |

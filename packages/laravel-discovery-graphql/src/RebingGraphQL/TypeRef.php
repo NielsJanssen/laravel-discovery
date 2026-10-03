@@ -73,6 +73,24 @@ final readonly class TypeRef
         return clone($this, ['nullable' => true]);
     }
 
+    /** A copy that is nullable when either this reference or the given flag is; nullability only widens. */
+    public function orNullable(bool $nullable): self
+    {
+        return $nullable && ! $this->nullable ? clone($this, ['nullable' => true]) : $this;
+    }
+
+    /** A copy of the same target with the given list and nullability wrapping. */
+    public function wrapped(bool $list, bool $nullable, bool $nullableItems): self
+    {
+        return clone($this, ['list' => $list, 'nullable' => $nullable, 'nullableItems' => $nullableItems]);
+    }
+
+    /** The class-string, scalar name or GraphQL type name this reference points at. */
+    public function target(): string
+    {
+        return (string) ($this->class ?? $this->scalar ?? $this->name);
+    }
+
     public static function fromAction(Action $action): self
     {
         $type = $action->of ?? $action->type;
