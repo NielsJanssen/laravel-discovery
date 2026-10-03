@@ -54,7 +54,7 @@ Both attributes target methods and take the same arguments.
 | Parameter       | Type      | Default                  | Purpose                                                                        |
 |-----------------|-----------|--------------------------|--------------------------------------------------------------------------------|
 | `name`          | `?string` | the method name          | The field name in the schema.                                                  |
-| `type`          | `?string` | inferred                 | The GraphQL type returned. Required unless the return type is scalar or void.  |
+| `type`          | `?string` | inferred                 | The GraphQL type returned. Required unless the return type can be inferred.    |
 | `schema`        | `?string` | `graphql.default_schema` | The schema this field is registered in. See [Schemas](#schemas).               |
 | `description`   | `?string` | `null`                   | Surfaced as the field description in GraphiQL.                                 |
 | `list`          | `bool`    | `false`                  | Wrap the type in a GraphQL list of non-null elements.                          |
@@ -78,10 +78,15 @@ public function count(): int
 A scalar return type is mapped for you: `string`, `int`, `float`, and `bool` become the matching GraphQL scalar. A
 `void` return becomes a `Null` scalar, which suits a mutation that reports nothing back.
 
-Anything else needs `type:` naming a registered GraphQL type. Discovery throws a `RuntimeException` when it cannot infer
-a type and none was given, so a missing type is reported at boot rather than at query time.
+A return type that is a [`#[Type]` class](#object-types) is inferred as that type, so `public function book(): Book`
+needs no `type:`. The class only has to be discovered somewhere; the order in which classes are discovered does not
+matter. `array`, `iterable` and `Collection` returns need `of:` to name the type of their items.
 
-A nullable return type (`?string`, `?Product`) makes the field nullable, whether the type was inferred or given through
+Anything else needs `type:` naming a registered GraphQL type. Discovery throws a `RuntimeException` when it cannot infer
+a type and none was given (`mixed`, a PHP union, `array` without `of:`), so a missing type is reported at boot rather
+than at query time.
+
+A nullable return type (`?string`, `?Book`) makes the field nullable, whether the type was inferred or given through
 `type:`. Inference only ever widens: `nullable: true` on the attribute stands even when the return type is not nullable,
 and a method with no declared return type leaves the field non-null.
 
@@ -97,8 +102,10 @@ Note that `type:` describes the GraphQL type, and the PHP return type stays what
 
 `type:` and `of:` take a GraphQL type name (`'Product'`), a scalar name (`'string'`, `'ID'`) or a class-string
 (`Product::class`). A class-string resolves to the GraphQL type that class is registered as in the
-`NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry`. Building the field throws a `RuntimeException` naming the
-class when it is not registered.
+`NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry`, which every `#[Type]` class is added to. A class-string that
+is not registered, whether given or inferred, on a query, a mutation or a `#[Type]` field, makes discovery throw a
+`LogicException` naming the method or field and the class. The check runs when discovery boots, whether or not the
+configuration is cached.
 
 ```php
 #[Query(of: 'Product', nullableItems: true)]
@@ -111,7 +118,7 @@ public function shelf(): array
 ## Object types
 
 `#[Type]` on a plain class makes it a GraphQL object type. Its public properties become fields, and so do methods that
-carry `#[Field]`. Return an instance from a query and reference the type by class-string:
+carry `#[Field]`. Return an instance from a query, and the return type tells discovery which GraphQL type it is:
 
 ```php
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
@@ -143,8 +150,11 @@ final class Book
 
 class Books
 {
-    #[Query(type: Book::class)]
-    public function book(): Book { /* ... */ }
+    #[Query]
+    public function book(): Book { /* ... */ }                 // book: Book!
+
+    #[Query(of: Book::class)]
+    public function books(): array { /* ... */ }               // books: [Book!]!
 }
 ```
 
@@ -186,9 +196,10 @@ class is resolved from the container. The method is called on the object being r
 | `deprecationReason` | `?string` | `null`          | Marks the field deprecated. On methods, native `#[\Deprecated]` works too.     |
 
 **Inferred types.** `string`, `int`, `float` and `bool` map to their scalars. A class maps to the GraphQL type it is
-registered as, which is looked up when the schema is built, so classes can reference each other in any order. `?T`
-makes a field nullable; a default value does not. `array`, `iterable` and `Collection` need `of:` (or `type:`), and so
-does anything without a GraphQL counterpart: `mixed`, no type, a union, `void`.
+registered as, which is looked up when the schema is built, so classes can reference each other in any order. A class
+that is not registered is reported at boot. `?T` makes a field nullable; a default value does not. `array`, `iterable`
+and `Collection` need `of:` (or `type:`), and so does anything without a GraphQL counterpart: `mixed`, no type, a
+union, `void`.
 
 **Errors at discovery.** `#[Field]` on a private, protected, static or write-only member, an action attribute such as `#[Paginated]` on a field method, `#[Field]` together with
 `#[Ignore]`, a type that cannot be inferred, two fields with one name, and a field method that binds a model or sets

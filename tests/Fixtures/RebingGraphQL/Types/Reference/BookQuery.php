@@ -8,7 +8,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
 
 final class BookQuery
 {
-    #[Query(type: Book::class)]
+    #[Query]
     public function book(): Book
     {
         return new Book(
