@@ -18,6 +18,8 @@ readonly class DiscoveredArg
         public ?string $deprecationReason = null,
         /** the type a TypeMapper claimed; wins over $type */
         public ?TypeRef $typeRef = null,
+        /** The value is an #[Input] object, hydrated into $type before the resolver runs. */
+        public bool $input = false,
     ) {}
 
     public function ref(): TypeRef

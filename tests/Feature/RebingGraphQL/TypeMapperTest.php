@@ -113,7 +113,7 @@ describe('the contract', function () {
 
     it('resolves the type of an arg cached before typeRef existed', function () {
         $current = serialize(new DiscoveredArg('mood', 'mood', 'string', false));
-        $stale = str_replace([':10:{', 's:7:"typeRef";N;'], [':9:{', ''], $current);
+        $stale = str_replace([':11:{', 's:7:"typeRef";N;'], [':10:{', ''], $current);
 
         $arg = unserialize($stale);
 

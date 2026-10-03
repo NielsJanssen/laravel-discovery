@@ -19,6 +19,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDecoratorReference;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldDiscoveryVerifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\FieldSource;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Ignore;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\BatchedFieldDecorator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\BatchLoader;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\VerifiesLoadOptions;
@@ -44,6 +45,7 @@ final readonly class TypeCollector
     public function __construct(
         private ParameterClassifier $parameters,
         private TypeInferrer $inferrer,
+        private SkippedMembers $skipped,
     ) {}
 
     /**
@@ -159,6 +161,10 @@ final readonly class TypeCollector
             return $field === null ? null : throw new LogicException("$label has #[Field] but no get hook, so it cannot be read.");
         }
 
+        if ($field?->rules !== null && ! $class->hasAttribute(Input::class)) {
+            throw new LogicException("$label has #[Field(rules:)], but rules only apply to a property of an #[Input]. Add #[Input] to the class, or remove rules:.");
+        }
+
         $member = new Member($property->getName(), $reflection->getDeclaringClass()->getName(), Position::Output, MemberKind::Property);
 
         return $this->decorate($label, $property, new DiscoveredTypeField(
@@ -200,6 +206,10 @@ final readonly class TypeCollector
 
         $this->assertNoActionAttributes($label, $method);
 
+        if ($field->rules !== null) {
+            throw new LogicException("$label has #[Field(rules:)], but rules only apply to a property of an #[Input]. Remove rules:.");
+        }
+
         $parameters = $this->parameters->classify($class, $method);
 
         $this->assertResolvableParameters($label, $parameters);
@@ -223,35 +233,7 @@ final readonly class TypeCollector
      */
     private function includes(PropertyReflector|MethodReflector $member): bool
     {
-        $declaringClass = $member->getReflection()->getDeclaringClass();
-
-        if (str_starts_with($declaringClass->getName(), 'Illuminate\\')) {
-            return false;
-        }
-
-        return ! $member instanceof PropertyReflector || ! $this->isFrameworkProperty($declaringClass, $member->getName());
-    }
-
-    /**
-     * Whether a parent class or trait under the Illuminate namespace declares the property as well.
-     *
-     * @param  ReflectionClass<object>  $class
-     */
-    private function isFrameworkProperty(ReflectionClass $class, string $property): bool
-    {
-        $owners = trait_uses_recursive($class->getName());
-
-        for ($parent = $class->getParentClass(); $parent !== false; $parent = $parent->getParentClass()) {
-            $owners[] = $parent->getName();
-        }
-
-        foreach ($owners as $owner) {
-            if (str_starts_with($owner, 'Illuminate\\') && property_exists($owner, $property)) {
-                return true;
-            }
-        }
-
-        return false;
+        return ! $this->skipped->skips($member);
     }
 
     /**
@@ -432,6 +414,15 @@ final readonly class TypeCollector
     private function assertResolvableParameters(string $member, ClassifiedParameters $parameters): void
     {
         foreach ($parameters->args as $arg) {
+            if ($arg->input) {
+                throw new LogicException(sprintf(
+                    '%s takes the #[Input] %s as $%s, which fields do not support yet. Take its values as scalar args instead.',
+                    $member,
+                    class_basename($arg->type),
+                    $arg->paramName,
+                ));
+            }
+
             if ($arg->hasRules) {
                 throw new LogicException(sprintf(
                     '%s has #[Arg(rules:)] on $%s, but field args are not validated yet. Validate the value inside the method instead.',

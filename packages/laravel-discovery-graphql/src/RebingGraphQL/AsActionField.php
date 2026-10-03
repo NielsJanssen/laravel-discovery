@@ -8,7 +8,6 @@ use Closure;
 use GraphQL\Type\Definition\NullableType;
 use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Type\Definition\Type as GraphQLType;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
 use Illuminate\Validation\Rule;
@@ -128,12 +127,17 @@ trait AsActionField
     {
         $mappedArgs = [];
 
+        $hydrators = $this->app->make(HydratorRegistry::class);
+
         foreach ($this->discoveredAction->args as $discovered) {
             $value = $args[$discovered->name] ?? null;
+
+            if ($discovered->input && is_array($value) && class_exists($discovered->type)) {
+                $value = $hydrators->hydrate($discovered->type, array_filter($value, is_string(...), ARRAY_FILTER_USE_KEY));
+            }
+
             $mappedArgs[$discovered->paramName] = $value ?? $discovered->defaultValue;
         }
-
-        $hydrators = $this->app->make(HydratorRegistry::class);
 
         foreach ($this->discoveredAction->injections as $paramName => $kind) {
             $mappedArgs[$paramName] = match ($kind) {
@@ -156,7 +160,7 @@ trait AsActionField
                 continue;
             }
 
-            $query = $this->boundModelQuery($binding, $value);
+            $query = $binding->query($value);
 
             $mappedArgs[$binding->paramName] = $binding->nullable
                 ? $query->first()
@@ -208,7 +212,33 @@ trait AsActionField
      */
     public function validationErrorMessages(array $args = []): array
     {
-        return [...parent::validationErrorMessages($args), ...$this->argumentRules($args)->messages];
+        return [...parent::validationErrorMessages($args), ...$this->argumentRules($args)->messages, ...$this->inputMessages($args)];
+    }
+
+    /**
+     * The messages rule providers give an input object's properties, keyed by their full path, e.g. `input.title.min`.
+     *
+     * @param  array<string, mixed>  $args
+     * @return array<string, string>
+     */
+    private function inputMessages(array $args): array
+    {
+        $providers = $this->app->make(RuleProviderRegistry::class);
+        $messages = [];
+
+        foreach ($this->app->make(InputObjects::class)->inArgs($this->args(), $args) as [$type, $values, $path]) {
+            $names = array_column(array_map(static fn(DiscoveredTypeField $field): array => [$field->phpName, $field->name], $type->fields), 1, 0);
+
+            foreach ($providers->rulesForInput($type->class, $type->toProperties($values))->messages as $key => $message) {
+                $parts = explode('.', $key, 2);
+                $suffix = $parts[1] ?? null;
+                $field = $names[$parts[0]] ?? $parts[0];
+
+                $messages[$suffix === null ? "$path.$field" : "$path.$field.$suffix"] = $message;
+            }
+        }
+
+        return $messages;
     }
 
     /**
@@ -235,51 +265,38 @@ trait AsActionField
     }
 
     /**
-     * #[Authorize('ability')] on a model-bound parameter, checked against the record it binds.
+     * #[Authorize('ability')] on a model-bound parameter or input property, checked against the record it binds.
      *
      * @param  array<string, mixed>  $args
      */
     private function authorizeBoundModels(array $args, mixed $context, ?ResolveInfo $resolveInfo): bool
     {
-        foreach ($this->discoveredAction->modelBindings as $binding) {
-            if ($binding->authorizations === []) {
-                continue;
-            }
+        $denied = $this->deniedBoundModel($args, $context, $resolveInfo);
 
-            $value = $args[$binding->argName] ?? null;
-            $model = $value === null ? null : $this->boundModelQuery($binding, $value)->first();
-
-            // A nullable binding resolves to null, which the resolver is expected to handle, so
-            // there is nothing to authorize. A non-nullable one is denied below.
-            if ($model === null && $binding->nullable) {
-                continue;
-            }
-
-            foreach ($binding->authorizations as $authorize) {
-                if ($model !== null && $authorize->allows($this->app, $model, $args, $context, $resolveInfo)) {
-                    continue;
-                }
-
-                $this->failedAuthorize = $authorize;
-                $this->failedOnBoundModel = true;
-
-                return false;
-            }
+        if ($denied === null) {
+            return true;
         }
 
-        return true;
+        $this->failedAuthorize = $denied;
+        $this->failedOnBoundModel = true;
+
+        return false;
     }
 
     /**
-     * Looks the model up by its route key, as Laravel's own route-model binding does.
-     *
-     * @return Builder<Model>
+     * @param  array<string, mixed>  $args
      */
-    private function boundModelQuery(DiscoveredModelBinding $binding, mixed $value): Builder
+    private function deniedBoundModel(array $args, mixed $context, ?ResolveInfo $resolveInfo): ?Authorize
     {
-        $modelClass = $binding->modelClass;
+        foreach ($this->discoveredAction->modelBindings as $binding) {
+            $denied = $binding->deniedBy($this->app, $args[$binding->argName] ?? null, $args, $context, $resolveInfo);
 
-        return $modelClass::query()->where(new $modelClass()->getRouteKeyName(), $value);
+            if ($denied !== null) {
+                return $denied;
+            }
+        }
+
+        return $this->app->make(InputAuthorization::class)->deniedBy($this->args(), $args, $context, $resolveInfo);
     }
 
     public function getAuthorizationMessage(): string

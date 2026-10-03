@@ -12,6 +12,8 @@ final readonly class DiscoveredTypeField
     /**
      * @param  list<FieldDecorator|FieldDecoratorReference>  $decorators  serializable instances, or references to re-read
      * @param  class-string|null  $typeClass  the #[Type] class the field belongs to
+     * @param  bool  $hasRules  #[Field(rules:)] is set, and read again by reflection when the input type is built
+     * @param  DiscoveredModelBinding|null  $binding  the model an input field looks up by its route key
      */
     public function __construct(
         public string $phpName,
@@ -23,6 +25,10 @@ final readonly class DiscoveredTypeField
         public ?string $deprecationReason = null,
         public array $decorators = [],
         public ?string $typeClass = null,
+        public bool $hasRules = false,
+        public ?DiscoveredModelBinding $binding = null,
+        public bool $hasDefault = false,
+        public mixed $defaultValue = null,
     ) {}
 
     /**

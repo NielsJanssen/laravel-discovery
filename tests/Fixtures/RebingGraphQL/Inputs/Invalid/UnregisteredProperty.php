@@ -1,0 +1,14 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Fixtures\RebingGraphQL\Inputs\Invalid;
+
+use DateTimeImmutable;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
+
+#[Input]
+final class UnregisteredProperty
+{
+    public DateTimeImmutable $at;
+}

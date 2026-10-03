@@ -16,6 +16,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorize;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Context;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredArg;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredModelBinding;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
@@ -86,6 +87,11 @@ final readonly class ParameterClassifier
             }
 
             $this->assertNoParameterAuthorization($param, $class, $method);
+
+            if (! $type->isScalar() && $this->isInput($type->getName())) {
+                $args[] = $this->discoverInputArg($argAttr, $param, $class, $method);
+                continue;
+            }
 
             if (!$argAttr && !$type->isScalar() && ! enum_exists($type->getName())) {
                 $typeName = $type->getName();
@@ -283,6 +289,42 @@ final readonly class ParameterClassifier
                 ));
             }
         }
+    }
+
+    private function isInput(string $class): bool
+    {
+        return Input::marks($class);
+    }
+
+    /**
+     * @param ClassReflector<object> $class
+     */
+    private function discoverInputArg(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method): DiscoveredArg
+    {
+        if ($argAttr?->type !== null) {
+            throw new LogicException(sprintf(
+                '#[Arg(type:)] on the parameter $%s in %s::%s is not supported: its type is the input type of the #[Input] %s. Remove type:.',
+                $param->getName(),
+                $class->getName(),
+                $method->getName(),
+                class_basename($param->getType()->getName()),
+            ));
+        }
+
+        $hasDefault = $param->hasDefaultValue();
+
+        return new DiscoveredArg(
+            name: $argAttr !== null && $argAttr->name !== null ? $argAttr->name : $param->getName(),
+            paramName: $param->getName(),
+            type: $param->getType()->getName(),
+            nullable: $param->getType()->isNullable() || $hasDefault,
+            description: $argAttr?->description,
+            hasRules: $argAttr !== null && ! empty($argAttr->rules),
+            hasDefault: $hasDefault,
+            defaultValue: $hasDefault ? $param->getDefaultValue() : null,
+            deprecationReason: $argAttr?->deprecationReason,
+            input: true,
+        );
     }
 
     /**

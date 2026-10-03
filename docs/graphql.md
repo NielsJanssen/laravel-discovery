@@ -38,6 +38,35 @@ schema configuration rather than replacing it.
 
 For discovery configuration and caching, see [Installation](installation.md).
 
+## Configuration
+
+The package's own settings live under `discovery.graphql`. Publish the config file to change them:
+
+```bash
+php artisan vendor:publish --tag=discovery-graphql-config
+```
+
+```php
+// config/discovery-graphql.php
+return [
+    'scalars' => [],                                   // see "The scalar map" below
+    'skip_namespaces' => ['Illuminate\\', 'Acme\\'],
+];
+```
+
+A `graphql` key in `config/discovery.php` works too, and wins over the published file.
+
+| Key               | Default            | Purpose                                                                                      |
+|-------------------|--------------------|----------------------------------------------------------------------------------------------|
+| `scalars`         | `[]`               | GraphQL scalar or type names for PHP classes; see [the scalar map](#the-scalar-map).          |
+| `skip_namespaces` | `['Illuminate\\']` | Namespace prefixes whose members never become fields of a `#[Type]` or `#[Input]`.            |
+
+`skip_namespaces` covers anything declared in a class or trait under one of the prefixes, also when an application
+class redeclares the property. Add a package your types extend, so its base model's public members stay out of the
+schema. The list replaces the default, so keep `Illuminate\` in it. A trailing backslash is optional; an entry that is
+not a non-empty string throws a `LogicException`. Like everything discovery reads, the result is cached with discovery,
+so run `php artisan discovery:clear` after changing it.
+
 ## Two ways to register a field
 
 **Class-based.** Classes extending Rebing's `Query` or `Mutation` are discovered and registered in the default
@@ -197,6 +226,7 @@ class is resolved from the container. The method is called on the object being r
 | `nullableItems`     | `bool`    | `false`         | Allow list items to be `null`.                                                 |
 | `description`       | `?string` | `null`          | The field description.                                                         |
 | `deprecationReason` | `?string` | `null`          | Marks the field deprecated. On methods, native `#[\Deprecated]` works too.     |
+| `rules`             | `array\|Closure\|null` | `null` | Validation rules, only on a property of an [`#[Input]`](#input-types).   |
 
 **Inferred types.** A [type mapper](#type-mappers) is asked first. Then `string`, `int`, `float` and `bool` map to their scalars. A PHP enum maps to a
 [GraphQL enum](#enums). A class maps to the GraphQL type it is
@@ -344,10 +374,11 @@ type Mutation {
 }
 ```
 
-- **Framework members are skipped.** Anything declared in a class or trait under the `Illuminate\` namespace, such as
+- **Framework members are skipped.** Anything declared in a class or trait under a skipped namespace, such as
   `$exists`, `$timestamps`, `$incrementing` and `$wasRecentlyCreated`, never becomes a field, also when the model
-  redeclares it (`public $timestamps = false;`). This holds for any `#[Type]` class, so a class using
-  `Illuminate\Bus\Queueable` does not expose `$queue` either.
+  redeclares it (`public $timestamps = false;`). This holds for any `#[Type]` or `#[Input]` class, so a class using
+  `Illuminate\Bus\Queueable` does not expose `$queue` either. The skipped namespaces are `Illuminate\` by default; see
+  [Configuration](#configuration) to add a package your types extend.
 - **Hooks must be virtual.** A hook reads and writes through `getAttribute()` and `setAttribute()`, so the casts, the
   dirty tracking, `toArray()` and `save()` keep working. A plain public property declared in the model itself would
   shadow the attribute of the same name, so discovery rejects it with a `LogicException`. Make it a virtual hooked
@@ -580,11 +611,7 @@ dates, or for a convention such as "a property named `id` is an `ID`". Inference
 The package ships one mapper, which reads `discovery.graphql.scalars`. Each entry maps a class to a GraphQL scalar or
 type name. Classes are matched with `is_a()`, so an interface entry covers every class that implements it:
 
-Publish the config file to set it:
-
-```bash
-php artisan vendor:publish --tag=discovery-graphql-config
-```
+Set it in the package config; see [Configuration](#configuration):
 
 ```php
 // config/discovery-graphql.php
@@ -595,7 +622,7 @@ return [
 ];
 ```
 
-A `graphql` key in `config/discovery.php` works too, and wins over the published file. With that entry, `public CarbonImmutable $publishedAt` becomes `publishedAt: DateTime!`, and so does a
+With that entry, `public CarbonImmutable $publishedAt` becomes `publishedAt: DateTime!`, and so does a
 `CarbonImmutable` return or an `#[Arg] CarbonImmutable $since` argument. The first matching entry wins. A name that is
 not a built-in scalar (`DateTime` here) must be a type you register with Rebing yourself, usually a custom scalar in
 `graphql.types` that serializes the value and parses it back into the PHP class. The map is empty by default. A key
@@ -668,6 +695,127 @@ arrives as whatever its `parseValue()` returns. Type the parameter to match.
 reflection alone, and run `php artisan discovery:clear` after changing a mapper or the scalar map in an environment
 that caches discovery.
 
+## Input types
+
+`#[Input]` on a class makes it a GraphQL input object. Its public properties become the input fields, typed the way
+`#[Type]` fields are, but in input position. A parameter typed as an `#[Input]` class becomes one argument of that
+input type, named after the parameter, and the resolver receives an instance of the class.
+
+```php
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Arg;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorize;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
+use NielsJanssen\Laravel\Validation\Rule\{Max, Min, Size};
+
+#[Input]
+final readonly class CreateBook
+{
+    public function __construct(
+        #[Min(2), Max(255)] public string $title,
+        public Genre $genre,
+        #[Authorize('attach')] public Publisher $publisher,   // Eloquent: an ID, looked up by route key
+        public ?Address $shipTo = null,
+        #[Field(of: Chapter::class)] public array $chapters = [],
+        #[Field(rules: ['nullable', 'date'])] public ?string $publishAt = null,
+    ) {}
+}
+
+#[Type, Input]
+final class Address
+{
+    public function __construct(public string $street, public string $city, #[Size(2)] public string $country) {}
+}
+
+final class BookMutations
+{
+    #[Mutation] public function createBook(CreateBook $input): Book {}
+    #[Mutation] public function draftBook(#[Arg('data', description: 'Draft contents')] ?CreateBook $draft = null): Book {}
+}
+```
+
+```graphql
+input CreateBookInput {
+  title: String!
+  genre: Genre!
+  publisher: ID!
+  shipTo: AddressInput
+  chapters: [ChapterInput!] = []
+  publishAt: String
+}
+
+type Address { street: String! city: String! country: String! }
+input AddressInput { street: String! city: String! country: String! }
+
+type Mutation {
+  createBook(input: CreateBookInput!): Book!
+  draftBook("Draft contents" data: CreateBookInput): Book!
+}
+```
+
+The input is named after the class plus `Input`, unless the name already ends in `Input`; `#[Input(name:,
+description:)]` overrides both. A class may carry both `#[Type]` and `#[Input]`, and then has an output type and an
+input type (`Address` and `AddressInput`). Every property of such a class must then work in both positions: a property
+typed as an output-only `#[Type]` cannot be shared, and an `#[Authorize(message:)]` still needs `onDenied:
+Denied::Error` for the output field.
+
+**Fields.** Every public, non-static property is a field; `#[Ignore]` leaves one out, and a property hook needs a `set`
+hook. `#[Field]` takes the same `name`, `type`, `of`, `nullable`, `nullableItems`, `description` and
+`deprecationReason` as on a `#[Type]`. A field is optional when its type is nullable or it has a default value; a
+scalar, enum or list default is shown in the schema. A field can be a scalar, an enum, another `#[Input]`, a list of
+those through `of:`, or an Eloquent model: that last one is an `ID` field (or the `type:` you name) that is looked up by
+the model's route key, with an automatic `exists` rule when it is not nullable. [Type mappers](#type-mappers) are asked
+about every other property in input position, except one typed as an `#[Input]` class. Properties Laravel declares are
+left out, as on a `#[Type]`.
+
+**The argument.** `#[Arg(name:, description:)]` renames and describes an input argument; it is nullable when the
+parameter is nullable or has a default. `#[Arg(type:)]` is rejected, since the type is the input type. A class without
+`#[Input]` is still injected from the container, as before. A parameter that names an input by GraphQL name, such as
+`#[Arg(type: 'CreateBookInput')] array $raw`, uses the input too, and receives the plain array. Model-bound
+`#[Authorize]` checks run for an input however the argument reaches it: as an `#[Input]` parameter, through
+`#[Arg(type:)]`, in a list, or nested in another input.
+
+**Hydration.** The built-in `InputHydrator` calls the constructor with named arguments, then sets the remaining public
+properties. It builds nested inputs, enum cases and models on the way, and a renamed field reaches the property it came
+from. An absent optional field keeps the constructor or property default. A hydrator you tag yourself can claim an
+`#[Input]` class first; it receives the values keyed by property name. See
+[GraphQL argument validation and hydration](graphql-arguments.md).
+
+**Validation.** Rules sit on the input type's own fields, so Rebing validates them before the resolver runs and reports
+them at their full path: `input.title`, `input.shipTo.city`, `batch.reviews.1.body`. A field's rules are the
+`nielsjanssen/laravel-validation` attributes on its property, `#[Field(rules:)]` (an array, or a closure that receives
+the input object's values), and the automatic `exists` rule of a model field. An attribute's custom `message:` is
+reported at the same path. Nested laravel-validation rules (`#[Valid]`, `#[ListOf]`, `#[Each]`) on an input property
+are not applied yet.
+
+**Value keys.** Values reach each consumer under different keys:
+
+| Consumer                                    | Keys                                                  |
+|---------------------------------------------|-------------------------------------------------------|
+| a `#[Field(rules:)]` closure                | GraphQL field names (`fullName`), before aliasing      |
+| the hydrator, and a `#[Arg(type: 'XInput')] array` parameter | PHP property names (`name`), after Rebing's aliasing |
+| an `InputRuleProvider`                      | PHP property names                                    |
+
+**Authorization.** `#[Authorize('ability')]` on a model property checks the record it binds before validation, exactly
+as on a [model-bound parameter](graphql-authorization.md#authorizing-a-bound-model), at every depth and list index. On
+a class that is also a `#[Type]`, an `#[Authorize]` on any other property guards the output field and has no effect on
+input.
+
+**Emitted only when used.** An `#[Input]` is registered only when an argument uses it, directly or as a field of
+another used input; an unused one, and an enum only it refers to, stay out of the schema. A hand-written Rebing type
+cannot reference a discovered input by name unless a discovered argument also uses it. Output types are always
+registered.
+
+Discovery throws a `LogicException` for shapes that cannot work: an input property typed as an interface, a union, an
+output-only `#[Type]` or a list of models; an `#[Input]` class returned from a query or used as a `#[Type]` field unless
+the class is a `#[Type]` too; `#[Input]` on an enum, an abstract class or a Rebing type; a `#[Field]` method on an
+input; `#[Field(rules:)]` outside an input; an input argument on a `#[Field]` method, also when named by `#[Arg(type:)]` or a type mapper, since field args are neither
+validated, hydrated nor authorized; and `#[Authorize]` on an input
+property that binds no model, without an ability, with `gate:`, or with `onDenied:`. `#[Input]` on an Eloquent model is
+rejected as well, since a model in input position is always an `ID` binding. So is a constructor the hydrator could not
+call: a required parameter that no input field fills, or a required one whose field is optional.
+
 ## Arguments
 
 Every parameter becomes a GraphQL argument unless it is one of the injections described below. A scalar or enum
@@ -675,6 +823,7 @@ parameter needs no attribute; its GraphQL type comes from the PHP type, and the 
 is nullable or has a default value. An enum parameter becomes an argument of that [enum](#enums) and receives the case.
 A [type mapper](#type-mappers) can give an argument a different type, and it can type a class parameter that carries
 `#[Arg]`, such as a date.
+An [`#[Input]`](#input-types) parameter becomes an argument of that input type and receives the hydrated object.
 
 ```php
 #[Query(type: 'Order', list: true)]
@@ -689,7 +838,7 @@ public function orders(string $status, int $limit = 25): array
 | Parameter           | Type                            | Purpose                                                                 |
 |---------------------|---------------------------------|--------------------------------------------------------------------------|
 | `name`              | `?string`                       | The argument name, when it should differ from the parameter name.        |
-| `type`              | `?string`                       | The GraphQL type. Required for a class no type mapper handles.           |
+| `type`              | `?string`                       | The GraphQL type. Required for a class no type mapper handles; rejected on an `#[Input]` parameter. |
 | `rules`             | `array\|Closure\|null`          | Validation rules, evaluated per request when a closure is given.         |
 | `description`       | `?string`                       | Surfaced in GraphiQL.                                                    |
 | `deprecationReason` | `?string`                       | Marks the argument deprecated.                                           |

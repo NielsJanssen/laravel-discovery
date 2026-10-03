@@ -95,8 +95,8 @@ describe('DiscoveredType', function () {
     });
 
     it('rejects kinds that have no adapter yet', function () {
-        expect(fn() => new DiscoveredType('Shelf', Shelf::class, TypeKind::Input)->createType(app()))
-            ->toThrow(\LogicException::class, 'Cannot build GraphQL type [Shelf] for ' . Shelf::class . ': input types are not supported yet.');
+        expect(fn() => new DiscoveredType('Shelf', Shelf::class, TypeKind::Interface)->createType(app()))
+            ->toThrow(\LogicException::class, 'Cannot build GraphQL type [Shelf] for ' . Shelf::class . ': interface types are not supported yet.');
     });
 });
 

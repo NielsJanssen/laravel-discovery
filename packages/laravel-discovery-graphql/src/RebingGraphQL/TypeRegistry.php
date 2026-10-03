@@ -20,6 +20,9 @@ final class TypeRegistry
     /** @var array<string, class-string> */
     private array $classes = [];
 
+    /** @var array<string, DiscoveredType> */
+    private array $types = [];
+
     /**
      * @param class-string $class
      */
@@ -39,6 +42,17 @@ final class TypeRegistry
 
         $this->names[$class][$kind->value] = $name;
         $this->classes[$name] = $class;
+    }
+
+    /** Keeps a discovered type's description, so a request can read the fields behind its GraphQL name. */
+    public function describe(DiscoveredType $type): void
+    {
+        $this->types[$type->name] = $type;
+    }
+
+    public function typeNamed(string $name): ?DiscoveredType
+    {
+        return $this->types[$name] ?? null;
     }
 
     /**

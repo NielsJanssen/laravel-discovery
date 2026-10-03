@@ -9,6 +9,7 @@ use Illuminate\Support\ServiceProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgsHydrator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\InputHydrator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\LaravelValidationRules;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
@@ -46,7 +47,7 @@ final class GraphQLDiscoveryServiceProvider extends ServiceProvider
             self::CONFIG => config_path('discovery-graphql.php'),
         ], 'discovery-graphql-config');
 
-        $this->app->tag([ComposedFromArgsHydrator::class], Hydrator::TAG);
+        $this->app->tag([ComposedFromArgsHydrator::class, InputHydrator::class], Hydrator::TAG);
 
         // Our validation package is a suggestion, not a requirement: without it the hook simply has
         // one fewer provider, and #[Arg(rules:)] keeps working. Mirrors how GraphQLDiscovery
