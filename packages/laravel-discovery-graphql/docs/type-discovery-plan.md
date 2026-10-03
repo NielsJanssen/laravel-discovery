@@ -1,7 +1,7 @@
 # Type discovery: implementation plan
 
-Status: Phases 0–4 are done and merged into `main`, and a simplification audit has landed on top of them (see
-[Progress](#progress) and [Simplification audit](#simplification-audit)); Phase 5, Phase 6, WP6.3 and Phase 7 remain.
+Status: Phases 0–4 are done and merged into `main`, WP5.1 is done on branch `feat/type-factory`, and a simplification audit has landed on top of them (see
+[Progress](#progress) and [Simplification audit](#simplification-audit)); the rest of Phase 5, Phase 6, WP6.3 and Phase 7 remain.
 Written 2 October 2026, against API proposal draft 3. Revised the same day after a review that verified the plan
 against the codebase and vendor code (see [Review changes](#review-changes)). Progress last updated 3 October 2026.
 
@@ -55,7 +55,7 @@ rebase-merged into `main` as one commit per WP (Phase 0 as one commit per WP ins
 | WP4.2 Eloquent models | Done | `8ea8d08` | #13 |
 | WP4.3 Batch loading | Done | `1331636` | #15 |
 | Simplification audit ([details](#simplification-audit)) | Done | Commits `fix: Keep the exists rule for closure rules on bindings` to `docs: Document the test helpers and fixture convention` (hashes pending a rewrite) | |
-| WP5.1 TypeFactory | To do | | |
+| WP5.1 TypeFactory | Done | `ef77549`, `f26b0ef`, `48c0ce3`, `f036051` (branch `feat/type-factory`) | |
 | WP5.2 TypeProvider | To do | | |
 | WP5.3 `replace: true` | To do | | |
 | WP5.4 `#[ExtendType]` | To do | | |
@@ -104,6 +104,7 @@ conflict, this list wins.
 - **WP2.3:** `Omitted` in output position, on shared `#[Type]`+`#[Input]` classes, on action parameters (use
   `#[AsArgs]`), or with a non-`Omitted::Value` default is rejected. An absent field runs no rules and no
   authorization.
+- **WP5.1:** output only: `#[Input(factory:)]` is rejected at discovery, and the input variant is left for later. `TypeContext::$declaredFields` is a `list<string>` of GraphQL names, and `TypeContext::$naming` is the type's field strategy, rebuilt from `DiscoveredType::$naming` (the persisted `#[Type(naming:)]` override). A factory field's `Field::$args` are exposed under the argument naming strategy but reach `resolve` under their declared keys. Arg `rules:` are rejected (Rebing does not validate nested field args) and arg defaults are unsupported. `#[Field(resolve:)]` and `#[Field(args:)]` on a declared member are rejected at discovery (`FieldMembers`). Factory field types are invisible to `TypeUsage` and `SchemaValidator`, so they must reference registered types. `FactoryFields` builds the definitions; duplicate names, a missing name or type, and `type:` with `of:` throw at type build.
 - **Simplification audit:** `GraphQLDiscovery` no longer holds validation, reference walking or return-type
   resolution: see `SchemaValidator`, `TypeUsage`, `ReturnTypeResolver` and `FieldMembers`. `#[Authorize]` shape rules are
   `Authorize::verify()`, `verifyOnAction()`, `verifyOnParameter()` and `verifyOnProperty()`. The WP sections below name
@@ -741,7 +742,7 @@ args are part of the batch key; already loaded relations aren't reloaded; `KeyLo
 
 ### WP5.1 TypeFactory
 
-**Status:** To do.
+**Status:** Done, `ef77549`, `f26b0ef`, `48c0ce3` and `f036051` (branch `feat/type-factory`). The two deferred refactors landed first, as their own commits: `DiscoveredArg` holds one `TypeRef` (S13) and `DiscoveredAction` holds `ClassifiedParameters`. The input variant is deferred; see Deviations.
 
 **Depends on:** WP1.1, and WP2.1 for the input variant.
 
@@ -772,7 +773,7 @@ factory args; a duplicate name rejected; factory dependencies injected.
 **Scope:**
 - `TypeProvider::types(): iterable<TypeDefinition>`, discovered by interface. Only the class name is cached.
 - `TypeDefinition`: `name`, `kind`, `class` (optional: lets inference and type resolution map a PHP class to this
-  type), `interfaces`, `description`, and `fields` (a closure taking a `TypeContext`).
+  type), `interfaces`, `description`, and `fields` (a closure taking a `TypeContext`). `TypeContext::$class` is a non-null `class-string` today; make it nullable here for class-less definitions.
 - Register through our own `afterResolving(\Rebing\GraphQL\GraphQL::class)` hook: call `addType()` and add to the
   `TypeRegistry`. Never write these to config. Add the hook in `GraphQLDiscoveryServiceProvider::register()`, not in
   `apply()`: Laravel doesn't run an `afterResolving` callback retroactively, so a hook added after something has

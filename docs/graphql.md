@@ -543,6 +543,60 @@ without `many: true`; an option that is not named or does not serialize (a closu
 is a `LogicException` naming the class, the member and the fix. Selection-aware eager loading (Rebing's
 `SelectFields`) is not supported.
 
+### Dynamic fields with a type factory
+
+When a type's fields are only known at runtime, such as a model whose attributes come from a configuration table, name a
+`TypeFactory` on the type. Its fields are added to the ones the class declares.
+
+```php
+#[Type(factory: AcmeCustomFields::class)]
+final class AcmeCustomer
+{
+    public string $name = '';
+
+    #[Ignore]
+    public array $custom = [];
+}
+
+final readonly class AcmeCustomFields implements TypeFactory
+{
+    public function __construct(private AcmeFieldDefinitions $definitions) {}
+
+    public function fields(TypeContext $context): iterable
+    {
+        foreach ($this->definitions->for($context->class) as $definition) {
+            yield new Field(
+                name: $definition->name,
+                type: 'string',
+                nullable: true,
+                args: ['format' => new Field(type: 'string', nullable: true)],
+                resolve: fn (AcmeCustomer $root, array $args): ?string => $definition->format($root->custom[$definition->name] ?? null, $args['format'] ?? null),
+            );
+        }
+    }
+}
+```
+
+- The factory is resolved from the container when Rebing builds the type, so it takes constructor dependencies. It
+  never runs during discovery, and what it yields is never written to the discovery cache: only the class name is.
+- `TypeContext` holds `name` and `class` of the type, `kind` (`Position::Output`), `naming` (the strategy for the type's
+  own fields) and `declaredFields`, the GraphQL names of the fields the class declares.
+- A factory field is a `Field` with a `name` and a `type:` (or `of:` for a list). `description`, `deprecationReason`,
+  `nullable` and `nullableItems` apply. Without `resolve`, it reads the property of an object root or the key of an array
+  root. A `resolve` closure receives `($root, array $args, $context, ResolveInfo $info)`.
+- `args` maps an arg name to a `Field` that describes it (`type:` or `of:`, `nullable`, `description`,
+  `deprecationReason`). The GraphQL name goes through the type's argument naming strategy, but `$args` arrive under the
+  keys you declared: `regionCode` is exposed as `region_code` under snake case and still read as `$args['regionCode']`.
+- A factory field types its value with a scalar, a registered class or a GraphQL type name. Discovery cannot see what a
+  factory yields, so the types it names are not registered for you: an enum or input they need must be registered
+  elsewhere.
+
+**Errors.** A factory that is not a class implementing `TypeFactory`, and `#[Input(factory:)]` (factories only add
+fields to output types for now), fail at discovery. `#[Field(resolve:)]` or `#[Field(args:)]` on a declared member does
+too, since only a factory field can set them. At build time a field that repeats a declared name, lacks a name or type,
+or sets both `type:` and `of:` is a `LogicException`, as is an arg with `rules:`: Rebing does not validate the args of
+nested fields.
+
 ## Enums
 
 Any PHP enum, backed or not, becomes a GraphQL enum as soon as a query, a mutation, a `#[Type]` field or an argument
