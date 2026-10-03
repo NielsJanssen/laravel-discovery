@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery;
 
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredExtension;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredTypeField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
@@ -59,24 +61,42 @@ final class TypeUsage
         $position = $type->kind === TypeKind::Input ? Position::Input : Position::Output;
 
         foreach ($type->fields as $field) {
-            $member = "Field {$type->name}.{$field->name}";
-
-            if (self::refers($field->type)) {
-                yield new TypeReference($field->type, $position, $member, 'Field');
-            }
-
-            foreach ($field->parameters->args as $arg) {
-                $ref = $arg->type;
-
-                if (self::refers($ref)) {
-                    yield new TypeReference($ref, Position::Input, "Argument {$arg->name} of " . lcfirst($member), 'Arg');
-                }
+            if ($field->host === null) {
+                yield from self::ofField($field, $position, "Field {$type->name}.{$field->name}");
             }
         }
     }
 
     /**
-     * Every reference of the actions among the items, then of the given types.
+     * The references of the fields an #[TypeExtension] contributor adds, matched to a type or not.
+     *
+     * @return iterable<TypeReference>
+     */
+    public function ofExtension(DiscoveredExtension $extension): iterable
+    {
+        foreach ($extension->fields as $field) {
+            yield from self::ofField($field, Position::Output, "Method {$field->member()}");
+        }
+    }
+
+    /**
+     * @return iterable<TypeReference>
+     */
+    private static function ofField(DiscoveredTypeField $field, Position $position, string $member): iterable
+    {
+        if (self::refers($field->type)) {
+            yield new TypeReference($field->type, $position, $member, 'Field');
+        }
+
+        foreach ($field->parameters->args as $arg) {
+            if (self::refers($arg->type)) {
+                yield new TypeReference($arg->type, Position::Input, "Argument {$arg->name} of " . lcfirst($member), 'Arg');
+            }
+        }
+    }
+
+    /**
+     * Every reference of the actions and contributors among the items, then of the given types.
      *
      * @param  iterable<DiscoveredType>  $types
      * @return iterable<TypeReference>
@@ -86,6 +106,8 @@ final class TypeUsage
         foreach ($items as $item) {
             if ($item instanceof DiscoveredAction) {
                 yield from $this->ofAction($item);
+            } elseif ($item instanceof DiscoveredExtension) {
+                yield from $this->ofExtension($item);
             }
         }
 

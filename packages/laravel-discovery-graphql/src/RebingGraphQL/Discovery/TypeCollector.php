@@ -11,6 +11,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Action;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\ActionArgProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\ActionDecorator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\ActionTypeBuilder;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredExtension;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredTypeField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
@@ -24,14 +25,17 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\BatchLoader;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\VerifiesLoadOptions;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\FieldCase;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\NamingStrategy;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Type;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeExtension;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeFactory;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use PropertyHookType;
+use Rebing\GraphQL\Support\Field as RebingField;
 use Rebing\GraphQL\Support\Type as RebingType;
 use ReflectionClass;
 use ReflectionType;
@@ -100,6 +104,116 @@ final readonly class TypeCollector
     }
 
     /**
+     * Reads an #[TypeExtension] contributor's #[Field] methods, named and checked as the target's own fields are.
+     *
+     * @param  ClassReflector<object>  $class
+     */
+    public function contributed(ClassReflector $class, TypeExtension $extend): DiscoveredExtension
+    {
+        $label = "#[TypeExtension({$extend->type})] on {$class->getName()}";
+
+        $this->assertContributor($class);
+
+        $target = $extend->type;
+        $targetIsClass = class_exists($target) || enum_exists($target);
+        $naming = null;
+
+        if ($targetIsClass) {
+            $naming = $this->assertTargetable($label, $target);
+        }
+
+        $source = $targetIsClass ? "#[Type(naming:)] on $target" : $label;
+        $fieldNaming = $this->names->fields($naming, $source);
+        $argumentNaming = $this->names->arguments($naming, $source);
+        $fields = [];
+
+        foreach ($class->getProperties() as $property) {
+            $member = $this->includes($property) ? $this->members->member($property) : null;
+
+            if ($member?->field !== null) {
+                throw new LogicException("{$member->label} has #[Field], but a contributor adds #[Field] methods only, which take the parent object as #[Root]. Make it a method.");
+            }
+
+            $this->assertUndecorated($property);
+        }
+
+        foreach ($class->getReflection()->getMethods() as $reflection) {
+            $method = new MethodReflector($reflection);
+            $field = $this->includes($method) ? $this->methodField($class, $method, $fieldNaming, $argumentNaming, $targetIsClass ? $target : null, $class->getName()) : null;
+
+            if ($field === null) {
+                $this->assertUndecorated($method);
+            } else {
+                $fields[] = $field;
+            }
+        }
+
+        $this->members->assertUniqueNames('TypeExtension', $class->getName(), $fields);
+
+        if ($fields === [] && ! $class->is(TypeFactory::class)) {
+            throw new LogicException(sprintf('%s adds no fields. Add a #[Field] method, or implement %s.', $label, TypeFactory::class));
+        }
+
+        return new DiscoveredExtension($target, $targetIsClass, $class->getName(), $fields);
+    }
+
+    /**
+     * @param  ClassReflector<object>  $class
+     */
+    private function assertContributor(ClassReflector $class): void
+    {
+        $name = $class->getName();
+
+        if (! $class->isInstantiable()) {
+            throw new LogicException("#[TypeExtension] on $name, which cannot be instantiated: a contributor is resolved from the container. Make it a concrete class.");
+        }
+
+        foreach ([Type::class, Input::class] as $attribute) {
+            if ($class->hasAttribute($attribute)) {
+                throw new LogicException(sprintf('#[TypeExtension] on %s, which is also an #[%s]: a contributor only adds fields to the type it extends. Remove one.', $name, class_basename($attribute)));
+            }
+        }
+
+        foreach ([RebingType::class, RebingField::class] as $parent) {
+            if ($class->is($parent)) {
+                throw new LogicException("#[TypeExtension] on $name, which extends $parent: a contributor is a plain class. Remove #[TypeExtension], or stop extending $parent.");
+            }
+        }
+
+        $decorator = $class->getAttribute(FieldDecorator::class);
+
+        if ($decorator !== null && ! $this->hasActions($class)) {
+            throw new LogicException(sprintf(
+                '#[%s] on the contributor %s has nothing to apply to: on a class it only reaches #[Query] and #[Mutation] methods, never fields. Put it on each #[Field] method it should guard.',
+                class_basename($decorator::class),
+                $name,
+            ));
+        }
+    }
+
+    /**
+     * Rejects a target class that has no output fields, and gives its #[Type(naming:)].
+     *
+     * @param  class-string  $target
+     * @return FieldCase|class-string<NamingStrategy>|null
+     */
+    private function assertTargetable(string $label, string $target): FieldCase|string|null
+    {
+        $reflection = new ReflectionClass($target);
+        $type = ($reflection->getAttributes(Type::class)[0] ?? null)?->newInstance();
+
+        if ($reflection->isEnum()) {
+            Extensions::assertExtendable($label, $target, TypeKind::Enum);
+        }
+
+        if ($type === null && Input::marks($target)) {
+            Extensions::assertExtendable($label, $target, TypeKind::Input);
+        }
+
+        return $type?->naming;
+    }
+
+    /**
      * @param  ClassReflector<object>  $class
      * @return class-string<TypeFactory>|null
      */
@@ -137,7 +251,7 @@ final readonly class TypeCollector
         foreach ($class->getReflection()->getMethods() as $reflection) {
             $method = new MethodReflector($reflection);
 
-            $field = $this->includes($method) ? $this->methodField($class, $method, $fieldNaming, $argumentNaming) : null;
+            $field = $this->includes($method) ? $this->methodField($class, $method, $fieldNaming, $argumentNaming, $class->getName()) : null;
 
             if ($field === null) {
                 $this->assertUndecorated($method);
@@ -201,8 +315,10 @@ final readonly class TypeCollector
 
     /**
      * @param  ClassReflector<object>  $class
+     * @param  class-string|null  $typeClass  the class of the type the field belongs to, when known
+     * @param  class-string|null  $host  the contributor whose method resolves the field
      */
-    private function methodField(ClassReflector $class, MethodReflector $method, NamingStrategy $naming, NamingStrategy $argumentNaming): ?DiscoveredTypeField
+    private function methodField(ClassReflector $class, MethodReflector $method, NamingStrategy $naming, NamingStrategy $argumentNaming, ?string $typeClass, ?string $host = null): ?DiscoveredTypeField
     {
         $member = $this->members->member($method);
         $field = $member?->field;
@@ -232,7 +348,8 @@ final readonly class TypeCollector
             parameters: $parameters,
             description: $field->description,
             deprecationReason: $field->deprecationReason ?? DeprecationReason::from($method->getAttribute(Deprecated::class)),
-            typeClass: $class->getName(),
+            typeClass: $typeClass,
+            host: $host,
         ));
     }
 
@@ -332,7 +449,7 @@ final readonly class TypeCollector
             ), previous: $exception);
         }
 
-        if (is_a($loader, VerifiesLoadOptions::class, true)) {
+        if (is_a($loader, VerifiesLoadOptions::class, true) && ($field->host === null || $field->typeClass !== null)) {
             $loader::verifyOptions($label, $name, $field, $options);
         }
     }

@@ -104,16 +104,18 @@ final class Replacements
             $kind = TypeKind::from($kind);
 
             foreach (array_keys($replaced) as $class) {
-                yield [$class, $this->final($kind, $class), $kind];
+                yield [$class, $this->replacementOf($kind, $class), $kind];
             }
         }
     }
 
     /**
+     * The class that finally replaces a class, or the class itself.
+     *
      * @param  class-string  $class
      * @return class-string
      */
-    private function final(TypeKind $kind, string $class): string
+    public function replacementOf(TypeKind $kind, string $class): string
     {
         while (isset($this->replacers[$kind->value][$class])) {
             $class = $this->replacers[$kind->value][$class];
@@ -194,8 +196,8 @@ final class Replacements
                         $item->class,
                         $item->method,
                         $flattened->type->class,
-                        $this->final(TypeKind::Input, $flattened->type->class),
-                        $this->final(TypeKind::Input, $flattened->type->class),
+                        $this->replacementOf(TypeKind::Input, $flattened->type->class),
+                        $this->replacementOf(TypeKind::Input, $flattened->type->class),
                     ));
                 }
             }

@@ -26,11 +26,7 @@ final readonly class FactoryFields
     public function definitions(DiscoveredType $type, Position $position): array
     {
         $class = (string) $type->factory;
-        $factory = $this->app->make($class);
-
-        if (! $factory instanceof TypeFactory) {
-            throw new LogicException(sprintf('The type factory %s of %s resolves to %s, which is no %s.', $class, $type->class, get_debug_type($factory), TypeFactory::class));
-        }
+        $factory = $this->factory($class, "The type factory $class of {$type->class}");
 
         $declared = array_column($type->fields, 'name');
         $owner = new FactoryOwner(
@@ -43,6 +39,30 @@ final readonly class FactoryFields
         $context = new TypeContext($type->name, $type->class, $position, $this->names->fields($owner->naming, $owner->namingLabel), $declared);
 
         return $this->build($owner, $factory->fields($context), $declared, $position);
+    }
+
+    /**
+     * The fields of the type's #[TypeExtension] factories, each told every name the type has before it.
+     *
+     * @param  class-string|null  $class  the class of the type, which a provided type may lack
+     * @param  list<string>  $declared
+     * @return array<string, array<string, mixed>>
+     */
+    public function contributed(DiscoveredType $type, ?string $class, array $declared): array
+    {
+        $subject = $class === null ? "type [{$type->name}]" : sprintf('type [%s] (%s)', $type->name, $class);
+        $definitions = [];
+
+        foreach ($type->extensionFactories as $contributor) {
+            $owner = new FactoryOwner($type->name, "type extension $contributor", $subject, "#[Type(naming:)] on $subject", $type->naming);
+            $names = [...$declared, ...array_keys($definitions)];
+            $context = new TypeContext($type->name, $class, Position::Output, $this->names->fields($owner->naming, $owner->namingLabel), $names);
+            $fields = $this->factory($contributor, "The type extension $contributor of $subject")->fields($context);
+
+            $definitions += $this->build($owner, $fields, $names, Position::Output);
+        }
+
+        return $definitions;
     }
 
     /**
@@ -65,6 +85,13 @@ final readonly class FactoryFields
         }
 
         return $definitions;
+    }
+
+    private function factory(string $class, string $label): TypeFactory
+    {
+        $factory = $this->app->make($class);
+
+        return $factory instanceof TypeFactory ? $factory : throw new LogicException(sprintf('%s resolves to %s, which is no %s.', $label, get_debug_type($factory), TypeFactory::class));
     }
 
     /**

@@ -8,6 +8,7 @@ use Deprecated;
 use Illuminate\Foundation\Application;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\DeprecationReason;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\EnumCollector;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\Extensions;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\InputCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ParameterClassifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\Replacements;
@@ -96,6 +97,15 @@ final class GraphQLDiscovery implements Discovery
 
             $this->addType($location, $collected);
             $this->addImplicitEnums($location, $this->usage->ofType($collected));
+        }
+
+        $extend = $class->getAttribute(TypeExtension::class);
+
+        if ($extend !== null) {
+            $contributed = $this->types->contributed($class, $extend);
+
+            $this->discoveryItems->add($location, $contributed);
+            $this->addImplicitEnums($location, $this->usage->ofExtension($contributed));
         }
 
         $input = $class->getAttribute(Input::class);
@@ -210,7 +220,8 @@ final class GraphQLDiscovery implements Discovery
     public function apply(): void
     {
         $replacements = Replacements::from($this->discoveryItems);
-        $types = $this->usage->typesToRegister($this->discoveryItems, $replacements);
+        $extensions = Extensions::from($this->discoveryItems, $replacements);
+        $types = $extensions->extend($this->usage->typesToRegister($this->discoveryItems, $replacements));
 
         $this->bindSingletons($types);
         $this->registerTypes($types, $replacements);

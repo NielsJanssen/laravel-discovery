@@ -7,6 +7,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery;
 use Illuminate\Contracts\Config\Repository;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredAction;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredExtension;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredField;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
@@ -155,11 +156,13 @@ final class SchemaValidator
         }
 
         foreach ($items as $item) {
-            if (! $item instanceof DiscoveredType || $item->kind === TypeKind::Input) {
-                continue;
-            }
+            [$owner, $fields] = match (true) {
+                $item instanceof DiscoveredType && $item->kind !== TypeKind::Input => [$item->name, $item->fields],
+                $item instanceof DiscoveredExtension => [$item->target, $item->fields],
+                default => [null, []],
+            };
 
-            foreach ($item->fields as $field) {
+            foreach ($fields as $field) {
                 foreach ($field->parameters->args as $arg) {
                     $input = $inputs[trim($arg->type->target(), '[]!')] ?? null;
 
@@ -167,7 +170,7 @@ final class SchemaValidator
                         throw new LogicException(sprintf(
                             'Argument %s of field %s.%s takes the input type [%s], which fields do not support yet: field args are neither validated, hydrated nor authorized. Take scalar args instead, or move the operation to a #[Query] or #[Mutation].',
                             $arg->name,
-                            $item->name,
+                            $owner,
                             $field->name,
                             $input,
                         ));
