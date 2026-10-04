@@ -16,6 +16,24 @@ final readonly class InputAuthorization
     ) {}
 
     /**
+     * Whether one of the input objects has a model-bound field with an #[Authorize].
+     *
+     * @param  iterable<DiscoveredType>  $types
+     */
+    public static function guards(iterable $types): bool
+    {
+        foreach ($types as $type) {
+            foreach ($type->fields as $field) {
+                if (($field->binding->authorizations ?? []) !== []) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * The first #[Authorize] a bound record fails.
      *
      * @param  array<string, mixed>  $definitions  the field's args(), keyed by arg name

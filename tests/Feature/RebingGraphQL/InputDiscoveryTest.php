@@ -20,6 +20,8 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Ignore;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\InputAuthorization;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\InputObjects;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\ScalarMap;
@@ -502,6 +504,36 @@ describe('#[Authorize] on a model-bound input property', function () {
         $this->postJson('/graphql', ['query' => "mutation { reviewAll(batch: { reviews: [{ body: \"ok\", stars: 1, reviewer: {$allowed->id} }] }) }"])
             ->assertOk()
             ->assertExactJson(['data' => ['reviewAll' => 1]]);
+    });
+
+    it('guards an action only when an input it can hold, at any depth or in a list, binds an authorized record', function () {
+        $sources = [Inputs\ReviewMutation::class, Inputs\Review::class, Inputs\ReviewBatch::class, Inputs\ChapterArgQuery::class, Inputs\Chapter::class];
+        schemaSdl(...$sources);
+        $actions = discoveredActions(...$sources);
+
+        $guards = static fn(string $action): bool => InputAuthorization::guards(app(InputObjects::class)->declaredIn($actions[$action]->createType(app())->args()));
+
+        expect($guards('review'))->toBeTrue()
+            ->and($guards('reviewAll'))->toBeTrue()
+            ->and($guards('rawChapter'))->toBeFalse()
+            ->and($guards('pairedChapter'))->toBeFalse()
+            ->and($guards('reviewPing'))->toBeFalse();
+    });
+
+    it('skips the input checks of an action whose inputs guard no record', function () {
+        schemaSdl(Inputs\ReviewMutation::class, Inputs\Review::class, Inputs\ReviewBatch::class, Inputs\ChapterArgQuery::class, Inputs\Chapter::class);
+
+        $this->postJson('/graphql', ['query' => '{ rawChapter(chapter: { title: "One" }) }'])
+            ->assertOk()
+            ->assertExactJson(['data' => ['rawChapter' => 'One']]);
+
+        expect(app()->resolved(InputAuthorization::class))->toBeFalse();
+
+        $this->postJson('/graphql', ['query' => 'mutation { review(review: { body: "ok", stars: 1 }) }'])
+            ->assertOk()
+            ->assertExactJson(['data' => ['review' => 'anonymous']]);
+
+        expect(app()->resolved(InputAuthorization::class))->toBeTrue();
     });
 });
 

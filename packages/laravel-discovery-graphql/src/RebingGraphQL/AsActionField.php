@@ -50,6 +50,11 @@ trait AsActionField
         get => $this->inputAuthorization ??= $this->app->make(InputAuthorization::class);
     }
 
+    /** Whether the args can hold an input whose bound record an #[Authorize] guards, decided on first use. */
+    private bool $guardsInputs {
+        get => $this->guardsInputs ??= InputAuthorization::guards($this->inputObjects->declaredIn($this->args()));
+    }
+
     public function __construct(
         private readonly Application $app,
         private readonly DiscoveredAction $discoveredAction,
@@ -339,6 +344,10 @@ trait AsActionField
                     return $denied;
                 }
             }
+        }
+
+        if (! $this->guardsInputs) {
+            return null;
         }
 
         return $this->inputAuthorization->deniedBy($this->args(), $args, $context, $resolveInfo);
