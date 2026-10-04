@@ -16,7 +16,7 @@ use Rebing\GraphQL\GraphQL;
 #[Bench\ParamProviders('setups')]
 #[Bench\Revs(1)]
 #[Bench\Warmup(0)]
-#[Bench\Iterations(20)]
+#[Bench\Iterations(60)]
 abstract class SchemaBuild
 {
     use Setups;

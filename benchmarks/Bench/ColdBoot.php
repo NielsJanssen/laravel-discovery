@@ -21,7 +21,7 @@ abstract class ColdBoot
     #[Bench\ParamProviders('setups')]
     #[Bench\Revs(1)]
     #[Bench\Warmup(0)]
-    #[Bench\Iterations(30)]
+    #[Bench\Iterations(100)]
     public function benchBootAndQuery(array $params): void
     {
         BenchApp::execute(BenchApp::create(Setup::from($params['setup']), $this->size()), Queries::SCALAR);
