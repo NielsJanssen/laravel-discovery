@@ -30,6 +30,9 @@ trait AsActionField
     /** Whether the failed check guarded a bound model, which defaults to Authorize::DEFAULT_MESSAGE. */
     private bool $failedOnBoundModel = false;
 
+    /** @var array<string, array<string, mixed>>|null */
+    private ?array $args = null;
+
     private TypeRegistry $registry {
         get => $this->registry ??= $this->app->make(TypeRegistry::class);
     }
@@ -80,6 +83,14 @@ trait AsActionField
     }
 
     public function args(): array
+    {
+        return $this->args ??= $this->buildArgs();
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function buildArgs(): array
     {
         $args = [];
         $registry = $this->registry;

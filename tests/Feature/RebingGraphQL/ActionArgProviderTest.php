@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
+use Closure;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Pagination;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Query;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Sort;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Sortable;
 use Tests\Fixtures\RebingGraphQL\DuplicateArgProviderQuery;
+use Tests\Fixtures\RebingGraphQL\Enums\MoodRuleQuery;
 use Tests\Fixtures\RebingGraphQL\PaginatedActions;
 use Tests\Fixtures\RebingGraphQL\SortableQueries;
 
@@ -25,6 +27,26 @@ describe('ActionArgProvider hook', function () {
             ->and((string) $fieldArgs['page']['type'])->toBe('Int')
             ->and($fieldArgs['page']['defaultValue'])->toBe(1)
             ->and($fieldArgs['limit']['defaultValue'])->toBe(20);
+    });
+
+    it('keeps the provided args on every read of a field, and each field its own', function () {
+        $actions = discoveredActions(PaginatedActions::class);
+        $field = $actions['valueObject']->createType(app());
+        $other = $actions['customLimit']->createType(app());
+
+        expect($field->args())->toBe($field->args())
+            ->and($field->args())->toHaveKeys(['page', 'limit'])
+            ->and($field->args()['limit']['defaultValue'])->toBe(20)
+            ->and($other->args()['limit']['defaultValue'])->toBe(50)
+            ->and($field->args()['limit']['defaultValue'])->toBe(20);
+    });
+
+    it('builds a field\'s args once, so an #[Arg] rule closure is read once', function () {
+        schemaSdl(MoodRuleQuery::class);
+        $field = discoveredActions(MoodRuleQuery::class)['calmOnly']->createType(app());
+
+        expect($field->args()['mood']['rules'])->toBeInstanceOf(Closure::class)
+            ->toBe($field->args()['mood']['rules']);
     });
 
     it('honours a configurable defaultLimit on #[Paginated]', function () {
