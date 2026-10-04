@@ -22,7 +22,7 @@ final class Php
     }
 
     /**
-     * This process's values of the benchmark ini settings, so a child process runs as its parent does.
+     * This process's values of the benchmark ini settings.
      *
      * @return array<string, string>
      */
