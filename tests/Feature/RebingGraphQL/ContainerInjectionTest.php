@@ -4,9 +4,16 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
+use ReflectionProperty;
 use Tests\Fixtures\RebingGraphQL\ContainerInjectionQuery;
 use Tests\Fixtures\RebingGraphQL\ContainerService;
 use Workbench\App\Models\User;
+
+/** Reads the memoised decision, so a test fails when the fallback is taken for a fully mapped method. */
+function callsDirectly(object $field): bool
+{
+    return (bool) new ReflectionProperty($field, 'callsDirectly')->getValue($field);
+}
 
 describe('container injection of resolve parameters', function () {
     it('records class-typed unattributed parameters as container injections during discovery', function () {
@@ -50,5 +57,52 @@ describe('Laravel ContextualAttribute injection via $container->call()', functio
         $this->postJson('/graphql', ['query' => '{ currentUser }'])
             ->assertOk()
             ->assertJsonPath('data.currentUser', 'TestApp:guest');
+    });
+});
+
+describe('calling the action method', function () {
+    it('calls a method straight when resolve() maps every parameter', function () {
+        $field = discoveredActions(ContainerInjectionQuery::class)['mapped']->createType(app());
+
+        expect($field->resolve('parent', ['name' => 'Ada'], null, null))->toBe('Ada:parent')
+            ->and(callsDirectly($field))->toBeTrue();
+    });
+
+    it('leaves a parameter resolve() does not map to the container', function () {
+        $actions = discoveredActions(ContainerInjectionQuery::class);
+        $injected = $actions['resolve']->createType(app());
+        $signedIn = $actions['signedIn']->createType(app());
+
+        $this->actingAs(new User(['email' => 'ada@example.com']));
+
+        expect($injected->resolve(null, ['name' => 'Niels'], null, null))->toBe('Niels!')
+            ->and($signedIn->resolve(null, ['greeting' => 'Hi'], null, null))->toBe('Hi, ada@example.com')
+            ->and(callsDirectly($injected))->toBeFalse()
+            ->and(callsDirectly($signedIn))->toBeFalse();
+    });
+
+    it('honours a method binding', function () {
+        $field = discoveredActions(ContainerInjectionQuery::class)['mapped']->createType(app());
+
+        app()->bindMethod(ContainerInjectionQuery::class . '@mapped', static fn(ContainerInjectionQuery $query): string => 'bound');
+
+        expect($field->resolve(null, ['name' => 'Ada'], null, null))->toBe('bound');
+    });
+
+    it('honours a method binding on the class the container resolves the host to', function () {
+        $field = discoveredActions(ContainerInjectionQuery::class)['mapped']->createType(app());
+        $subclass = new class extends ContainerInjectionQuery {};
+
+        app()->instance(ContainerInjectionQuery::class, $subclass);
+        app()->bindMethod($subclass::class . '@mapped', static fn(ContainerInjectionQuery $query): string => 'bound on the subclass');
+
+        expect($field->resolve(null, ['name' => 'Ada'], null, null))->toBe('bound on the subclass');
+    });
+
+    it('passes a variadic parameter its value as the container does', function () {
+        $field = discoveredActions(ContainerInjectionQuery::class)['joined']->createType(app());
+
+        expect($field->resolve(null, ['parts' => 'a'], null, null))->toBe('0=a')
+            ->and(callsDirectly($field))->toBeFalse();
     });
 });
