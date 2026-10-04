@@ -1,10 +1,10 @@
 # Type discovery: implementation plan
 
-Status: Phases 0–4, the simplification audit and WP5.1–5.3 are done and merged into `main`, and WP5.4 is done on branch
-`feat/type-extension` (see [Progress](#progress) and [Simplification audit](#simplification-audit)); WP5.5, Phase 6, WP6.3
-and Phase 7 remain.
+Status: Phases 0–4, the simplification audit and WP5.1–5.4 are done and merged into `main`, and WP5.5 is done on
+branch `feat/schema-scoped-types` (see [Progress](#progress) and [Simplification audit](#simplification-audit));
+Phase 6, WP6.3 and Phase 7 remain.
 Written 2 October 2026, against API proposal draft 3. Revised the same day after a review that verified the plan
-against the codebase and vendor code (see [Review changes](#review-changes)). Progress last updated 3 October 2026.
+against the codebase and vendor code (see [Review changes](#review-changes)). Progress last updated 4 October 2026.
 
 This plan implements attribute-based discovery of GraphQL object types, input types, enums, interfaces and unions
 for `nielsjanssen/laravel-discovery-graphql`. Classes become types, and queries and mutations infer their types from
@@ -59,8 +59,8 @@ rebase-merged into `main` as one commit per WP (Phase 0 as one commit per WP ins
 | WP5.1 TypeFactory | Done | `479da11`, `64c6ac0`, `cf1b77d`, `9510728`, docs `a5103c1` | #22 |
 | WP5.2 TypeProvider | Done | `7377c24`, `c84e945`, `623efd1`, docs `0122439` | #23 |
 | WP5.3 `replace: true` | Done | `f17bbe2`, docs `aba5376` | #24 |
-| WP5.4 `#[TypeExtension]` | Done | `bec8053`, `9a29cae`, docs (branch `feat/type-extension`) | |
-| WP5.5 Schema-scoped types | To do (added during implementation) | | |
+| WP5.4 `#[TypeExtension]` | Done | `70a424b`, `10b0201`, docs `eabc2a7` | #25 |
+| WP5.5 Schema-scoped types | Done (added during implementation) | branch `feat/schema-scoped-types` | |
 | WP6.1 Interfaces | To do (low priority) | | |
 | WP6.2 Unions | To do (low priority) | | |
 | WP6.3 Validation adapter contract | To do (added during implementation) | | |
@@ -126,6 +126,26 @@ conflict, this list wins.
   class-level field decorator on a contributor. A clash with a factory field fails at type build, as in WP5.1.
   `#[TypeExtension]` is not repeatable. Discovery items cached before WP5.4 do not unserialize
   (`DiscoveredType::$extensionFactories`).
+- **WP5.5:** on by default through `discovery.graphql.scoped_schemas` (the plan asked for no behaviour change; the
+  maintainer chose scoping as the default, and `false` restores Rebing's behaviour); the first `schema:` does not
+  switch it on. `Discovery/SchemaScopes` walks `TypeUsage` references at `apply()` from each
+  schema's actions and placed types, including contributed fields (`ofType(contributed: true)`) and the contributors of
+  provided types, and stores `name or class => schema => [referrer, origin]` in `TypeRegistry`. Types that no action
+  reaches and no `schema:` places are global, and what they reference is reached from every schema (`*`). Nothing is
+  written to config: discovered types stay in `graphql.types`, and the reach is recomputed on every boot, so cached
+  config needs nothing new. Placement is `schema:` (one name or a list) on `#[Type]`, `#[Enum]` and `TypeDefinition`,
+  not on `#[Input]` and not class-level `#[Schema]`; it is stored as `DiscoveredType::$schemas`, and a replacement
+  inherits its parent's unless it sets its own. Isolation is `ScopedGraphQL` (the `ScopesSchemaTypes` trait), bound
+  with `extend()` only while the flag is on. It overrides `schema()` as well as `buildSchemaFromConfig()`, because only
+  `schema()` knows the schema name; it filters the parent's `types` list (keeping its order, so a single schema prints
+  byte-identically) and wraps its `typeLoader`, which falls back to the schema's own type map for denied names, so a
+  reference discovery cannot see leaks at worst and never breaks. The `types` list also keeps every object type that
+  implements an interface the schema lists, since webonyx finds implementations only there. Every
+  `graphql.schemas.<x>.types` key is registered on the first `schema()` call and scoped to `<x>`. The plan's one
+  cross-schema rule became five `LogicException`s: a placed type reached from another schema (rule 1) or from a global
+  type (rule 2), an unknown schema name (checked first, so a typo is not reported as a placement) and `schema:` with
+  the flag off, all at `apply()`, and the same checks for a provided type from the provider hook
+  (rule 5); a foreign `GraphQL` subclass without the trait is rejected when it resolves.
 - **Simplification audit:** `GraphQLDiscovery` no longer holds validation, reference walking or return-type
   resolution: see `SchemaValidator`, `TypeUsage`, `ReturnTypeResolver` and `FieldMembers`. `#[Authorize]` shape rules are
   `Authorize::verify()`, `verifyOnAction()`, `verifyOnParameter()` and `verifyOnProperty()`. The WP sections below name
@@ -140,6 +160,18 @@ conflict, this list wins.
 - A Rebing type that only exists in `graphql.types` config is silently overwritten by a discovered type with the same
   name (suggested as a separate task, not yet done).
 - `CLAUDE.md`'s GraphQL section and the docs split are part of Phase 7.
+- Rebing's `GraphQL::schema()` clears its type instances whenever it builds a new schema, so a schema built earlier
+  meets a second instance of a type it shares with the later one, and webonyx throws "Schema must contain unique
+  named types" (a long-running process that serves two schemas sharing a type is affected). `ScopesSchemaTypes`
+  overrides `clearTypeInstances()` as a no-op, and `addType()` drops the kept instance of a name it points at another
+  class, so it is fixed while scoping is on. With `scoped_schemas` off, or a custom `GraphQL` subclass without the
+  trait, Rebing's behaviour remains. Report upstream: each schema should keep its own instances rather than clear a
+  shared cache.
+- The release notes must say that `discovery.graphql.scoped_schemas` is on by default: with several schemas, types
+  only other schemas reach disappear from a schema's introspection, and an application that binds its own subclass of
+  Rebing's `GraphQL` must use `ScopesSchemaTypes` or set the flag to `false`.
+- `DiscoveredType::$schemas` changes the cached DTO shape: discovery items cached before WP5.5 do not unserialize, so
+  the release notes must say to run `discovery:clear` after upgrading.
 
 ## Simplification audit
 
@@ -833,7 +865,8 @@ rejections.
 
 ### WP5.4 `#[TypeExtension]` contributors
 
-**Status:** Done, `bec8053` (discovered types), `9a29cae` (provided types) and the docs commit (branch `feat/type-extension`). See [Deviations](#deviations-from-this-plan).
+**Status:** Done, `70a424b` (discovered types), `10b0201` (provided types) and docs `eabc2a7` (#25). See
+[Deviations](#deviations-from-this-plan).
 
 **Depends on:** WP1.1, WP0.1, and WP5.1 for factory contributors.
 
@@ -852,7 +885,8 @@ targeting an input.
 
 ### WP5.5 Schema-scoped types
 
-**Status:** To do.
+**Status:** Done on branch `feat/schema-scoped-types`, on by default through `discovery.graphql.scoped_schemas`. See
+[Deviations](#deviations-from-this-plan).
 
 **Depends on:** WP5.1–5.4, which decide which types exist and under which name. Scheduled after the current tracks,
 by request.
