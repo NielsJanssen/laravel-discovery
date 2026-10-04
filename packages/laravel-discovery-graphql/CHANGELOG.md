@@ -1,6 +1,66 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [1.0.0-rc.3] - 2026-10-04
+
+### Bug Fixes
+
+- Make type builder fields non-null unless nullable
+- Resolve TypeRegistry as a singleton without its provider
+- Keep the exists rule for closure rules on bindings
+- Cache implicit enums after discovery was applied
+
+### Documentation
+
+- Document TypeFactory and record WP5.1
+- Document TypeProvider in the guide and plan
+- Document replacing types
+- Document extending types and record it in the plan
+- Document schema-scoped types and record them
+
+### Features
+
+- Add defaultField option for Sort attribute
+- Accept class-string and of: on Query and Mutation
+- Register Rebing and discovered types in graphql.types
+- Discover object types from #[Type] classes
+- Infer query and mutation types from #[Type] returns
+- Discover PHP enums as GraphQL enum types
+- Authorize type fields through FieldDecorator
+- Expose Eloquent models as types via hooked properties
+- Add TypeMapper hooks and a configurable scalar map
+- Batch-load type fields with #[Load] and #[Relation]
+- Discover #[Input] classes as inferred input args
+- Flatten #[Input] classes into args with #[AsArgs]
+- Configure field, argument and operation naming
+- Support partial updates with Omitted input fields
+- Add TypeFactory fields to discovered types
+- Support resolvers and args on factory fields
+- Add TypeProvider for output and input types
+- Map classes to provided types, defer the class check
+- Replace a discovered type with a subclass
+- Add fields to a discovered type with #[TypeExtension]
+- Extend provided types with #[TypeExtension]
+- [**breaking**] Scope each GraphQL schema to its own types
+
+### Performance
+
+- Resolve action field services once per field
+- Skip input checks when no input guards a record
+- Build an action field's args once
+- Plan input hydration once per class
+- Call an action straight when its args fill it
+- Read an input field's declared rules once
+
+### Refactoring
+
+- Extract ParameterClassifier from GraphQLDiscovery
+- Share member reading and rule handling
+- Split GraphQLDiscovery into focused classes
+- Hold a single TypeRef on DiscoveredArg
+- Hold ClassifiedParameters on DiscoveredAction
+- Let FactoryFields build fields for any type owner
+
 ## [1.0.0-rc.2] - 2026-09-12
 
 ### Features
