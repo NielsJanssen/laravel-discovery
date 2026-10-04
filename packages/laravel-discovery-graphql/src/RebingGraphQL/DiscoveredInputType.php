@@ -18,6 +18,9 @@ final class DiscoveredInputType extends RebingInputType
     /** @var array{0: array<string, mixed>, 1: array<string, list<mixed>>}|null the provided rules of the last values, matched by value equality */
     private ?array $provided = null;
 
+    /** @var array<string, array<int|string, mixed>|Closure> the #[Field(rules:)] of each property, keyed by `Class::property` */
+    private static array $declared = [];
+
     public function __construct(
         private readonly Application $app,
         private readonly DiscoveredType $discoveredType,
@@ -165,6 +168,15 @@ final class DiscoveredInputType extends RebingInputType
      * @return array<int|string, mixed>|Closure
      */
     private static function declaredRules(string $class, string $property): array|Closure
+    {
+        return self::$declared["$class::$property"] ??= self::readDeclaredRules($class, $property);
+    }
+
+    /**
+     * @param  class-string  $class
+     * @return array<int|string, mixed>|Closure
+     */
+    private static function readDeclaredRules(string $class, string $property): array|Closure
     {
         $field = (new ReflectionProperty($class, $property)->getAttributes(Field::class)[0] ?? null)?->newInstance();
 
