@@ -162,7 +162,7 @@ final class TypeUsage
     }
 
     /**
-     * The enum classes among the references that no registry and no item covers yet.
+     * The enum classes among the references that no item covers yet.
      *
      * @param  iterable<TypeReference>  $references
      * @return list<class-string>
@@ -174,7 +174,7 @@ final class TypeUsage
         foreach ($references as $reference) {
             $class = $reference->ref->class;
 
-            if ($class === null || ! enum_exists($class) || isset($missing[$class]) || $this->registry->has($class) || $this->hasTypeFor($items, $class)) {
+            if ($class === null || ! enum_exists($class) || isset($missing[$class]) || $this->hasTypeFor($items, $class)) {
                 continue;
             }
 
