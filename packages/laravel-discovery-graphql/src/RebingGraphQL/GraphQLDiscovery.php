@@ -13,6 +13,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\InputCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ParameterClassifier;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\Replacements;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\ReturnTypeResolver;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\SchemaScopes;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\SchemaValidator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeReference;
@@ -43,6 +44,7 @@ final class GraphQLDiscovery implements Discovery
         private readonly SchemaValidator $validator,
         private readonly TypeUsage $usage,
         private readonly ReturnTypeResolver $returns,
+        private readonly SchemaScopes $scopes,
     ) {}
 
     /**
@@ -232,6 +234,8 @@ final class GraphQLDiscovery implements Discovery
         if (! $this->app->configurationIsCached()) {
             $this->writeConfig($types);
         }
+
+        $this->scopes->apply($this->discoveryItems, $types, $extensions->deferred());
     }
 
     /**

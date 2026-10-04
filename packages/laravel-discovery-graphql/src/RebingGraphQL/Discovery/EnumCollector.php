@@ -53,6 +53,7 @@ final readonly class EnumCollector
             description: $enum?->description,
             values: $values,
             implicit: $implicit,
+            schemas: (array) $enum?->schema,
         );
     }
 }

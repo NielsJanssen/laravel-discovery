@@ -27,4 +27,10 @@ return [
         'arguments' => FieldCase::Preserve,
         'operations' => FieldCase::Preserve,
     ],
+
+    /*
+     * Limit each schema to the types its own actions reach, the types placed in it with schema:, and the global ones.
+     * Set it to false to list every registered type in every schema, as Rebing does.
+     */
+    'scoped_schemas' => true,
 ];

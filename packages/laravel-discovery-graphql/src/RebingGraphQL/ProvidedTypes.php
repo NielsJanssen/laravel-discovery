@@ -8,6 +8,7 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Foundation\Application;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\Extensions;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\SchemaScopes;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\SchemaValidator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
 use Rebing\GraphQL\GraphQL;
@@ -25,6 +26,7 @@ final readonly class ProvidedTypes
         private ObjectFields $objects,
         private Naming $names,
         private SchemaValidator $validator,
+        private SchemaScopes $scopes,
     ) {}
 
     public function register(GraphQL $graphQL): void
@@ -93,6 +95,7 @@ final readonly class ProvidedTypes
             $fields->extend(Extensions::merge($shell, $extensions, $definition->class, $fields->sources()));
         }
 
+        $this->scopes->provide($provider, $definition);
         $graphQL->addType($definition->kind === Position::Input ? new ProvidedInputType($fields) : new ProvidedObjectType($fields), $definition->name);
     }
 

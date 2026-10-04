@@ -23,6 +23,7 @@ class DiscoveredType
      * @param  bool  $implicit  registered because something references it, not by its own attribute
      * @param  FieldCase|class-string<NamingStrategy>|null  $naming  the override of #[Type(naming:)], kept for a factory
      * @param  list<class-string<TypeFactory>>  $extensionFactories  the #[TypeExtension] contributors that are type factories, set at apply()
+     * @param  list<string>  $schemas  the schemas of #[Type(schema:)] or #[Enum(schema:)]
      */
     public function __construct(
         public string $name,
@@ -37,6 +38,7 @@ class DiscoveredType
         public bool $implicit = false,
         public FieldCase|string|null $naming = null,
         public array $extensionFactories = [],
+        public array $schemas = [],
     ) {}
 
     public function createType(Application $app): RebingType

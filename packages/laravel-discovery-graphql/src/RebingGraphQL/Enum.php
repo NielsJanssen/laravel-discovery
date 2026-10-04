@@ -10,8 +10,12 @@ use Attribute;
 #[Attribute(Attribute::TARGET_CLASS)]
 final readonly class Enum
 {
+    /**
+     * @param  string|list<string>|null  $schema  the only schemas the enum may appear in; needs discovery.graphql.scoped_schemas
+     */
     public function __construct(
         public ?string $name = null,
         public ?string $description = null,
+        public string|array|null $schema = null,
     ) {}
 }

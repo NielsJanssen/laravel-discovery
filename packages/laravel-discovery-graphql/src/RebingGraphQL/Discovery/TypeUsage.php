@@ -52,16 +52,16 @@ final class TypeUsage
     }
 
     /**
-     * The references of a type's fields and their args.
+     * The references of a type's fields and their args, with the fields #[TypeExtension] contributors add when $contributed.
      *
      * @return iterable<TypeReference>
      */
-    public function ofType(DiscoveredType $type): iterable
+    public function ofType(DiscoveredType $type, bool $contributed = false): iterable
     {
         $position = $type->kind === TypeKind::Input ? Position::Input : Position::Output;
 
         foreach ($type->fields as $field) {
-            if ($field->host === null) {
+            if ($field->host === null || $contributed) {
                 yield from self::ofField($field, $position, "Field {$type->name}.{$field->name}");
             }
         }
