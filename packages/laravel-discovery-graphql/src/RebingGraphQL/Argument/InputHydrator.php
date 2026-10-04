@@ -18,11 +18,19 @@ use ReflectionProperty;
 use RuntimeException;
 use UnitEnum;
 
-/** Builds #[Input] classes from their values, keyed by property name. */
+/**
+ * Builds #[Input] classes from their values, keyed by property name.
+ *
+ * @phpstan-type PropertyPlan array{property: ReflectionProperty, takesNull: bool, class: class-string|null, nullable: bool, of: class-string|null}
+ * @phpstan-type ClassPlan array{reflection: ReflectionClass<object>, properties: array<string, PropertyPlan>, constructor: array<string, bool>}
+ */
 final class InputHydrator implements Hydrator
 {
     /** @var array<class-string, bool> */
     private array $inputs = [];
+
+    /** @var array<class-string, ClassPlan> */
+    private array $plans = [];
 
     public function __construct(
         private readonly Container $container,
@@ -38,18 +46,18 @@ final class InputHydrator implements Hydrator
      */
     public function hydrate(string $class, array $args): object
     {
-        $reflection = new ReflectionClass($class);
+        $plan = $this->plans[$class] ??= $this->plan($class);
         $values = [];
 
         foreach ($args as $name => $value) {
-            if (! $reflection->hasProperty($name)) {
+            $property = $plan['properties'][$name] ?? null;
+
+            if ($property === null) {
                 continue;
             }
 
-            $property = $reflection->getProperty($name);
-
             // An explicit null for a property that takes none leaves its default in place.
-            if ($value === null && ! ($property->getType()?->allowsNull() ?? true)) {
+            if ($value === null && ! $property['takesNull']) {
                 continue;
             }
 
@@ -58,44 +66,74 @@ final class InputHydrator implements Hydrator
 
         $arguments = [];
 
-        foreach ($reflection->getConstructor()?->getParameters() ?? [] as $parameter) {
-            $name = $parameter->getName();
-
+        foreach ($plan['constructor'] as $name => $defaultsToNull) {
             if (array_key_exists($name, $values)) {
                 $arguments[$name] = $values[$name];
                 unset($values[$name]);
-            } elseif (! $parameter->isDefaultValueAvailable() && $parameter->allowsNull()) {
+            } elseif ($defaultsToNull) {
                 $arguments[$name] = null;
             }
         }
 
-        $object = $reflection->newInstanceArgs($arguments);
+        $object = $plan['reflection']->newInstanceArgs($arguments);
 
         foreach ($values as $name => $value) {
-            $reflection->getProperty($name)->setValue($object, $value);
+            $plan['properties'][$name]['property']->setValue($object, $value);
         }
 
         return $object;
     }
 
-    private function convert(ReflectionProperty $property, mixed $value): mixed
+    /**
+     * @param  class-string  $class
+     * @return ClassPlan
+     */
+    private function plan(string $class): array
     {
-        $type = $property->getType();
-        $omittable = OmittableType::of($type);
-        $nullable = $omittable === null ? ($type?->allowsNull() ?? true) : $omittable->allowsNull;
-        $type = $omittable === null ? $type : $omittable->inner;
+        $reflection = new ReflectionClass($class);
+        $properties = [];
 
+        foreach ($reflection->getProperties() as $property) {
+            $type = $property->getType();
+            $omittable = OmittableType::of($type);
+            $inner = $omittable === null ? $type : $omittable->inner;
+            $target = $inner instanceof ReflectionNamedType && class_exists($inner->getName()) ? $inner->getName() : null;
+            $of = $target === null ? ($property->getAttributes(Field::class)[0] ?? null)?->newInstance()->of : null;
+
+            $properties[$property->getName()] = [
+                'property' => $property,
+                'takesNull' => $type?->allowsNull() ?? true,
+                'class' => $target,
+                'nullable' => $omittable === null ? ($type?->allowsNull() ?? true) : $omittable->allowsNull,
+                'of' => $of !== null && (class_exists($of) || enum_exists($of)) ? $of : null,
+            ];
+        }
+
+        $constructor = [];
+
+        foreach ($reflection->getConstructor()?->getParameters() ?? [] as $parameter) {
+            $constructor[$parameter->getName()] = ! $parameter->isDefaultValueAvailable() && $parameter->allowsNull();
+        }
+
+        return ['reflection' => $reflection, 'properties' => $properties, 'constructor' => $constructor];
+    }
+
+    /**
+     * @param  PropertyPlan  $property
+     */
+    private function convert(array $property, mixed $value): mixed
+    {
         if ($value === null) {
             return null;
         }
 
-        if ($type instanceof ReflectionNamedType && class_exists($type->getName())) {
-            return $this->convertTo($type->getName(), $value, $nullable);
+        if ($property['class'] !== null) {
+            return $this->convertTo($property['class'], $value, $property['nullable']);
         }
 
-        $of = ($property->getAttributes(Field::class)[0] ?? null)?->newInstance()->of;
+        $of = $property['of'];
 
-        if ($of === null || ! is_array($value) || ! (class_exists($of) || enum_exists($of))) {
+        if ($of === null || ! is_array($value)) {
             return $value;
         }
 

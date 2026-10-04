@@ -538,6 +538,15 @@ describe('hydration without a request', function () {
         expect($hydrator->hydrate(Partial\RetagBook::class, ['tone' => 'Light', 'pages' => null]))
             ->toEqual(new Partial\RetagBook(tone: Partial\Tone::Light));
     });
+
+    it('keeps each hydration of the same class to its own values', function () {
+        $hydrator = new InputHydrator(app());
+
+        expect($hydrator->hydrate(Partial\RetagBook::class, ['pages' => 3, 'note' => null]))
+            ->toEqual(new Partial\RetagBook(note: null, pages: 3))
+            ->and($hydrator->hydrate(Partial\RetagBook::class, ['tone' => 'Dark']))
+            ->toEqual(new Partial\RetagBook(tone: Partial\Tone::Dark));
+    });
 });
 
 describe('rejected shapes', function () {
