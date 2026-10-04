@@ -66,7 +66,7 @@ final class Guard
         return $this->failures;
     }
 
-    /** The SDL with types sorted and the root fields sorted, since discovery registers operations in file system order. */
+    /** The SDL with its types and its root fields sorted. */
     public static function normalisedSdl(Application $app): string
     {
         $blocks = explode("\n\n", SchemaPrinter::doPrint(BenchApp::graphql($app)->schema(), ['sortTypes' => true]));
