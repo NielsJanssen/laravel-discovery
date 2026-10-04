@@ -138,6 +138,7 @@ final class Replacements
         return $this->effective[$id] = clone($item, [
             'name' => $inherited->name,
             'description' => $item->description ?? $inherited->description,
+            'schemas' => $item->schemas !== [] ? $item->schemas : $inherited->schemas,
         ]);
     }
 

@@ -100,6 +100,7 @@ final readonly class TypeCollector
             factory: $this->factory($class, $type),
             naming: $type->naming,
             replace: $type->replace,
+            schemas: (array) $type->schema,
         );
     }
 

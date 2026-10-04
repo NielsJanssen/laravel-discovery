@@ -8,6 +8,7 @@ use GraphQL\Type\Definition\NullableType;
 use GraphQL\Type\Definition\Type as GraphQLType;
 use Illuminate\Container\Attributes\Singleton;
 use LogicException;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\SchemaScopes;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeReference;
 use Rebing\GraphQL\Support\Facades\GraphQL;
 use RuntimeException;
@@ -35,6 +36,12 @@ final class TypeRegistry
 
     /** @var list<DiscoveredExtension> the #[TypeExtension] contributors to attach once the providers have registered their types */
     private array $deferredExtensions = [];
+
+    /** @var array<string, array<string, array{0: TypeReference|null, 1: string}>> per GraphQL name or class: the referrer and origin by which each schema reaches it */
+    private array $reach = [];
+
+    /** @var array<string, list<string>> the schemas a type is placed in with schema:, keyed by GraphQL name */
+    private array $placements = [];
 
     /**
      * @param class-string $class
@@ -136,6 +143,58 @@ final class TypeRegistry
     public function deferredExtensions(): array
     {
         return $this->deferredExtensions;
+    }
+
+    /**
+     * @param  array<string, array<string, array{0: TypeReference|null, 1: string}>>  $reach
+     * @param  array<string, list<string>>  $placements
+     */
+    public function scope(array $reach, array $placements): void
+    {
+        $this->reach = $reach;
+        $this->placements = $placements;
+    }
+
+    /**
+     * @param  list<string>  $schemas
+     */
+    public function place(string $name, array $schemas): void
+    {
+        $this->placements[$name] = $schemas;
+    }
+
+    /** Files what reaches a provided type's class under its GraphQL name. */
+    public function adopt(string $name, ?string $class): void
+    {
+        if ($class !== null && isset($this->reach[$class])) {
+            $this->reach[$name] = [...$this->reach[$class], ...$this->reach[$name] ?? []];
+        }
+    }
+
+    /**
+     * @return array<string, array{0: TypeReference|null, 1: string}>  the referrer and origin by which each schema reaches the type
+     */
+    public function reachOf(string $name): array
+    {
+        return $this->reach[$name] ?? [];
+    }
+
+    /** Whether an action of the schema reaches the type, directly or through a type every schema lists. */
+    public function reaches(string $schema, string $name): bool
+    {
+        return isset($this->reach[$name][$schema]) || isset($this->reach[$name][SchemaScopes::EVERY]);
+    }
+
+    /** Whether the schema lists the type: a placed type in its schemas, a reached type where it is reached, any other type everywhere. */
+    public function allows(string $schema, string $name): bool
+    {
+        $placed = $this->placements[$name] ?? null;
+
+        if ($placed !== null) {
+            return in_array($schema, $placed, true);
+        }
+
+        return ! isset($this->reach[$name]) || $this->reaches($schema, $name);
     }
 
     public function typeNamed(string $name): ?DiscoveredType

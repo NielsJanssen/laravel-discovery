@@ -6,6 +6,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use Illuminate\Contracts\Foundation\CachesConfiguration;
 use Illuminate\Support\ServiceProvider;
+use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ComposedFromArgsHydrator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\Hydrator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
@@ -13,6 +14,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\InputHydrator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\LaravelValidationRules;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\SchemaScopes;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\Loaders;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Loading\LoadersExecutionMiddleware;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\ScalarMap;
@@ -59,6 +61,7 @@ final class GraphQLDiscoveryServiceProvider extends ServiceProvider
         }
 
         $this->app->singleton(TypeRegistry::class);
+        $this->app->extend(GraphQL::class, fn(GraphQL $graphQL): GraphQL => $this->scoped($graphQL));
         $this->app->afterResolving(GraphQL::class, fn(GraphQL $graphQL) => $this->app->make(ProvidedTypes::class)->register($graphQL));
         $this->app->singleton(Naming::class);
 
@@ -86,6 +89,24 @@ final class GraphQLDiscoveryServiceProvider extends ServiceProvider
 
         $this->app->singleton(LoadersExecutionMiddleware::class);
         $this->app->bind(Loaders::class, fn(): Loaders => $this->app->make(LoadersExecutionMiddleware::class)->current());
+    }
+
+    /** Swaps Rebing's GraphQL for one that limits each schema to its own types, when scoped_schemas is on. */
+    private function scoped(GraphQL $graphQL): GraphQL
+    {
+        if (! SchemaScopes::enabled($this->app->make('config')) || in_array(ScopesSchemaTypes::class, class_uses_recursive($graphQL), true)) {
+            return $graphQL;
+        }
+
+        if ($graphQL::class !== GraphQL::class) {
+            throw new LogicException(sprintf(
+                "Rebing's GraphQL is bound to %s, which schema-scoped types cannot extend. Use the %s trait in it, or set discovery.graphql.scoped_schemas to false.",
+                $graphQL::class,
+                ScopesSchemaTypes::class,
+            ));
+        }
+
+        return new ScopedGraphQL($this->app, $this->app->make('config'));
     }
 
     public function boot(): void

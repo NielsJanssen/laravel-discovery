@@ -12,6 +12,7 @@ final readonly class TypeDefinition
     /**
      * @param  Closure(TypeContext): iterable<Field>  $fields
      * @param  class-string|null  $class  the PHP class that maps to this type in inference and type resolution
+     * @param  string|list<string>|null  $schema  the only schemas the type may appear in; needs discovery.graphql.scoped_schemas
      */
     public function __construct(
         public string $name,
@@ -19,5 +20,6 @@ final readonly class TypeDefinition
         public Closure $fields,
         public ?string $class = null,
         public ?string $description = null,
+        public string|array|null $schema = null,
     ) {}
 }
