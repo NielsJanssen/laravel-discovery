@@ -15,22 +15,20 @@
             "components": [
                 {
                     "component": "table_aggregate",
-                    "partition": [
-                        "benchmark_name",
-                        "subject_name"
-                    ],
+                    "partition": ["benchmark_name", "subject_name", "variant_params?['items']"],
                     "row": {
                         "benchmark": "first(partition['benchmark_name'])",
                         "subject": "first(partition['subject_name'])",
-                        "rebing": "display_as_time(mode(partition[variant_name = 'rebing']['result_time_avg']), 'milliseconds', 3)",
-                        "uncached": "display_as_time(mode(partition[variant_name = 'uncached']['result_time_avg']), 'milliseconds', 3)",
-                        "uncached diff": "percent_diff(mode(partition[variant_name = 'rebing']['result_time_avg']), mode(partition[variant_name = 'uncached']['result_time_avg']))",
-                        "cached": "display_as_time(mode(partition[variant_name = 'cached']['result_time_avg']), 'milliseconds', 3)",
-                        "cached diff": "percent_diff(mode(partition[variant_name = 'rebing']['result_time_avg']), mode(partition[variant_name = 'cached']['result_time_avg']))",
-                        "rebing-eager": "display_as_time(mode(partition?[variant_name = 'rebing-eager']?['result_time_avg']), 'milliseconds', 3)",
-                        "rstdev rebing": "rstdev(partition[variant_name = 'rebing']['result_time_avg'])",
-                        "rstdev uncached": "rstdev(partition[variant_name = 'uncached']['result_time_avg'])",
-                        "rstdev cached": "rstdev(partition[variant_name = 'cached']['result_time_avg'])"
+                        "items": "coalesce(first(partition['variant_params'])?['items'], '')",
+                        "rebing": "display_as_time(mode(partition[variant_params['setup'] = 'rebing']['result_time_avg']), 'milliseconds', 3)",
+                        "uncached": "display_as_time(mode(partition[variant_params['setup'] = 'uncached']['result_time_avg']), 'milliseconds', 3)",
+                        "uncached diff": "percent_diff(mode(partition[variant_params['setup'] = 'rebing']['result_time_avg']), mode(partition[variant_params['setup'] = 'uncached']['result_time_avg']))",
+                        "cached": "display_as_time(mode(partition[variant_params['setup'] = 'cached']['result_time_avg']), 'milliseconds', 3)",
+                        "cached diff": "percent_diff(mode(partition[variant_params['setup'] = 'rebing']['result_time_avg']), mode(partition[variant_params['setup'] = 'cached']['result_time_avg']))",
+                        "rebing-eager": "display_as_time(mode(partition?[variant_params['setup'] = 'rebing-eager']?['result_time_avg']), 'milliseconds', 3)",
+                        "rstdev rebing": "rstdev(partition[variant_params['setup'] = 'rebing']['result_time_avg'])",
+                        "rstdev uncached": "rstdev(partition[variant_params['setup'] = 'uncached']['result_time_avg'])",
+                        "rstdev cached": "rstdev(partition[variant_params['setup'] = 'cached']['result_time_avg'])"
                     }
                 }
             ]

@@ -29,7 +29,11 @@ if ($failures !== []) {
     exit(1);
 }
 
-$operations = count(Queries::features()) + count(Queries::filler($size));
-$counts = implode(', ', array_map(static fn(string $setup, int $count): string => "{$setup} {$count}", array_keys($guard->batchQueries), $guard->batchQueries));
+$operations = count(Queries::successes()) + count(Queries::failures()) + count(Queries::filler($size)) + count(Queries::http());
+$counts = implode('; ', array_map(
+    static fn(string $name, array $bySetup): string => $name . ' ' . implode(', ', array_map(static fn(string $setup, int $count): string => "{$setup} {$count}", array_keys($bySetup), $bySetup)),
+    array_keys($guard->queryCounts),
+    $guard->queryCounts,
+));
 
-echo sprintf("Fairness guard %s: identical SDL and %d identical responses across setups; batch query count: %s\n", $size->value, $operations, $counts);
+echo sprintf("Fairness guard %s: identical SDL and %d identical responses across setups; SQL queries: %s\n", $size->value, $operations, $counts);

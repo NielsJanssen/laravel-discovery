@@ -49,5 +49,6 @@ final class BenchServiceProvider extends ServiceProvider
         Auth::viaRequest('bench', static fn(): Authenticatable => new GenericUser(['id' => 1, 'name' => 'Acme']));
 
         Gate::define('viewBalance', static fn(?Authenticatable $user, object $account): bool => property_exists($account, 'number') && is_int($account->number) && $account->number % 2 === 0);
+        Gate::define('openVault', static fn(?Authenticatable $user, int $number): bool => $number % 2 === 0);
     }
 }

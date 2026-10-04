@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace Benchmarks\Support;
 
+use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Foundation\Application as LaravelApplication;
 use Illuminate\Foundation\Bootstrap\LoadConfiguration;
+use Illuminate\Http\Request;
 use NielsJanssen\Laravel\Discovery\DiscoveryServiceProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscoveryServiceProvider;
 use NielsJanssen\Laravel\Validation\ValidationServiceProvider;
 use Orchestra\Testbench\Bootstrap\LoadConfiguration as TestbenchLoadConfiguration;
 use Rebing\GraphQL\GraphQL;
 use Rebing\GraphQL\GraphQLServiceProvider;
+use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
+use Symfony\Component\HttpFoundation\Response;
 
 final class BenchApp
 {
@@ -54,5 +58,22 @@ final class BenchApp
     public static function execute(LaravelApplication $app, string $query): array
     {
         return self::graphql($app)->query($query);
+    }
+
+    /** Sends one operation as `POST /graphql` through the HTTP kernel, its middleware and Rebing's controller. */
+    public static function post(LaravelApplication $app, string $query): Response
+    {
+        $kernel = $app->make(HttpKernel::class);
+        $request = Request::createFromBase(SymfonyRequest::create(
+            uri: '/graphql',
+            method: 'POST',
+            server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'],
+            content: json_encode(['query' => $query], JSON_THROW_ON_ERROR),
+        ));
+
+        $response = $kernel->handle($request);
+        $kernel->terminate($request, $response);
+
+        return $response;
     }
 }
