@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredInputType;
+use ReflectionProperty;
+use Tests\Fixtures\RebingGraphQL\Inputs;
+use Tests\Fixtures\RebingGraphQL\StatefulRuleActions;
+
 /**
  * The shipped LaravelValidationRules adapter, driven end to end through real GraphQL requests.
  */
@@ -96,4 +101,32 @@ describe('custom messages', function () {
             ->assertOk()
             ->assertJsonPath('errors.0.extensions.validation.name.0', 'Far too short, that.');
     });
+});
+
+describe('rule objects in #[Arg] and #[Field] rules', function () {
+    it('validates each call with its own data, whichever call comes first, and reads the #[Field] rules once', function (array $valid) {
+        schemaSdl(StatefulRuleActions::class, Inputs\Registration::class);
+
+        $forms = [
+            'changePassword' => ['password', static fn(string $password, string $confirmation): string => "changePassword(password: \"$password\", confirmation: \"$confirmation\")"],
+            'register' => ['registration.password', static fn(string $password, string $confirmation): string => "register(registration: { password: \"$password\", confirmation: \"$confirmation\" })"],
+        ];
+
+        foreach ($forms as $mutation => [$path, $call]) {
+            foreach ($valid as $index => $passes) {
+                $confirmation = $passes ? 'correct horse' : "other $index";
+                $response = $this->postJson('/graphql', ['query' => 'mutation { ' . $call($passes ? 'correct horse' : 'short', $confirmation) . ' }'])->assertOk();
+
+                expect($response->json('errors.0.extensions.validation'))->toBe($passes ? null : [$path => [
+                    "The $path field must be at least 8 characters.",
+                    "The $path does not match $confirmation.",
+                ]])->and($response->json("data.$mutation"))->toBe($passes ? ($mutation === 'register' ? 'registered' : 'changed') : null);
+            }
+        }
+
+        expect(new ReflectionProperty(DiscoveredInputType::class, 'declared')->getValue())->toHaveKey(Inputs\Registration::class . '::password');
+    })->with([
+        'valid first' => [[true, false, true, false]],
+        'invalid first' => [[false, true, false, true]],
+    ]);
 });
