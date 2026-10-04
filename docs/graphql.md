@@ -58,6 +58,7 @@ return [
         'arguments' => FieldCase::Preserve,
         'operations' => FieldCase::Preserve,
     ],
+    'scoped_schemas' => true,                          // see "Schemas" below
 ];
 ```
 
@@ -68,6 +69,7 @@ A `graphql` key in `config/discovery.php` works too, and wins over the published
 | `scalars`         | `[]`                | GraphQL scalar or type names for PHP classes; see [the scalar map](#the-scalar-map).          |
 | `skip_namespaces` | `['Illuminate\\']`  | Namespace prefixes whose members never become fields of a `#[Type]` or `#[Input]`.            |
 | `naming`          | `Preserve` for all  | How PHP names become field, argument and operation names; see [Naming](#naming).              |
+| `scoped_schemas`  | `true`              | Limit each schema to the types its own actions reach; see [Scoped schemas](#scoped-schemas).  |
 
 `skip_namespaces` covers anything declared in a class or trait under one of the prefixes, also when an application
 class redeclares the property. Add a package your types extend, so its base model's public members stay out of the
@@ -639,6 +641,7 @@ final readonly class AcmeResourceTypes implements TypeProvider
 - With a provider present, the check that every class an action or type points at is a registered type runs when
   `GraphQL` is resolved instead of at discovery, since the provider's classes are not known before then. The error is
   the same one, naming the referrer.
+- `schema:` places the type in the named schemas when [scoped schemas](#scoped-schemas) are on.
 
 **Errors.** A provider that yields anything but a `TypeDefinition`, a name already registered (by another provider, a
 `#[Type]` or `graphql.types`), a class a `#[Type]` already maps, `class:` or `rules:` on an input type, `resolve` or
@@ -1369,6 +1372,64 @@ class Maintenance
 Class-based `Query` and `Mutation` registrations always land in the default schema, since there is no action to
 decorate. Class-based `Type` registrations go to `graphql.types`, so every schema can use them.
 
+### Scoped schemas
+
+Rebing keeps one type registry for all schemas, and every schema lists every registered type, so a type that only an
+`admin` query returns would also be visible in the introspection of the default schema. With
+`discovery.graphql.scoped_schemas` on, which is the default, each schema is limited to its own types:
+
+- **Reached types.** A type belongs to every schema whose actions reach it: through a return type or an argument,
+  and from there through fields, field arguments, input fields and enums, including the fields a
+  [`#[TypeExtension]`](#extending-a-type) contributor adds. A type that several schemas reach is in each of them.
+- **Global types.** A type that no action reaches, such as an `#[Enum]` nothing references, is in every schema. That
+  includes a hand-written Rebing type in `graphql.types`, until an action names it with `type:`; from then on it
+  follows the schemas of those actions, like a discovered type.
+- **Placed types.** `schema:` on `#[Type]` or `#[Enum]` limits a type to the schemas it names, which is how a type
+  that no action reaches stays out of the other schemas. It takes one name or a list. A
+  [replacement](#replacing-a-type) keeps the placement of the type it replaces unless it sets its own.
+- **Schema `types` keys.** A hand-written type in `graphql.schemas.<name>.types` is only in that schema. All of those
+  keys are registered when the first schema is built, so a schema no longer depends on another having been built
+  first.
+- **Provided types.** A type from a [type provider](#whole-types-from-a-type-provider) belongs to the schemas that
+  reach it by name or by its `class:`; `TypeDefinition(schema: ...)` places it like `schema:` on `#[Type]`.
+
+```php
+#[Enum(schema: 'admin')]
+enum AuditLevel
+{
+    case Full;
+}
+```
+
+The scoping changes each schema's list of types and its type loader, so a type of another schema is unknown to
+`__type(name:)`, to fragments and to variables. A type reached through something discovery cannot read (a type
+factory's or provider's fields, or a hand-written Rebing field) is not missed: it is in every schema whose fields
+reach it, and the type loader falls back to the schema's own types. An object type that implements an interface a schema
+lists is always in that schema too, because webonyx only finds implementations through the list of types. At worst a
+type leaks into a schema, but a schema never breaks.
+
+The flag swaps Rebing's `GraphQL` for `ScopedGraphQL`. If your application binds its own subclass of Rebing's
+`GraphQL`, use the `ScopesSchemaTypes` trait in it, or set the flag to `false`; resolving any other subclass with the
+flag on is a `LogicException`.
+
+`ScopedGraphQL` also keeps Rebing's type instances when another schema is built. Rebing clears them, so in a
+long-running process (Octane, a queue worker) a schema built earlier would meet a second instance of a type it shares
+with a later one and fail with "Schema must contain unique named types". A name that `addType()` points at another
+class gets a fresh instance, so a replaced type shows once its schema is rebuilt. With `scoped_schemas` off, Rebing's
+own behaviour applies.
+
+**Upgrading.** With several schemas, a schema's introspection, `__type(name:)` and fragments no longer know the types
+only other schemas reach, so a client of the default schema that spreads `... on AdminReport` gets an error. Set
+`scoped_schemas` to `false` to keep every type in every schema, as before.
+
+**Errors.** These are a `LogicException`, when discovery is applied or, for a provided type, when `GraphQL` is first
+resolved:
+
+- a placed type that an action of another schema reaches, naming the referrer and the action;
+- a placed type that a global type references;
+- `schema:` naming a schema that is not in `graphql.schemas` and that no action uses;
+- `schema:` while `scoped_schemas` is off.
+
 ## Middleware
 
 `#[Middleware]` attaches Rebing middleware to a field. It is repeatable and targets classes and methods, and takes one
@@ -1466,6 +1527,11 @@ Discovered actions are cached with the rest of discovery. See [Installation](ins
 One detail is specific to GraphQL: when the application's configuration is cached
 (`php artisan config:cache`), the schema configuration is not rewritten, so the cached configuration wins. The field
 bindings themselves are still registered, so a cached configuration and freshly discovered actions stay consistent.
+With [scoped schemas](#scoped-schemas), which schemas a type belongs to is worked out again on every boot from the
+discovered items, so it needs nothing in the configuration and holds with a cached one. The `schema:` of a type is part
+of the cached items. Discovery items cached before this release do not load, so run `php artisan discovery:clear` (or
+`php artisan optimize`) after upgrading.
+
 Field, argument and operation names are part of the cached items, so a changed [naming strategy](#naming) only shows
 once discovery is cleared. Rebuild both when you change a field or a strategy:
 
