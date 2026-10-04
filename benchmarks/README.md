@@ -30,6 +30,13 @@ passes the absolute opcache file cache path that `phpbench.json` cannot hold.
 
 The suite takes about seven and a half minutes on the machine below.
 
+### On GitHub Actions
+
+The **Benchmark** workflow (`.github/workflows/benchmark.yml`) runs the suite on demand: start it from the Actions tab
+on any branch, optionally with a PHPBench filter such as `Warm` or `ColdBoot`. The job summary shows the reports with
+the runner's CPU and PHP version, and the run keeps `benchmark.txt` and the XML dump `benchmark.xml` as an artifact.
+Shared runners are noisier than a quiet local machine, so compare runs on the same runner type and read the mode.
+
 ## The three setups
 
 | Setup      | What boots                                                                                                    |

@@ -1,0 +1,87 @@
+name: Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: 'PHPBench --filter, such as Warm or ColdBoot (empty runs every benchmark)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: opcache, pdo_sqlite
+          tools: composer:v2
+          coverage: none
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.composer/cache/files
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
+
+      - name: Run the benchmarks
+        shell: bash
+        env:
+          FILTER: ${{ inputs.filter }}
+        run: |
+          arguments=(--progress=none --report=setups --report=variants --dump-file=benchmark.xml)
+
+          if [ -n "$FILTER" ]; then
+            arguments+=("--filter=$FILTER")
+          fi
+
+          composer bench -- "${arguments[@]}" | tee benchmark.txt
+
+      - name: Write the job summary
+        if: always()
+        shell: bash
+        env:
+          FILTER: ${{ inputs.filter }}
+        run: |
+          {
+            echo '## Benchmark'
+            echo
+            echo "- Ref: \`${GITHUB_REF_NAME}\` (\`${GITHUB_SHA::7}\`)"
+            echo "- Filter: \`${FILTER:-none}\`"
+            echo "- PHP: $(php -r 'echo PHP_VERSION;')"
+            echo "- CPU: $(lscpu | sed -n 's/^Model name:[[:space:]]*//p') ($(nproc) cores)"
+            echo
+            echo 'Shared runners are noisy: compare runs on the same runner type, and trust the mode over the mean.'
+            echo
+            echo '```'
+            cat benchmark.txt 2>/dev/null || echo 'No report: the run failed before PHPBench produced one.'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: benchmark-${{ github.sha }}
+          path: |
+            benchmark.txt
+            benchmark.xml
+          if-no-files-found: ignore
