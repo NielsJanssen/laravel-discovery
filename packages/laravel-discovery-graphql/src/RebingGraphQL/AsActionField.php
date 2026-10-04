@@ -33,6 +33,7 @@ trait AsActionField
     /** @var array<string, array<string, mixed>>|null */
     private ?array $args = null;
 
+    /** Resolved on first use and kept for the field's lifetime, so a later rebind does not reach this field. */
     private TypeRegistry $registry {
         get => $this->registry ??= $this->app->make(TypeRegistry::class);
     }
@@ -56,6 +57,11 @@ trait AsActionField
     /** Whether the args can hold an input whose bound record an #[Authorize] guards, decided on first use. */
     private bool $guardsInputs {
         get => $this->guardsInputs ??= InputAuthorization::guards($this->inputObjects->declaredIn($this->args()));
+    }
+
+    /** Whether the method can be called without the container, decided on first use; a direct call fires no afterResolvingAttribute callbacks. */
+    private bool $callsDirectly {
+        get => $this->callsDirectly ??= $this->mapsEveryParameter();
     }
 
     public function __construct(
@@ -223,10 +229,52 @@ trait AsActionField
                 : $query->firstOrFail();
         }
 
-        return $this->app->call(
-            $this->discoveredAction->class . '@' . $this->discoveredAction->method,
-            $mappedArgs,
-        );
+        $class = $this->discoveredAction->class;
+        $method = $this->discoveredAction->method;
+
+        if ($this->callsDirectly) {
+            $instance = $this->host();
+
+            if (! $this->app->hasMethodBinding($instance::class . "@$method")) {
+                return $instance->{$method}(...$mappedArgs);
+            }
+        }
+
+        return $this->app->call("$class@$method", $mappedArgs);
+    }
+
+    /** The resolver instance, made by the container as `app->call()` would. */
+    private function host(): object
+    {
+        $host = $this->app->make($this->discoveredAction->class);
+
+        return is_object($host) ? $host : throw new RuntimeException(sprintf('The container made %s for %s, which is no object.', get_debug_type($host), $this->discoveredAction->class));
+    }
+
+    /** Whether resolve() maps a value to every parameter of the method, so the container has none to add. */
+    private function mapsEveryParameter(): bool
+    {
+        $parameters = $this->discoveredAction->parameters;
+        $mapped = [
+            ...array_column($parameters->args, 'paramName'),
+            ...array_keys($parameters->injections),
+            ...array_keys($parameters->argCompositions),
+            ...array_column($parameters->flattenedInputs, 'paramName'),
+            ...array_column($parameters->modelBindings, 'paramName'),
+        ];
+        $declared = $this->reflectionParameters ??= new ReflectionMethod($this->discoveredAction->class, $this->discoveredAction->method)->getParameters();
+
+        if (count($declared) !== count($mapped)) {
+            return false;
+        }
+
+        foreach ($declared as $parameter) {
+            if ($parameter->isVariadic() || ! in_array($parameter->getName(), $mapped, true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     protected function getMiddleware(): array
