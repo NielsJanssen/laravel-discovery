@@ -14,8 +14,8 @@ use Rebing\GraphQL\GraphQL;
 
 #[Bench\OutputTimeUnit('milliseconds', precision: 3)]
 #[Bench\BeforeMethods('boot')]
-#[Bench\Warmup(2)]
-#[Bench\Iterations(10)]
+#[Bench\Warmup(3)]
+#[Bench\Iterations(20)]
 abstract class WarmExecution
 {
     use Setups;
