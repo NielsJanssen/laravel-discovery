@@ -32,6 +32,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRegistry;
 use Rebing\GraphQL\Support\Type as RebingType;
+use ReflectionProperty;
 use RuntimeException;
 use Tests\Fixtures\RebingGraphQL\AlwaysAllowGate;
 use Tests\Fixtures\RebingGraphQL\Inputs;
@@ -339,6 +340,17 @@ describe('hydration', function () {
 
         expect(fn() => $hydrator->hydrate(Inputs\Profile::class, ['name' => 'Ada', 'shade' => 'Grey']))
             ->toThrow(RuntimeException::class, 'Cannot hydrate ' . Inputs\Shade::class . ': it has no case named [Grey].');
+    });
+
+    it('hydrates a class again from the plan it made the first time, for nested inputs in an of: list too', function () {
+        $hydrator = new InputHydrator(app());
+
+        $first = $hydrator->hydrate(Inputs\ReviewBatch::class, ['reviews' => [['body' => 'one', 'stars' => 1], null, ['body' => 'two', 'stars' => 5, 'reviewer' => null]]]);
+        $second = $hydrator->hydrate(Inputs\ReviewBatch::class, ['reviews' => [['body' => 'three', 'stars' => 2, 'unknown' => true]]]);
+
+        expect($first)->toEqual(new Inputs\ReviewBatch([new Inputs\Review('one', 1), null, new Inputs\Review('two', 5)]))
+            ->and($second)->toEqual(new Inputs\ReviewBatch([new Inputs\Review('three', 2)]))
+            ->and(array_keys(new ReflectionProperty($hydrator, 'plans')->getValue($hydrator)))->toBe([Inputs\ReviewBatch::class, Inputs\Review::class]);
     });
 });
 
