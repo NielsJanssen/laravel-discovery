@@ -22,6 +22,10 @@ An adapter may implement either or both.
 `nielsjanssen/laravel-validation` is a **suggestion, not a requirement**. Without it you simply have
 one fewer rules provider, and `#[Arg(rules: [...])]` keeps working exactly as before.
 
+The rules in `#[Arg(rules:)]` and `#[Field(rules:)]` are read once and kept for the life of the process, so a
+rule object there must be stateless between validations. Laravel's own rules are: it hands each validation its data
+and validator again, and `Password` resets its messages.
+
 ## Validating with attributes
 
 With `nielsjanssen/laravel-validation` installed, its attributes work on action parameters:
