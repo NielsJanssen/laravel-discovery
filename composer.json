@@ -22,7 +22,8 @@
     "orchestra/testbench": "^11.1",
     "pestphp/pest": "^4.7",
     "pestphp/pest-plugin-laravel": "^4.1",
-    "phpstan/phpstan": "^2.2"
+    "phpstan/phpstan": "^2.2",
+    "phpbench/phpbench": "^1.7"
   },
   "autoload": {
     "psr-4": {
@@ -36,7 +37,9 @@
       "Tests\\": "tests/",
       "Workbench\\App\\": "workbench/app/",
       "Workbench\\Database\\Factories\\": "workbench/database/factories/",
-      "Workbench\\Database\\Seeders\\": "workbench/database/seeders/"
+      "Workbench\\Database\\Seeders\\": "workbench/database/seeders/",
+      "Benchmarks\\": "benchmarks/",
+      "Acme\\Bench\\": "benchmarks/.generated/"
     }
   },
   "scripts": {
@@ -56,7 +59,11 @@
       "@php vendor/bin/pint --ansi"
     ],
     "analyse": "@php vendor/bin/phpstan analyse --ansi",
-    "test": "@php vendor/bin/pest"
+    "test": "@php vendor/bin/pest",
+    "bench": [
+      "Composer\\Config::disableProcessTimeout",
+      "@php benchmarks/bin/bench.php"
+    ]
   },
   "config": {
     "allow-plugins": {

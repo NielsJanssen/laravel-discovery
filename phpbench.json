@@ -1,0 +1,54 @@
+{
+    "$schema": "./vendor/phpbench/phpbench/phpbench.schema.json",
+    "runner.bootstrap": "vendor/autoload.php",
+    "runner.path": "benchmarks/Bench",
+    "runner.file_pattern": "*Bench.php",
+    "runner.php_config": {
+        "opcache.jit": "disable",
+        "memory_limit": "-1"
+    },
+    "report.generators": {
+        "setups": {
+            "generator": "component",
+            "title": "Discovery against plain Rebing",
+            "description": "Mode per setup in milliseconds; the percentage is the difference to plain Rebing. rstdev above 5% marks an unstable result.",
+            "components": [
+                {
+                    "component": "table_aggregate",
+                    "partition": [
+                        "benchmark_name",
+                        "subject_name"
+                    ],
+                    "row": {
+                        "benchmark": "first(partition['benchmark_name'])",
+                        "subject": "first(partition['subject_name'])",
+                        "rebing": "display_as_time(mode(partition[variant_name = 'rebing']['result_time_avg']), 'milliseconds', 3)",
+                        "uncached": "display_as_time(mode(partition[variant_name = 'uncached']['result_time_avg']), 'milliseconds', 3)",
+                        "uncached diff": "percent_diff(mode(partition[variant_name = 'rebing']['result_time_avg']), mode(partition[variant_name = 'uncached']['result_time_avg']))",
+                        "cached": "display_as_time(mode(partition[variant_name = 'cached']['result_time_avg']), 'milliseconds', 3)",
+                        "cached diff": "percent_diff(mode(partition[variant_name = 'rebing']['result_time_avg']), mode(partition[variant_name = 'cached']['result_time_avg']))",
+                        "rebing-eager": "display_as_time(mode(partition?[variant_name = 'rebing-eager']?['result_time_avg']), 'milliseconds', 3)",
+                        "rstdev rebing": "rstdev(partition[variant_name = 'rebing']['result_time_avg'])",
+                        "rstdev uncached": "rstdev(partition[variant_name = 'uncached']['result_time_avg'])",
+                        "rstdev cached": "rstdev(partition[variant_name = 'cached']['result_time_avg'])"
+                    }
+                }
+            ]
+        },
+        "variants": {
+            "generator": "expression",
+            "title": "Every variant",
+            "cols": [
+                "benchmark",
+                "subject",
+                "set",
+                "revs",
+                "its",
+                "mem_peak",
+                "mode",
+                "mean",
+                "rstdev"
+            ]
+        }
+    }
+}
