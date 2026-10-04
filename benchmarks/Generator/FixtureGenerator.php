@@ -22,10 +22,10 @@ final readonly class FixtureGenerator
         $base = Paths::base($this->size);
         self::remove($base);
 
-        $written = $this->writeClasses("{$base}/Discovery", $this->size->namespace('Discovery'), DiscoveryTemplates::unit(), DiscoveryTemplates::features());
-        $written += $this->writeClasses("{$base}/Rebing", $this->size->namespace('Rebing'), RebingTemplates::unit(), RebingTemplates::features());
+        $written = $this->writeClasses("{$base}/Discovery", $this->size->namespace('Discovery'), DiscoveryTemplates::unit(), [...DiscoveryTemplates::features(), ...DiscoveryScenarioTemplates::features()]);
+        $written += $this->writeClasses("{$base}/Rebing", $this->size->namespace('Rebing'), RebingTemplates::unit(), [...RebingTemplates::features(), ...RebingScenarioTemplates::features()]);
 
-        self::write("{$base}/rebing.php", "<?php\n\nreturn " . var_export(RebingTemplates::registration($this->size->namespace('Rebing'), $this->size->units()), true) . ";\n");
+        self::write("{$base}/rebing.php", "<?php\n\nreturn " . var_export($this->rebingRegistration(), true) . ";\n");
         self::write("{$base}/composer.json", $this->composerJson());
 
         if (! symlink('../../../vendor', "{$base}/vendor")) {
@@ -64,6 +64,20 @@ final readonly class FixtureGenerator
         }
 
         return $written;
+    }
+
+    /** @return array{types: array<string, string>, query: array<string, string>, mutation: array<string, string>, eager: array<string, string>} */
+    private function rebingRegistration(): array
+    {
+        $namespace = $this->size->namespace('Rebing');
+        $registration = RebingTemplates::registration($namespace, $this->size->units());
+        $scenarios = RebingScenarioTemplates::registration($namespace);
+
+        foreach (['types', 'query', 'mutation'] as $key) {
+            $registration[$key] = [...$registration[$key], ...$scenarios[$key]];
+        }
+
+        return $registration;
     }
 
     private function composerJson(): string

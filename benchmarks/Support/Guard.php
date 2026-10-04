@@ -15,8 +15,8 @@ final class Guard
     /** @var list<string> */
     private array $failures = [];
 
-    /** @var array<string, int> */
-    public private(set) array $batchQueries = [];
+    /** @var array<string, array<string, int>> */
+    public private(set) array $queryCounts = [];
 
     public function __construct(private readonly Size $size) {}
 
@@ -40,7 +40,9 @@ final class Guard
                 'responses' => $this->responses($app),
             ];
 
-            $this->batchQueries[$setup->value] = Database::countQueries($app, static fn() => BenchApp::execute($app, Queries::BATCH));
+            foreach (Queries::counted() as $name => $query) {
+                $this->queryCounts[$name][$setup->value] = Database::countQueries($app, static fn() => BenchApp::execute($app, $query));
+            }
         }
 
         $reference = $results[Setup::Rebing->value];
@@ -58,8 +60,11 @@ final class Guard
         }
 
         foreach ($reference['responses'] as $name => $response) {
-            if (! str_contains($response, '"data"') || str_contains($response, '"errors"')) {
-                $this->failures[] = "{$this->size->value}: {$name} does not succeed: " . substr($response, 0, 200);
+            $failed = str_contains($response, '"errors"') || ! str_contains($response, '"data"');
+            $expectsFailure = array_key_exists($name, Queries::failures());
+
+            if ($failed !== $expectsFailure || ($expectsFailure && ! str_contains($response, '"category":"validation"'))) {
+                $this->failures[] = "{$this->size->value}: {$name} " . ($expectsFailure ? 'does not fail validation' : 'does not succeed') . ': ' . substr($response, 0, 200);
             }
         }
 
@@ -88,8 +93,13 @@ final class Guard
     {
         $responses = [];
 
-        foreach ([...Queries::features(), ...Queries::filler($this->size)] as $name => $query) {
+        foreach ([...Queries::successes(), ...Queries::failures(), ...Queries::filler($this->size)] as $name => $query) {
             $responses[$name] = json_encode(BenchApp::execute($app, $query), JSON_THROW_ON_ERROR);
+        }
+
+        foreach (Queries::http() as $name => $query) {
+            $response = BenchApp::post($app, $query);
+            $responses[$name] = $response->getStatusCode() . ' ' . $response->getContent();
         }
 
         return $responses;

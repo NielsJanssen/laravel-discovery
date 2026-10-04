@@ -4,13 +4,8 @@ declare(strict_types=1);
 
 namespace Benchmarks\Bench;
 
-use Benchmarks\Support\BenchApp;
-use Benchmarks\Support\Database;
 use Benchmarks\Support\Queries;
-use Benchmarks\Support\Setup;
-use Benchmarks\Support\Size;
 use PhpBench\Attributes as Bench;
-use Rebing\GraphQL\GraphQL;
 
 #[Bench\OutputTimeUnit('milliseconds', precision: 3)]
 #[Bench\BeforeMethods('boot')]
@@ -18,32 +13,13 @@ use Rebing\GraphQL\GraphQL;
 #[Bench\Iterations(20)]
 abstract class WarmExecution
 {
-    use Setups;
-
-    private GraphQL $graphql;
-
-    abstract protected function size(): Size;
-
-    /** @param array{setup: string} $params */
-    public function boot(array $params): void
-    {
-        $app = BenchApp::create(Setup::from($params['setup']), $this->size());
-        Database::seed($app);
-        $this->graphql = BenchApp::graphql($app);
-    }
+    use WarmApp;
 
     #[Bench\ParamProviders('setups')]
     #[Bench\Revs(200)]
     public function benchScalar(): void
     {
         $this->graphql->query(Queries::SCALAR);
-    }
-
-    #[Bench\ParamProviders('setups')]
-    #[Bench\Revs(10)]
-    public function benchNestedList(): void
-    {
-        $this->graphql->query(Queries::NESTED);
     }
 
     #[Bench\ParamProviders('setups')]
