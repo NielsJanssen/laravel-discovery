@@ -1,5 +1,6 @@
 {
   "preset": "per",
+  "exclude": ["benchmarks/.generated"],
   "rules": {
     "declare_strict_types": true,
     "ordered_imports": {

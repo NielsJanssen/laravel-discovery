@@ -8,5 +8,9 @@ parameters:
         - packages/laravel-discovery/src
         - packages/laravel-discovery-graphql/src
         - packages/laravel-validation/src
+        - benchmarks
+
+    excludePaths:
+        - benchmarks/.generated (?)
 
     reportIgnoresWithoutComments: true

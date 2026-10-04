@@ -19,3 +19,5 @@ storage/logs
 !.env.example.*
 
 !.gitkeep
+
+benchmarks/.generated
