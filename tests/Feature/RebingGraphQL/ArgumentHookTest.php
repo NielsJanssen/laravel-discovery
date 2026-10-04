@@ -9,6 +9,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscovery;
+use Rebing\GraphQL\Support\Facades\GraphQL;
 use RuntimeException;
 use Tests\Fixtures\RebingGraphQL\HydratedCursorQuery;
 use Tests\Fixtures\RebingGraphQL\PlainCursor;
@@ -66,6 +67,16 @@ describe('the RuleProvider hook', function () {
         $rules = discoveredActions(ValidatedNameFixtureQuery::class)['resolve']->createType(app())->getRules(['name' => 'ab']);
 
         expect($rules['name'])->toContain('min:3');
+    });
+
+    it('validates with the registry bound when the schema is built, not the one bound at boot', function () {
+        isolateGraphQL();
+        app()->instance(RuleProviderRegistry::class, new RuleProviderRegistry([new RejectEverythingRules()]));
+        discoverGraphQL(ValidatedNameFixtureQuery::class)->apply();
+
+        $result = GraphQL::query('{ fixtureValidatedHello(name: "Niels") }');
+
+        expect($result['errors'][0]['extensions']['validation'] ?? null)->toBe(['name' => ['Nothing gets past me.']]);
     });
 });
 

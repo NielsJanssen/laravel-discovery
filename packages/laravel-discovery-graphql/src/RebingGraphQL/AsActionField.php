@@ -30,6 +30,26 @@ trait AsActionField
     /** Whether the failed check guarded a bound model, which defaults to Authorize::DEFAULT_MESSAGE. */
     private bool $failedOnBoundModel = false;
 
+    private TypeRegistry $registry {
+        get => $this->registry ??= $this->app->make(TypeRegistry::class);
+    }
+
+    private HydratorRegistry $hydrators {
+        get => $this->hydrators ??= $this->app->make(HydratorRegistry::class);
+    }
+
+    private RuleProviderRegistry $ruleProviders {
+        get => $this->ruleProviders ??= $this->app->make(RuleProviderRegistry::class);
+    }
+
+    private InputObjects $inputObjects {
+        get => $this->inputObjects ??= $this->app->make(InputObjects::class);
+    }
+
+    private InputAuthorization $inputAuthorization {
+        get => $this->inputAuthorization ??= $this->app->make(InputAuthorization::class);
+    }
+
     public function __construct(
         private readonly Application $app,
         private readonly DiscoveredAction $discoveredAction,
@@ -57,7 +77,7 @@ trait AsActionField
     public function args(): array
     {
         $args = [];
-        $registry = $this->app->make(TypeRegistry::class);
+        $registry = $this->registry;
 
         foreach ($this->discoveredAction->parameters->args as $arg) {
             $entry = ['type' => $registry->resolve($arg->type, Position::Input)];
@@ -128,7 +148,7 @@ trait AsActionField
     {
         $action = $this->discoveredAction->action;
         $ref = $this->discoveredAction->returnType;
-        $registry = $this->app->make(TypeRegistry::class);
+        $registry = $this->registry;
 
         if ($this->discoveredAction->typeBuilder !== null) {
             $resolved = $ref === null ? $action : clone($action, ['type' => $registry->name($ref, Position::Output)]);
@@ -148,8 +168,8 @@ trait AsActionField
     {
         $mappedArgs = [];
 
-        $hydrators = $this->app->make(HydratorRegistry::class);
-        $registry = $this->app->make(TypeRegistry::class);
+        $hydrators = $this->hydrators;
+        $registry = $this->registry;
 
         foreach ($this->discoveredAction->parameters->args as $discovered) {
             $value = $args[$discovered->name] ?? null;
@@ -234,10 +254,10 @@ trait AsActionField
      */
     private function inputMessages(array $args): array
     {
-        $providers = $this->app->make(RuleProviderRegistry::class);
+        $providers = $this->ruleProviders;
         $messages = [];
 
-        foreach ($this->app->make(InputObjects::class)->inArgs($this->args(), $args) as [$type, $values, $path]) {
+        foreach ($this->inputObjects->inArgs($this->args(), $args) as [$type, $values, $path]) {
             $names = $type->fieldNames();
 
             foreach ($providers->rulesForInput($type->class, $type->toProperties($values))->messages as $key => $message) {
@@ -257,7 +277,7 @@ trait AsActionField
      */
     private function argumentRules(array $args): ArgumentRules
     {
-        return $this->app->make(RuleProviderRegistry::class)->rulesFor($this->discoveredAction, $args);
+        return $this->ruleProviders->rulesFor($this->discoveredAction, $args);
     }
 
     public function authorize(mixed $root, array $args, mixed $context, ?ResolveInfo $resolveInfo = null): bool
@@ -321,7 +341,7 @@ trait AsActionField
             }
         }
 
-        return $this->app->make(InputAuthorization::class)->deniedBy($this->args(), $args, $context, $resolveInfo);
+        return $this->inputAuthorization->deniedBy($this->args(), $args, $context, $resolveInfo);
     }
 
     public function getAuthorizationMessage(): string
