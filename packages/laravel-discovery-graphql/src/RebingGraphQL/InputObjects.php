@@ -37,6 +37,41 @@ final readonly class InputObjects
     }
 
     /**
+     * Every discovered input object the args a field definition declares can hold, at any depth.
+     *
+     * @param  array<string, mixed>  $definitions  a field's args(), keyed by arg name
+     * @return list<DiscoveredType>
+     */
+    public function declaredIn(array $definitions): array
+    {
+        $pending = array_map(static fn(mixed $definition): mixed => is_array($definition) ? ($definition['type'] ?? null) : null, array_values($definitions));
+        $found = [];
+
+        while ($pending !== []) {
+            $type = array_pop($pending);
+            $type = $type instanceof Closure ? $type() : $type;
+
+            if (! $type instanceof GraphQLType) {
+                continue;
+            }
+
+            $type = GraphQLType::getNamedType($type);
+
+            if (! $type instanceof InputObjectType || isset($found[$type->name])) {
+                continue;
+            }
+
+            $found[$type->name] = $this->registry->typeNamed($type->name);
+
+            foreach ($type->getFields() as $field) {
+                $pending[] = $field->getType();
+            }
+        }
+
+        return array_values(array_filter($found, static fn(?DiscoveredType $discovered): bool => $discovered !== null && $discovered->kind === TypeKind::Input));
+    }
+
+    /**
      * @return iterable<array{0: DiscoveredType, 1: array<array-key, mixed>, 2: string}>
      */
     public function in(GraphQLType $type, mixed $value, string $path): iterable
