@@ -14,6 +14,16 @@ use Workbench\App\Providers\WorkbenchServiceProvider;
 
 abstract class TestCase extends BaseTestCase
 {
+    protected function setUp(): void
+    {
+        // Parallel workers share the testbench skeleton, so each writes its config cache to its own file.
+        if ($token = $this->parallelToken()) {
+            $_SERVER['APP_CONFIG_CACHE'] = $_ENV['APP_CONFIG_CACHE'] = "bootstrap/cache/config-{$token}.php";
+        }
+
+        parent::setUp();
+    }
+
     protected function getPackageProviders($app): array
     {
         return [
@@ -44,5 +54,17 @@ abstract class TestCase extends BaseTestCase
             [dirname(__DIR__) . '/workbench/resources/views'],
             $app['config']->get('view.paths', []),
         ));
+
+        if ($token = $this->parallelToken()) {
+            $app['config']->set('discovery.cache_path', "framework/cache/discovery-{$token}");
+        }
+    }
+
+    /** The paratest worker token, or null when the suite runs serially. */
+    private function parallelToken(): ?string
+    {
+        $token = $_SERVER['TEST_TOKEN'] ?? getenv('TEST_TOKEN');
+
+        return is_string($token) && $token !== '' ? $token : null;
     }
 }
