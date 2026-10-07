@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\RebingGraphQL;
 
 use InvalidArgumentException;
+use ReflectionClass;
 
 /**
  * A reference to a GraphQL type: a class-string, a GraphQL type name or a scalar name, plus its wrapping.
@@ -63,9 +64,24 @@ final readonly class TypeRef
     {
         return match (true) {
             in_array($type, self::SCALARS, true) => self::scalar($type, $list, $nullable, $nullableItems),
-            class_exists($type), interface_exists($type), enum_exists($type) => self::class($type, $list, $nullable, $nullableItems),
+            self::isClassName($type) => self::class($type, $list, $nullable, $nullableItems),
             default => self::named($type, $list, $nullable, $nullableItems),
         };
+    }
+
+    /**
+     * Whether a string names a class, interface or enum by its own name. An alias, such as Laravel's `Date` facade
+     * alias, is read as a GraphQL type name instead, since aliases share their short names with GraphQL types.
+     *
+     * @phpstan-assert-if-true class-string $name
+     */
+    public static function isClassName(string $name): bool
+    {
+        if (! class_exists($name) && ! interface_exists($name) && ! enum_exists($name)) {
+            return false;
+        }
+
+        return strcasecmp(ltrim($name, '\\'), new ReflectionClass($name)->getName()) === 0;
     }
 
     /** A copy that is nullable when either this reference or the given flag is; nullability only widens. */

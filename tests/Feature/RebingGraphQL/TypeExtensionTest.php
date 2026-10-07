@@ -157,6 +157,14 @@ describe('a contributor', function () {
             ->and([$items[0]->target, $items[0]->targetIsClass, $items[0]->fields[0]->host, $items[0]->fields[0]->typeClass])
             ->toBe([AcmeUserWithBilling::class, true, AcmeBilledUserPerks::class, AcmeUserWithBilling::class]);
     });
+
+    it('reads a target that is a class alias as a type name', function () {
+        class_exists('SnakeNote') || class_alias(SnakeNote::class, 'SnakeNote');
+
+        $items = iterator_to_array(discoverGraphQL(AcmeSnakeNoteByName::class)->getItems(), false);
+
+        expect([$items[0]->target, $items[0]->targetIsClass])->toBe(['SnakeNote', false]);
+    });
 });
 
 describe('naming', function () {

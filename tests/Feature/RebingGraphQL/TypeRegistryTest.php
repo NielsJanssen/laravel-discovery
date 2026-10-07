@@ -30,6 +30,12 @@ describe('TypeRef', function () {
         'type name' => ['Book', 'name'],
     ]);
 
+    it('reads a class alias as a type name, as facade aliases such as Date share names with scalars', function () {
+        class_exists('ShelfAlias') || class_alias(Shelf::class, 'ShelfAlias');
+
+        expect(TypeRef::from('ShelfAlias')->name)->toBe('ShelfAlias');
+    });
+
     it('rejects an unknown scalar', function () {
         expect(fn() => TypeRef::scalar('Date'))->toThrow(\InvalidArgumentException::class, 'got [Date]');
     });
