@@ -116,7 +116,7 @@ final readonly class TypeCollector
         $this->assertContributor($class);
 
         $target = $extend->type;
-        $targetIsClass = class_exists($target) || enum_exists($target);
+        $targetIsClass = TypeRef::isClassName($target) && ! interface_exists($target);
         $naming = null;
 
         if ($targetIsClass) {
