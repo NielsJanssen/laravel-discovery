@@ -17,6 +17,9 @@ use Tempest\Discovery\DiscoveryConfig;
 
 class DiscoveryServiceProvider extends ServiceProvider
 {
+    /** @var Discovery[] the discoveries this provider booted */
+    private array $discoveries = [];
+
     public function register(): void
     {
         $this->mergeConfigFrom(
@@ -39,13 +42,24 @@ class DiscoveryServiceProvider extends ServiceProvider
                 ->ensure('string') // @phpstan-ignore argument.type (PhpStan does not understand that 'string' is a valid argument)
                 ->all();
 
-            return DiscoveryConfig::autoload($config->string('discovery.autoload'))
+            $autoload = $config->string('discovery.autoload');
+            $pool = MemoryAdapter::forProcess();
+
+            $discoveryConfig = $pool->isWarm()
+                ? new DiscoveryConfig($pool->locations($autoload, static fn() => DiscoveryConfig::autoload($autoload)->locations))
+                : DiscoveryConfig::autoload($autoload);
+
+            return $discoveryConfig
                 ->skipClasses(...$skipClasses)
                 ->skipPaths(...$skipPaths);
         });
 
         $this->app->singleton(DiscoveryCache::class, function () {
             $config = $this->app->make('config');
+
+            if (MemoryAdapter::forProcess()->isWarm()) {
+                return new DiscoveryCache(DiscoveryCacheStrategy::FULL, MemoryAdapter::forProcess());
+            }
 
             return new DiscoveryCache(
                 strategy: $this->app->environment($config->array('discovery.cache_environments', ['production']))
@@ -72,7 +86,14 @@ class DiscoveryServiceProvider extends ServiceProvider
         /** @var Discovery[] $discoveries */
         $discoveries = $this->app->call(BootDiscovery::class);
 
-        $this->warmMemoryCache($discoveries);
+        $this->discoveries = $discoveries;
+
+        if (
+            $this->app->make('config')->string('discovery.cache_store') === 'memory'
+            && $this->app->make(DiscoveryCache::class)->enabled
+        ) {
+            $this->warmMemoryCache();
+        }
 
         $this->app->make('config')->set(
             'discovery.discovery_classes',
@@ -84,30 +105,24 @@ class DiscoveryServiceProvider extends ServiceProvider
     }
 
     /**
-     * Warmup the in-process memory cache if it is enabled.
-     *
-     * @param Discovery[] $discoveries
+     * Store the booted discoveries in the in-process memory cache, so every later boot in this process restores them.
      *
      * @throws BindingResolutionException
      * @throws CouldNotStoreDiscoveryCache
      */
-    private function warmMemoryCache(array $discoveries): void
+    public function warmMemoryCache(): void
     {
-        if ($this->app->make('config')->string('discovery.cache_store') !== 'memory') {
+        $pool = MemoryAdapter::forProcess();
+
+        if ($pool->isWarm()) {
             return;
         }
 
-        $pool = MemoryAdapter::forProcess();
-        $cache = $this->app->make(DiscoveryCache::class);
-
-        if (! $cache->enabled || $pool->isWarm()) {
-            return;
+        $cache = new DiscoveryCache(DiscoveryCacheStrategy::FULL, $pool);
+        foreach ($this->app->make(DiscoveryConfig::class)->locations as $location) {
+            $cache->store($location, $this->discoveries);
         }
 
         $pool->markWarm();
-
-        foreach ($this->app->make(DiscoveryConfig::class)->locations as $location) {
-            $cache->store($location, $discoveries);
-        }
     }
 }

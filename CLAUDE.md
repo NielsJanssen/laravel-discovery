@@ -83,9 +83,13 @@ All discoverers implement Tempest's `Discovery` interface, use the `IsDiscovery`
 
 1. `DiscoveryServiceProvider::register()` binds `DiscoveryConfig` (using `discovery.autoload` from config) and
    `DiscoveryCache` (FULL strategy in `discovery.cache_environments`, NONE otherwise). The pool comes from
-   `discovery.cache_store`: `files` is a Symfony `PhpFilesAdapter` written only by `discovery:cache`, `memory` is
-   `Cache\MemoryAdapter`, an `ArrayAdapter` subclass that holds the process-lifetime instance and its own warm flag, and
-   `boot()` fills it once per process (`MemoryAdapter::forget()`, resets it)
+   `discovery.cache_store`: `files` is a Symfony `PhpFilesAdapter` written only by `discovery:cache`, `memory`
+   (deprecated) is `Cache\MemoryAdapter`, an `ArrayAdapter` subclass that holds the process-lifetime instance and its own
+   warm flag. `warmMemoryCache()` fills it once per process, called from `boot()` for the `memory` store or from the
+   `Testing\WithCachedDiscovery` trait's `setUp`. Once the pool is warm, the binding returns it with the FULL strategy
+   regardless of `cache_environments`, and `DiscoveryConfig` reuses the locations `MemoryAdapter::locations()` resolved
+   from Composer once per autoload path, so later boots skip reading `installed.json` (`MemoryAdapter::forget()` resets
+   both)
 2. `DiscoveryServiceProvider::boot()` calls `BootDiscovery`, then stores resolved discovery class names in
    `config('discovery.discovery_classes')`
 3. `BootDiscovery` runs `DiscoveryDiscovery` first to find every `Discovery` implementation
@@ -454,6 +458,7 @@ another file references needs its own PSR-4 file.
 |-----------------------------------------------------------------------------|--------------------------------------------------------------------------------|
 | `packages/laravel-discovery/src/DiscoveryServiceProvider.php`               | Registers `DiscoveryConfig`/`DiscoveryCache` singletons; wires `optimize`      |
 | `packages/laravel-discovery/src/Cache/MemoryAdapter.php`                    | Process-lifetime discovery cache, so a test run scans once                     |
+| `packages/laravel-discovery/src/Testing/WithCachedDiscovery.php`            | Test trait that fills `MemoryAdapter` after the first boot                     |
 | `packages/laravel-discovery/src/Command/CommandDiscovery.php`               | Discovers `#[ConsoleCommand]`; registers via `Artisan::starting()`             |
 | `packages/laravel-discovery/src/Command/Command.php`                        | Method-as-command wrapper; runs middleware pipeline                            |
 | `packages/laravel-discovery/src/Event/EventDiscovery.php`                   | Discovers `#[EventHandler]`; infers event from parameter type                  |

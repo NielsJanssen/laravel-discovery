@@ -34,7 +34,7 @@ php artisan vendor:publish --tag=discovery-config
 | `skip_paths`         | `[]`                        | Filesystem paths whose contents are skipped entirely. Add paths here if you want a whole directory tree ignored by discovery. |
 | `cache_path`         | `framework/cache/discovery` | Storage-relative path used by the discovery cache. Resolved with `storage_path(...)`.                                         |
 | `cache_environments` | `['production']`            | Environments where the discovery cache is active, overridable with `DISCOVERY_CACHE_ENVIRONMENTS` (comma separated). In any other environment, classes are scanned fresh on each request. |
-| `cache_store`        | `files`                     | Where a cached run is kept: `files` writes to `cache_path`, `memory` keeps it in the PHP process. Overridable with `DISCOVERY_CACHE_STORE`. |
+| `cache_store`        | `files`                     | Where a cached run is kept: `files` writes to `cache_path`, `memory` keeps it in the PHP process. Overridable with `DISCOVERY_CACHE_STORE`. `memory` is deprecated; use the [`WithCachedDiscovery`](testing.md) trait instead. |
 
 ## How discovery finds your code
 
