@@ -77,27 +77,11 @@ of environments where the cache should be active:
 
 Running `discovery:cache` in an environment that isn't on this list prints a warning and exits without writing anything.
 
-### Caching a test run
-
-A test suite rebuilds the application for every test, so it scans your code once per test. Setting the cache store to
-`memory` keeps one cached run in the PHP process: the first boot scans and fills the cache, every later boot in that
-process restores it, and the cache disappears when the process ends. Each run therefore starts fresh, and a run with
-`--parallel` gets one cache per worker.
-
-```xml
-<!-- phpunit.xml.dist -->
-<env name="DISCOVERY_CACHE_STORE" value="memory"/>
-<env name="DISCOVERY_CACHE_ENVIRONMENTS" value="production,testing"/>
-```
-
-The in-memory store fills itself, so there is no `discovery:cache` step to run. The file store never fills itself on
-boot, which leaves a deployment in control of when it is written.
-
-A test that changes what discovery should find (a fixture class written at runtime, for instance) can start over with
-`DiscoveryServiceProvider::forgetProcessCache()`.
+To cache discovery during a test run, see [Testing](testing.md).
 
 ## Where to next
 
 - [Commands](command.md), [Events](event.md), [Routes](router.md), [Schedule](schedule.md): the four built-in discovery
   systems.
+- [Testing](testing.md): scan once per test run instead of once per test.
 - [Discovery internals](discovery.md): how Tempest Discovery works under the hood, and how to write your own.
