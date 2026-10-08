@@ -68,6 +68,7 @@ If you cannot verify a claim from the source, either remove it or rewrite it so 
 - `docs/event.md`: `#[EventHandler]`, event inference, deferred listeners.
 - `docs/router.md`: HTTP attributes and class-level decorators.
 - `docs/schedule.md`: `#[Scheduled]`, the `Frequency` enum, closures.
+- `docs/testing.md`: speeding up a test suite with the in-memory discovery cache.
 - `docs/discovery.md`: how Tempest Discovery is wired into Laravel, and how to write your own discovery class.
 - `CONTRIBUTING.md`: contribution guidelines.
 
