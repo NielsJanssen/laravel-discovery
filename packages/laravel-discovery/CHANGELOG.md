@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [1.1.0] - 2026-10-08
+
+### Features
+
+- Add a WithCachedDiscovery trait for test suites
+
 ## [1.0.0] - 2026-10-03
 
 ### Bug Fixes
