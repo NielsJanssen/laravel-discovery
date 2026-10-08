@@ -7,6 +7,7 @@ namespace Tests;
 use Livewire\LivewireServiceProvider;
 use NielsJanssen\Laravel\Discovery\DiscoveryServiceProvider;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\GraphQLDiscoveryServiceProvider;
+use NielsJanssen\Laravel\Discovery\Testing\WithCachedDiscovery;
 use NielsJanssen\Laravel\Validation\ValidationServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 use Rebing\GraphQL\GraphQLServiceProvider;
@@ -14,6 +15,8 @@ use Workbench\App\Providers\WorkbenchServiceProvider;
 
 abstract class TestCase extends BaseTestCase
 {
+    use WithCachedDiscovery;
+
     protected function setUp(): void
     {
         // Parallel workers share the testbench skeleton, so each writes its config cache to its own file.
@@ -52,7 +55,7 @@ abstract class TestCase extends BaseTestCase
         // Livewire layout above resolves.
         $app['config']->set('view.paths', array_merge(
             [dirname(__DIR__) . '/workbench/resources/views'],
-            $app['config']->get('view.paths', []),
+            $app['config']->array('view.paths', []),
         ));
 
         if ($token = $this->parallelToken()) {
