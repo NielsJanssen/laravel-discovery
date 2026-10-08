@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use NielsJanssen\Laravel\Discovery\Cache\MemoryAdapter;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Tempest\Discovery\DiscoveryLocation;
 
 beforeEach(fn() => MemoryAdapter::forget());
 afterEach(fn() => MemoryAdapter::forget());
@@ -34,15 +35,35 @@ describe('MemoryAdapter', function () {
         expect(MemoryAdapter::forProcess()->isWarm())->toBeTrue();
     });
 
-    it('drops both the contents and the warm mark when forgotten', function () {
+    it('resolves locations once per autoload path', function () {
+        $resolved = 0;
+        $resolve = function () use (&$resolved) {
+            $resolved++;
+
+            return [new DiscoveryLocation('App\\', __DIR__)];
+        };
+
+        $inventory = MemoryAdapter::forProcess()->locations('/srv/inventory', $resolve);
+
+        expect(MemoryAdapter::forProcess()->locations('/srv/inventory', $resolve))->toBe($inventory)
+            ->and($resolved)->toBe(1);
+
+        MemoryAdapter::forProcess()->locations('/srv/orders', $resolve);
+
+        expect($resolved)->toBe(2);
+    });
+
+    it('drops the contents, the warm mark and the locations when forgotten', function () {
         $pool = MemoryAdapter::forProcess();
         $pool->save($pool->getItem('locations')->set(['a']));
+        $pool->locations('/srv/inventory', static fn() => []);
         $pool->markWarm();
 
         MemoryAdapter::forget();
 
         expect(MemoryAdapter::forProcess())->not->toBe($pool)
             ->and(MemoryAdapter::forProcess()->isWarm())->toBeFalse()
-            ->and(MemoryAdapter::forProcess()->getItem('locations')->isHit())->toBeFalse();
+            ->and(MemoryAdapter::forProcess()->getItem('locations')->isHit())->toBeFalse()
+            ->and(MemoryAdapter::forProcess()->locations('/srv/inventory', static fn() => ['fresh']))->toBe(['fresh']);
     });
 });

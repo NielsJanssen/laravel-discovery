@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace NielsJanssen\Laravel\Discovery\Cache;
 
+use Closure;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Tempest\Discovery\DiscoveryLocation;
 
 /**
  * A discovery cache that lives as long as the PHP process.
@@ -18,6 +20,9 @@ final class MemoryAdapter extends ArrayAdapter
     private static ?self $instance = null;
 
     private bool $warm = false;
+
+    /** @var array<string, DiscoveryLocation[]> */
+    private array $locations = [];
 
     public static function forProcess(): self
     {
@@ -40,5 +45,17 @@ final class MemoryAdapter extends ArrayAdapter
     public function markWarm(): void
     {
         $this->warm = true;
+    }
+
+    /**
+     * The discovery locations for the given autoload path, resolved once per process.
+     *
+     * @param Closure(): DiscoveryLocation[] $resolve
+     *
+     * @return DiscoveryLocation[]
+     */
+    public function locations(string $autoload, Closure $resolve): array
+    {
+        return $this->locations[$autoload] ??= $resolve();
     }
 }
