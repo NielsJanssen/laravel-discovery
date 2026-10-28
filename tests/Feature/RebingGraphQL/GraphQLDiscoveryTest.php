@@ -110,7 +110,7 @@ describe('resolution and return-type inference', function () {
     it('rejects an action shape at discovery', function (object $shape, string $format, string $exception) {
         expectRejected($shape, $format, exception: $exception);
     })->with([
-        'a non-scalar argument without #[Arg]' => [
+        'an array argument without of: or type:' => [
             fn() => new class {
                 #[Query(type: 'Book', list: true)]
                 public function resolve(array $missingArg): array
@@ -118,8 +118,8 @@ describe('resolution and return-type inference', function () {
                     return [];
                 }
             },
-            'Parameter $missingArg in %1$s::resolve is not a scalar or enum type. Use #[Arg(type: \'GraphQLTypeName\')] to specify the GraphQL type.',
-            \RuntimeException::class,
+            'Parameter $missingArg in %1$s::resolve has type array, which needs #[Arg(of: ...)] to name the type of its items, or #[Arg(type: ...)] to name its GraphQL type.',
+            \LogicException::class,
         ],
         'an #[Arg(name:)] colliding with another parameter name' => [
             fn() => new class {

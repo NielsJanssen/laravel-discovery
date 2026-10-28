@@ -91,7 +91,9 @@ Whatever they return is merged **on top of** Rebing's own arg-level rules, which
 never silently replaces them.
 
 An `#[Input]` is validated on its own fields instead, before anything is hydrated, and Rebing prefixes the paths
-(`input.shipTo.city`). A provider joins that by also implementing `InputRuleProvider`, which is asked per input object
+(`input.shipTo.city`). A list argument (`#[Arg(of: TheInput::class)] array $items`) is asked per item, so the paths
+carry the index (`items.1.title`), and each item is hydrated on its own.
+A provider joins that by also implementing `InputRuleProvider`, which is asked per input object
 with its values keyed by property name. It returns `ArgumentRules` with rules keyed by property name and messages keyed
 by property name and rule (`title.min`); both are reported at the full GraphQL path, such as `input.title`, or
 `input.ship_to.city` when a naming strategy renames the fields:

@@ -218,7 +218,14 @@ Two registration modes coexist:
       non-nullable return, and an undeclared return type leaves the field non-null
     - `#[Query]` / `#[Mutation]` accept `description:` (surfaced as the field description in GraphiQL)
     - Each parameter becomes a GraphQL arg **unless** it is one of the injection sources below
-    - `#[Arg]` accepts `name`, `description`, `rules` (array or `Closure` for lazy validation), and `deprecationReason`
+    - `#[Arg]` accepts `name`, `type`, `description`, `rules` (array or `Closure` for lazy validation),
+      `deprecationReason`, and — for an `array` parameter — `of` plus `nullableItems`, exactly as `#[Field(of:)]` works
+      on a `#[Type]`/`#[Input]`. Items of an `#[Input]` class are hydrated per item in `AsActionField::resolve()`;
+      `of:` is rejected on a model-bound or `#[Input]` parameter, and `TypeInferrer::assertHoldsList()` rejects `of:`
+      on any PHP type that holds no list (shared by `#[Query]`, `#[Mutation]`, `#[Field]` and `#[Arg]`).
+      `ParameterClassifier::discoverArg()` resolves every argument type through `TypeInferrer::input()`, the same entry
+      point `InputCollector` uses, so inference, type mapping and the type errors are shared; the one parameter-only
+      rule left there is that a mapper may not widen an argument to nullable when the parameter accepts no null
     - The discovered action is bound as a singleton at `discovery.rebing_graphql.<sha256-of-item>`; the schema config is
       only written when `configurationIsCached()` is false (so cached config wins in production)
 

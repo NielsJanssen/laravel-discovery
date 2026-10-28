@@ -21,7 +21,6 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\Member;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
-use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\TypeMapperRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\NamingStrategy;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\OmittableType;
@@ -42,9 +41,9 @@ final readonly class ParameterClassifier
 
     public function __construct(
         private HydratorRegistry $hydrators,
-        private TypeMapperRegistry $mappers,
         private InputCollector $inputs,
         private Naming $names,
+        private TypeInferrer $inferrer,
     ) {}
 
     /**
@@ -95,6 +94,7 @@ final readonly class ParameterClassifier
 
             if (!$type->isScalar() && is_a($type->getName(), EloquentModel::class, true)) {
                 $this->assertNoValueAuthorizationRule($param, $class, $method);
+                $this->assertNotListOfModels($argAttr, $param, $class, $method);
 
                 $modelBindings[] = new DiscoveredModelBinding(
                     paramName: $param->getName(),
@@ -359,6 +359,27 @@ final readonly class ParameterClassifier
     }
 
     /**
+     * A model parameter binds one record by its route key, so it has no list form.
+     *
+     * @param ClassReflector<object> $class
+     */
+    private function assertNotListOfModels(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method): void
+    {
+        if ($argAttr?->of === null) {
+            return;
+        }
+
+        throw new LogicException(sprintf(
+            '#[Arg(of:)] on the parameter $%s in %s::%s is not supported: %s binds a single record by ID, and a list of models is not supported. Take the ids as #[Arg(of: \'ID\')] array $%s and load the records in the method.',
+            $param->getName(),
+            $class->getName(),
+            $method->getName(),
+            class_basename($param->getType()->getName()),
+            $param->getName(),
+        ));
+    }
+
+    /**
      * @param ClassReflector<object> $class
      * @return list<Authorize>
      */
@@ -436,13 +457,21 @@ final readonly class ParameterClassifier
      */
     private function discoverInputArg(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method, NamingStrategy $naming): DiscoveredArg
     {
-        if ($argAttr?->type !== null) {
+        $explicit = match (true) {
+            $argAttr?->type !== null => 'type:',
+            $argAttr?->of !== null => 'of:',
+            default => null,
+        };
+
+        if ($explicit !== null) {
             throw new LogicException(sprintf(
-                '#[Arg(type:)] on the parameter $%s in %s::%s is not supported: its type is the input type of the #[Input] %s. Remove type:.',
+                '#[Arg(%s)] on the parameter $%s in %s::%s is not supported: its type is the input type of the #[Input] %s. Remove %s.',
+                $explicit,
                 $param->getName(),
                 $class->getName(),
                 $method->getName(),
                 class_basename($param->getType()->getName()),
+                $explicit,
             ));
         }
 
@@ -454,36 +483,32 @@ final readonly class ParameterClassifier
      */
     private function discoverArg(?Arg $argAttr, ParameterReflector $param, ClassReflector $class, MethodReflector $method, NamingStrategy $naming): DiscoveredArg
     {
-        $typeReflector = $param->getType();
-        $hasDefault = $param->hasDefaultValue();
-        $nullable = $typeReflector->isNullable() || $hasDefault;
+        $nullable = $param->getType()->isNullable() || $param->hasDefaultValue();
 
-        if ($argAttr !== null && $argAttr->type !== null) {
-            $type = TypeRef::from($argAttr->type, nullable: $nullable);
-        } elseif ($typeReflector->getName() !== 'mixed' && ($mapped = $this->mappers->map($typeReflector, $this->member($param, $method))) !== null) {
-            if ($mapped->nullable && ! $nullable) {
-                throw new LogicException(sprintf(
-                    'A type mapper makes the argument $%s in %s::%s nullable (%s), but the parameter accepts no null. Make the parameter nullable or give it a default.',
-                    $param->getName(),
-                    $class->getName(),
-                    $method->getName(),
-                    $mapped->target(),
-                ));
-            }
+        $type = $this->inferrer->input(
+            $param->getReflection()->getType(),
+            $class->getName(),
+            $this->label($param, $class, $method),
+            'Arg',
+            $argAttr?->type,
+            $argAttr?->of,
+            $nullable,
+            $argAttr->nullableItems ?? false,
+            $this->member($param, $method),
+        );
 
-            $type = $mapped->orNullable($nullable);
-        } elseif ($typeReflector->isScalar() || enum_exists($typeReflector->getName())) {
-            $type = TypeRef::from($typeReflector->getName(), nullable: $nullable);
-        } else {
-            throw new RuntimeException(sprintf(
-                'Parameter $%s in %s::%s is not a scalar or enum type. Use #[Arg(type: \'GraphQLTypeName\')] to specify the GraphQL type.',
+        // type: and of: are built with the parameter's own nullability, so only a mapper can widen it.
+        if ($type->nullable && ! $nullable) {
+            throw new LogicException(sprintf(
+                'A type mapper makes the argument $%s in %s::%s nullable (%s), but the parameter accepts no null. Make the parameter nullable or give it a default.',
                 $param->getName(),
                 $class->getName(),
                 $method->getName(),
+                $type->target(),
             ));
         }
 
-        return $this->arg($argAttr, $param, $class, $method, $naming, $type);
+        return $this->arg($argAttr, $param, $class, $method, $naming, $type, input: $type->list && $type->class !== null && Input::marks($type->class));
     }
 
     /**
@@ -504,6 +529,16 @@ final readonly class ParameterClassifier
             deprecationReason: $argAttr?->deprecationReason,
             input: $input,
         );
+    }
+
+    /**
+     * How errors name a parameter, in the shape the inferrer's messages expect.
+     *
+     * @param  ClassReflector<object>  $class
+     */
+    private function label(ParameterReflector $param, ClassReflector $class, MethodReflector $method): string
+    {
+        return sprintf('Parameter $%s in %s::%s', $param->getName(), $class->getName(), $method->getName());
     }
 
     /**

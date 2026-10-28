@@ -174,7 +174,25 @@ describe('unsupported returns', function () {
             '%1$s::books sets both type: and of:',
             \LogicException::class,
         ],
+        'of: on a return type that holds no list' => [
+            fn() => new class {
+                #[Query(of: 'Book')]
+                public function book(): string
+                {
+                    return 'Dune';
+                }
+            },
+            'Method %1$s::book has type string, which holds no list, but of: on #[Query] makes it a list. Use type: for a single value, or make it an array.',
+            \LogicException::class,
+        ],
     ]);
+});
+
+it('rejects an output-only #[Type] named by class-string as an action arg, at discovery', function () {
+    expectRejected(
+        Invalid\ObjectTypeArgQuery::class,
+        'Parameter $novel in %1$s::review references ' . Novel::class . ', which is an output-only #[Type]. Add #[Input] to Novel to accept it as input too.',
+    );
 });
 
 describe('unregistered class references', function () {
@@ -198,10 +216,6 @@ describe('unregistered class references', function () {
         'a type field' => [
             [Invalid\UnregisteredField::class],
             'Field UnregisteredField.thing references ' . Invalid\Unregistered::class . ', which is not a registered GraphQL output type. Add #[Type] to Unregistered, or name a registered GraphQL type with type: (or of: for a list) on #[Field].',
-        ],
-        'an object type as an action arg' => [
-            [Invalid\ObjectTypeArgQuery::class, Novel::class],
-            'Argument novel of method ' . Invalid\ObjectTypeArgQuery::class . '::review references ' . Novel::class . ', which is not a registered GraphQL input type (it is registered as object type [Novel]). Use a scalar, an enum or an #[Input] class, or name a registered GraphQL input type with #[Arg(type: ...)].',
         ],
         'an unregistered class as an action arg' => [
             [Invalid\UnregisteredArgQuery::class],

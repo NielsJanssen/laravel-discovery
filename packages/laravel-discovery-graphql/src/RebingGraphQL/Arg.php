@@ -16,6 +16,9 @@ class Arg
         public array|\Closure|null $rules = null,
         public readonly ?string $description = null,
         public readonly ?string $deprecationReason = null,
+        /** The type of the items of a list argument, as `type:` names the type of a single value. */
+        public readonly ?string $of = null,
+        public readonly bool $nullableItems = false,
     ) {}
 
     public function hasRules(): bool

@@ -157,6 +157,9 @@ public function shelf(): array
 }
 ```
 
+`of:` says the member is a list, so it is rejected on a PHP type that can never hold one — a scalar, `void` or an enum
+— whether it sits on `#[Query]`, `#[Mutation]`, `#[Field]` or `#[Arg]`. Use `type:` for a single value.
+
 ## Object types
 
 `#[Type]` on a plain class makes it a GraphQL object type. Its public properties become fields, and so do methods that
@@ -980,7 +983,8 @@ about every other property in input position, except one typed as an `#[Input]` 
 left out, as on a `#[Type]`.
 
 **The argument.** `#[Arg(name:, description:)]` renames and describes an input argument; it is nullable when the
-parameter is nullable or has a default. `#[Arg(type:)]` is rejected, since the type is the input type. A class without
+parameter is nullable or has a default. `#[Arg(type:)]` and `#[Arg(of:)]` are rejected, since the type is the input
+type; a [list of inputs](#list-arguments) is an `array` parameter with `#[Arg(of: TheInput::class)]`. A class without
 `#[Input]` is still injected from the container, as before. A parameter that names an input by GraphQL name, such as
 `#[Arg(type: 'CreateBookInput')] array $raw`, uses the input too, and receives the plain array. Model-bound
 `#[Authorize]` checks run for an input however the argument reaches it: as an `#[Input]` parameter, through
@@ -1144,7 +1148,8 @@ is nullable or has a default value. An enum parameter becomes an argument of tha
 A [type mapper](#type-mappers) can give an argument a different type, and it can type a class parameter that carries
 `#[Arg]`, such as a date.
 An [`#[Input]`](#input-types) parameter becomes an argument of that input type and receives the hydrated object;
-with [`#[AsArgs]`](#flattening-an-input-with-asargs) its fields become arguments of their own instead.
+with [`#[AsArgs]`](#flattening-an-input-with-asargs) its fields become arguments of their own instead. An `array`
+parameter names the type of its items with [`#[Arg(of:)]`](#list-arguments).
 
 ```php
 #[Query(type: 'Order', list: true)]
@@ -1163,6 +1168,36 @@ public function orders(string $status, int $limit = 25): array
 | `rules`             | `array\|Closure\|null`          | Validation rules, evaluated per request when a closure is given.         |
 | `description`       | `?string`                       | Surfaced in GraphiQL.                                                    |
 | `deprecationReason` | `?string`                       | Marks the argument deprecated.                                           |
+| `of`                | `?string`                       | The type of the items of a list argument, as on `#[Field]`.              |
+| `nullableItems`     | `bool`                          | Whether the items of that list may be `null`.                            |
+
+An argument is typed by the same inference as a `#[Type]` property or a `#[Field]` method, in input position, so the
+errors read the same: a `mixed`, untyped, union or intersection parameter asks for `#[Arg(type:)]`, an `array` asks for
+`of:` or `type:`, and an output-only `#[Type]` named by class-string is rejected at discovery with the suggestion to
+add `#[Input]` to it. A class that is simply not registered, or one named by its GraphQL name, is reported when
+discovery is applied, naming the argument.
+
+### List arguments
+
+An `array` parameter has no GraphQL type of its own, so name the item type with `of:`, exactly as `#[Field(of:)]` does
+on a `#[Type]` or an `#[Input]`. It takes a scalar name, an enum or `#[Input]` class-string, or a registered GraphQL
+input type name; `type:` and `of:` together are rejected, as is `of:` on a parameter that holds no list.
+
+```php
+#[Mutation]
+public function addChapters(
+    #[Arg(of: Chapter::class)] array $chapters,     // chapters: [ChapterInput!]!
+    #[Arg(of: 'String')] array $tags = [],          // tags: [String!]
+): string {
+    // $chapters is a list of hydrated Chapter objects
+}
+```
+
+The parameter is wrapped like any other argument: the list itself is nullable when the parameter is nullable or has a
+default, and its items are non-null unless `nullableItems: true` is set. Items of an `#[Input]` class are hydrated one
+by one, renamed fields included, and each item is validated at its own index, so a rule reports at `chapters.1.title`.
+An Eloquent model is rejected as an item type, since a model argument binds a single record by ID; take the ids as
+`#[Arg(of: 'ID')] array $ids` and load the records in the method.
 
 ```php
 #[Mutation(type: 'Order')]

@@ -197,7 +197,11 @@ trait AsActionField
             $value = $args[$discovered->name] ?? null;
 
             if ($discovered->input && is_array($value) && $discovered->type->class !== null) {
-                $value = $hydrators->hydrate($registry->effective($discovered->type->class, TypeKind::Input), array_filter($value, is_string(...), ARRAY_FILTER_USE_KEY));
+                $class = $registry->effective($discovered->type->class, TypeKind::Input);
+
+                $value = $discovered->type->list
+                    ? array_map(static fn(mixed $item): mixed => is_array($item) ? $hydrators->hydrate($class, array_filter($item, is_string(...), ARRAY_FILTER_USE_KEY)) : $item, $value)
+                    : $hydrators->hydrate($class, array_filter($value, is_string(...), ARRAY_FILTER_USE_KEY));
             }
 
             $mappedArgs[$discovered->paramName] = $value ?? $discovered->defaultValue;
