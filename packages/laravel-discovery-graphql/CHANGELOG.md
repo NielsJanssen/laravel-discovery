@@ -1,6 +1,17 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [1.0.0-rc.4] - 2026-10-28
+
+### Bug Fixes
+
+- Read class aliases as GraphQL type names
+- Reject of: on a type that holds no list
+
+### Features
+
+- Add #[Arg(of:)] for list arguments
+
 ## [1.0.0-rc.3] - 2026-10-04
 
 ### Bug Fixes
