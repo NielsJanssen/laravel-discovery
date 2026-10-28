@@ -57,6 +57,8 @@ final readonly class TypeInferrer
         $nullable = $nullable || $this->allowsNull($type);
 
         if ($of !== null) {
+            $this->assertHoldsList($type, $label, $attribute);
+
             return TypeRef::from($of, list: true, nullable: $nullable, nullableItems: $nullableItems);
         }
 
@@ -127,6 +129,27 @@ final readonly class TypeInferrer
                 $attribute,
             ));
         }
+    }
+
+    /** Rejects `of:` on a PHP type that can never hold a list. */
+    public function assertHoldsList(?ReflectionType $type, string $label, string $attribute): void
+    {
+        if (! $type instanceof ReflectionNamedType) {
+            return;
+        }
+
+        $name = $type->getName();
+
+        if (! in_array($name, [...self::SCALARS, 'void', 'never'], true) && ! enum_exists($name)) {
+            return;
+        }
+
+        throw new LogicException(sprintf(
+            '%s has type %s, which holds no list, but of: on #[%s] makes it a list. Use type: for a single value, or make it an array.',
+            $label,
+            $type,
+            $attribute,
+        ));
     }
 
     /**

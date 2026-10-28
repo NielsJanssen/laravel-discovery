@@ -102,6 +102,14 @@ it('rejects type: together with of:', function (string $position) {
     expect(fn() => inferFrom($position, 'list', 'Book', 'Book'))->toThrow(LogicException::class, 'Property Acme::$value sets both type: and of: on #[Field]');
 })->with('inference positions');
 
+it('rejects of: on a type that holds no list', function (string $position, string $source, string $type) {
+    expect(fn() => inferFrom($position, $source, of: 'Book'))
+        ->toThrow(LogicException::class, "Property Acme::\$value has type $type, which holds no list, but of: on #[Field] makes it a list.");
+})->with('inference positions')->with([
+    'a scalar' => ['title', 'string'],
+    'void' => ['nothing', 'void'],
+]);
+
 it('accepts an explicit type: or of: where the PHP type would be rejected', function (string $position) {
     expect(inferFrom($position, 'union', 'String')->scalar)->toBe('String')
         ->and(inferFrom($position, 'list', of: 'String')->list)->toBeTrue();

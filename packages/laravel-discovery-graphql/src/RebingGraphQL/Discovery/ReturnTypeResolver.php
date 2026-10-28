@@ -31,7 +31,14 @@ final readonly class ReturnTypeResolver
      */
     public function resolve(Action $action, ClassReflector $class, MethodReflector $method): ResolvedReturn
     {
-        $this->inferrer->assertNotBothTypeAndOf($action->type, $action->of, sprintf('Method %s::%s', $class->getName(), $method->getName()), class_basename($action::class));
+        $label = sprintf('Method %s::%s', $class->getName(), $method->getName());
+        $attribute = class_basename($action::class);
+
+        $this->inferrer->assertNotBothTypeAndOf($action->type, $action->of, $label, $attribute);
+
+        if ($action->of !== null) {
+            $this->inferrer->assertHoldsList($method->getReflection()->getReturnType(), $label, $attribute);
+        }
 
         $this->assertNotOmittable($class, $method);
 
