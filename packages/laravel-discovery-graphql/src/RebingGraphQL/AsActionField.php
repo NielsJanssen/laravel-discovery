@@ -10,6 +10,7 @@ use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Type\Definition\Type as GraphQLType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
+use Illuminate\Validation\Rules\Exists;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\ArgumentRules;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
@@ -32,6 +33,14 @@ trait AsActionField
 
     /** @var array<string, array<string, mixed>>|null */
     private ?array $args = null;
+
+    /**
+     * The records authorize() found for the bound parameters, by arg name with the value they were found by, so
+     * validation and resolve() of the same call do not look them up again.
+     *
+     * @var array<string, array{value: mixed, model: Model}>
+     */
+    private array $boundModels = [];
 
     /** Resolved on first use and kept for the field's lifetime, so a later rebind does not reach this field. */
     private TypeRegistry $registry {
@@ -226,12 +235,22 @@ trait AsActionField
                 continue;
             }
 
+            $found = $this->foundModel($binding, $value);
+
+            if ($found !== null) {
+                $mappedArgs[$binding->paramName] = $found;
+
+                continue;
+            }
+
             $query = $binding->query($value);
 
             $mappedArgs[$binding->paramName] = $binding->nullable
                 ? $query->first()
                 : $query->firstOrFail();
         }
+
+        $this->boundModels = [];
 
         $class = $this->discoveredAction->class;
         $method = $this->discoveredAction->method;
@@ -300,9 +319,44 @@ trait AsActionField
      */
     public function getRules(array $arguments = []): array
     {
-        $rules = parent::getRules($arguments);
+        $rules = $this->withoutFoundExistsRules(parent::getRules($arguments), $arguments);
 
         return $this->argumentRules($arguments)->appendTo($rules);
+    }
+
+    /**
+     * Drops the auto `exists` rule of a binding whose record authorize() already found, as it can only pass.
+     *
+     * @param  array<string, mixed>  $rules
+     * @param  array<string, mixed>  $arguments
+     * @return array<string, mixed>
+     */
+    private function withoutFoundExistsRules(array $rules, array $arguments): array
+    {
+        foreach ($this->discoveredAction->parameters->modelBindings as $binding) {
+            $argRules = $rules[$binding->argName] ?? null;
+
+            if (! is_array($argRules) || $this->foundModel($binding, $arguments[$binding->argName] ?? null) === null) {
+                continue;
+            }
+
+            $exists = (string) $binding->existsRule();
+
+            $rules[$binding->argName] = array_values(array_filter(
+                $argRules,
+                static fn(mixed $rule): bool => ! $rule instanceof Exists || (string) $rule !== $exists,
+            ));
+        }
+
+        return $rules;
+    }
+
+    /** The record authorize() found for this binding and value earlier in the same call, if any. */
+    private function foundModel(DiscoveredModelBinding $binding, mixed $value): ?Model
+    {
+        $found = $this->boundModels[$binding->argName] ?? null;
+
+        return $found !== null && $value !== null && $found['value'] === $value ? $found['model'] : null;
     }
 
     /**
@@ -351,6 +405,7 @@ trait AsActionField
     public function authorize(mixed $root, array $args, mixed $context, ?ResolveInfo $resolveInfo = null): bool
     {
         $this->failedOnBoundModel = false;
+        $this->boundModels = [];
 
         foreach ($this->discoveredAction->authorizations as $auth) {
             if (! $auth->allows($this->app, $root, $args, $context, $resolveInfo)) {
@@ -388,7 +443,18 @@ trait AsActionField
     private function deniedBoundModel(array $args, mixed $context, ?ResolveInfo $resolveInfo): ?Authorize
     {
         foreach ($this->discoveredAction->parameters->modelBindings as $binding) {
-            $denied = $binding->deniedBy($this->app, $args[$binding->argName] ?? null, $args, $context, $resolveInfo);
+            if ($binding->authorizations === []) {
+                continue;
+            }
+
+            $value = $args[$binding->argName] ?? null;
+            $model = $value === null ? null : $binding->query($value)->first();
+
+            if ($model !== null) {
+                $this->boundModels[$binding->argName] = ['value' => $value, 'model' => $model];
+            }
+
+            $denied = $binding->deniedFor($this->app, $model, $args, $context, $resolveInfo);
 
             if ($denied !== null) {
                 return $denied;

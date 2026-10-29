@@ -66,8 +66,16 @@ readonly class DiscoveredModelBinding
             return null;
         }
 
-        $model = $value === null ? null : $this->query($value)->first();
+        return $this->deniedFor($app, $value === null ? null : $this->query($value)->first(), $args, $context, $info);
+    }
 
+    /**
+     * The first #[Authorize] a record that is already looked up fails, so the caller can keep the record.
+     *
+     * @param  array<string, mixed>  $args
+     */
+    public function deniedFor(Application $app, ?Model $model, array $args, mixed $context, ?ResolveInfo $info): ?Authorize
+    {
         if ($model === null && $this->nullable) {
             return null;
         }

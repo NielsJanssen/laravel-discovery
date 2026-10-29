@@ -72,8 +72,8 @@ Nullability decides what a missing record means.
 
 A record that is found is always held to its ability, nullable or not.
 
-Because the check runs before validation, the model is loaded once for the check and again when the resolver runs. That
-is the cost of not leaking existence through validation errors.
+The check runs before validation, so it looks the record up itself. The resolver receives that same record, and the
+automatic `exists` rule is skipped once the record is found, so the record is looked up once per call.
 
 The validation rule `#[Can]` from `nielsjanssen/laravel-validation` cannot do this job: validation only ever sees the
 raw `ID` argument, so the Gate receives an id string where the policy expects a record. Discovery rejects that
