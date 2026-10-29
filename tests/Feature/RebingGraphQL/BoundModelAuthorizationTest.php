@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\RebingGraphQL;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Tests\Fixtures\RebingGraphQL\AuthorizedBindingQuery;
 use Workbench\App\Models\User;
@@ -121,5 +122,69 @@ describe('bound model authorization end-to-end', function () {
         $this->postJson('/graphql', ['query' => "{ authorizedUser(id: {$user->id}) }"])
             ->assertOk()
             ->assertJsonPath('data.authorizedUser', 'Edsger Dijkstra');
+    });
+});
+
+describe('reusing the bound record', function () {
+    beforeEach(function () {
+        $this->loadLaravelMigrations();
+        Gate::define('view', fn(?User $actor, User $subject) => true);
+    });
+
+    it('hands the record authorize() found to the resolver without looking it up again', function () {
+        $user = User::factory()->create(['name' => 'Ada Lovelace']);
+        $field = discoveredActions(AuthorizedBindingQuery::class)['authorizedUser']->createType(app());
+
+        $field->authorize(null, ['id' => $user->id], null, null);
+        DB::enableQueryLog();
+
+        expect($field->resolve(null, ['id' => $user->id], null, null))->toBe('Ada Lovelace')
+            ->and(DB::getQueryLog())->toBe([]);
+    });
+
+    it('looks a value up that authorize() did not see', function () {
+        $ada = User::factory()->create(['name' => 'Ada Lovelace']);
+        $grace = User::factory()->create(['name' => 'Grace Hopper']);
+        $field = discoveredActions(AuthorizedBindingQuery::class)['authorizedUser']->createType(app());
+
+        $field->authorize(null, ['id' => $ada->id], null, null);
+
+        expect($field->resolve(null, ['id' => $grace->id], null, null))->toBe('Grace Hopper');
+    });
+
+    it('forgets the record once the call has resolved', function () {
+        $user = User::factory()->create(['name' => 'Ada Lovelace']);
+        $field = discoveredActions(AuthorizedBindingQuery::class)['authorizedUser']->createType(app());
+
+        $field->authorize(null, ['id' => $user->id], null, null);
+        $field->resolve(null, ['id' => $user->id], null, null);
+        $user->update(['name' => 'Grace Hopper']);
+
+        expect($field->resolve(null, ['id' => $user->id], null, null))->toBe('Grace Hopper');
+    });
+
+    it('drops the exists rule once authorize() found the record', function () {
+        $user = User::factory()->create();
+        $field = discoveredActions(AuthorizedBindingQuery::class)['authorizedUser']->createType(app());
+
+        $before = array_map(strval(...), $field->getRules(['id' => $user->id])['id']);
+        $field->authorize(null, ['id' => $user->id], null, null);
+
+        expect($before)->toBe(['exists:users,id'])
+            ->and($field->getRules(['id' => $user->id])['id'])->toBe([]);
+    });
+
+    it('looks the bound record up once over the GraphQL endpoint', function () {
+        $user = User::factory()->create(['name' => 'Edsger Dijkstra']);
+        $this->actingAs(User::factory()->create());
+        DB::enableQueryLog();
+
+        $this->postJson('/graphql', ['query' => "{ authorizedUser(id: {$user->id}) }"])
+            ->assertOk()
+            ->assertJsonPath('data.authorizedUser', 'Edsger Dijkstra');
+
+        $lookups = array_filter(array_column(DB::getQueryLog(), 'query'), fn(string $query) => str_contains($query, '"users"'));
+
+        expect($lookups)->toHaveCount(1);
     });
 });
