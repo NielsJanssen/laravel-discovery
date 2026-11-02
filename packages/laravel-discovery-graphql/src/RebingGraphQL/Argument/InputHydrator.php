@@ -6,6 +6,7 @@ namespace NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument;
 
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Model;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\BoundRecords;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredModelBinding;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Field;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Input;
@@ -34,6 +35,7 @@ final class InputHydrator implements Hydrator
 
     public function __construct(
         private readonly Container $container,
+        private readonly BoundRecords $records,
     ) {}
 
     public function hydrates(string $class): bool
@@ -154,6 +156,12 @@ final class InputHydrator implements Hydrator
         }
 
         if (is_a($class, Model::class, true)) {
+            $found = $this->records->get($class, $value);
+
+            if ($found !== null) {
+                return $found;
+            }
+
             $query = DiscoveredModelBinding::lookup($class, $value);
 
             return $nullable ? $query->first() : $query->firstOrFail();

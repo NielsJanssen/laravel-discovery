@@ -533,14 +533,14 @@ describe('mapped types', function () {
 
 describe('hydration without a request', function () {
     it('keeps Omitted for absent values and drops a null the PHP type does not take', function () {
-        $hydrator = new InputHydrator(app());
+        $hydrator = app(InputHydrator::class);
 
         expect($hydrator->hydrate(Partial\RetagBook::class, ['tone' => 'Light', 'pages' => null]))
             ->toEqual(new Partial\RetagBook(tone: Partial\Tone::Light));
     });
 
     it('keeps each hydration of the same class to its own values', function () {
-        $hydrator = new InputHydrator(app());
+        $hydrator = app(InputHydrator::class);
 
         expect($hydrator->hydrate(Partial\RetagBook::class, ['pages' => 3, 'note' => null]))
             ->toEqual(new Partial\RetagBook(note: null, pages: 3))

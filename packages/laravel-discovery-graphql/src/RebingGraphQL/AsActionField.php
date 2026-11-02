@@ -16,6 +16,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
 use Rebing\GraphQL\Support\Field as RebingField;
 use ReflectionMethod;
 use RuntimeException;
+use Throwable;
 
 /**
  * @phpstan-require-extends RebingField
@@ -33,17 +34,14 @@ trait AsActionField
     /** @var array<string, array<string, mixed>>|null */
     private ?array $args = null;
 
-    /**
-     * The records authorize() found for the bound parameters, by arg name with the value they were found by, so
-     * resolve() of the same call does not look them up again.
-     *
-     * @var array<string, array{value: mixed, model: Model}>
-     */
-    private array $boundModels = [];
-
     /** Resolved on first use and kept for the field's lifetime, so a later rebind does not reach this field. */
     private TypeRegistry $registry {
         get => $this->registry ??= $this->app->make(TypeRegistry::class);
+    }
+
+    /** The records the #[Authorize] checks of this call found, emptied again before the call ends. */
+    private BoundRecords $bound {
+        get => $this->bound ??= $this->app->make(BoundRecords::class);
     }
 
     private HydratorRegistry $hydrators {
@@ -161,6 +159,7 @@ trait AsActionField
      */
     private function flattenedArg(TypeRegistry $registry, DiscoveredFlattenedInput $flattened, DiscoveredTypeField $field): array
     {
+        $records = $this->bound;
         $rules = $field->hasRules || $field->omittable || ($field->binding !== null && ! $field->binding->nullable)
             ? static fn(array $args, array $request = []): array => DiscoveredInputType::fieldRules(
                 $flattened->type->class,
@@ -168,6 +167,7 @@ trait AsActionField
                 $args,
                 $flattened->toProperties($args),
                 array_filter($request, is_string(...), ARRAY_FILTER_USE_KEY),
+                $records,
             )
             : null;
 
@@ -195,6 +195,34 @@ trait AsActionField
      * @param array<string, mixed> $args
      */
     public function resolve(mixed $root, array $args, mixed $context, ?ResolveInfo $info): mixed
+    {
+        try {
+            $mappedArgs = $this->mapArgs($root, $args, $context, $info);
+        } finally {
+            $this->bound->forget();
+        }
+
+        $class = $this->discoveredAction->class;
+        $method = $this->discoveredAction->method;
+
+        if ($this->callsDirectly) {
+            $instance = $this->host();
+
+            if (! $this->app->hasMethodBinding($instance::class . "@$method")) {
+                return $instance->{$method}(...$mappedArgs);
+            }
+        }
+
+        return $this->app->call("$class@$method", $mappedArgs);
+    }
+
+    /**
+     * The method's parameters, keyed by parameter name: hydrated inputs, injections and bound records.
+     *
+     * @param  array<string, mixed>  $args
+     * @return array<string, mixed>
+     */
+    private function mapArgs(mixed $root, array $args, mixed $context, ?ResolveInfo $info): array
     {
         $mappedArgs = [];
 
@@ -225,26 +253,11 @@ trait AsActionField
             $mappedArgs[$flattened->paramName] = $hydrators->hydrate($flattened->type->class, $flattened->toProperties($args));
         }
 
-        try {
-            foreach ($this->discoveredAction->parameters->modelBindings as $binding) {
-                $mappedArgs[$binding->paramName] = $this->boundModel($binding, $args[$binding->argName] ?? null);
-            }
-        } finally {
-            $this->boundModels = [];
+        foreach ($this->discoveredAction->parameters->modelBindings as $binding) {
+            $mappedArgs[$binding->paramName] = $this->boundModel($binding, $args[$binding->argName] ?? null);
         }
 
-        $class = $this->discoveredAction->class;
-        $method = $this->discoveredAction->method;
-
-        if ($this->callsDirectly) {
-            $instance = $this->host();
-
-            if (! $this->app->hasMethodBinding($instance::class . "@$method")) {
-                return $instance->{$method}(...$mappedArgs);
-            }
-        }
-
-        return $this->app->call("$class@$method", $mappedArgs);
+        return $mappedArgs;
     }
 
     /** The resolver instance, made by the container as `app->call()` would. */
@@ -312,15 +325,33 @@ trait AsActionField
             return null;
         }
 
-        $found = $this->boundModels[$binding->argName] ?? null;
+        $found = $this->bound->get($binding->modelClass, $value);
 
-        if ($found !== null && $found['value'] === $value) {
-            return $found['model'];
+        if ($found !== null) {
+            return $found;
         }
 
         $query = $binding->query($value);
 
         return $binding->nullable ? $query->first() : $query->firstOrFail();
+    }
+
+    /**
+     * Rebing validates between authorize() and resolve(), so a failure there ends the call: the records
+     * authorize() found go with it, rather than waiting for the next call to reset them.
+     *
+     * @param  array<string, mixed>  $arguments
+     * @param  array<string, mixed>  $rules
+     */
+    protected function validateArguments(array $arguments, array $rules): void
+    {
+        try {
+            parent::validateArguments($arguments, $rules);
+        } catch (Throwable $failure) {
+            $this->bound->forget();
+
+            throw $failure;
+        }
     }
 
     /**
@@ -369,7 +400,7 @@ trait AsActionField
     public function authorize(mixed $root, array $args, mixed $context, ?ResolveInfo $resolveInfo = null): bool
     {
         $this->failedOnBoundModel = false;
-        $this->boundModels = [];
+        $this->bound->forget();
 
         foreach ($this->discoveredAction->authorizations as $auth) {
             if (! $auth->allows($this->app, $root, $args, $context, $resolveInfo)) {
@@ -395,7 +426,7 @@ trait AsActionField
             return true;
         }
 
-        $this->boundModels = [];
+        $this->bound->forget();
         $this->failedAuthorize = $denied;
         $this->failedOnBoundModel = true;
 
@@ -408,18 +439,7 @@ trait AsActionField
     private function deniedBoundModel(array $args, mixed $context, ?ResolveInfo $resolveInfo): ?Authorize
     {
         foreach ($this->discoveredAction->parameters->modelBindings as $binding) {
-            if ($binding->authorizations === []) {
-                continue;
-            }
-
-            $value = $args[$binding->argName] ?? null;
-            $model = $binding->find($value);
-
-            if ($model !== null) {
-                $this->boundModels[$binding->argName] = ['value' => $value, 'model' => $model];
-            }
-
-            $denied = $binding->deniedForRecord($this->app, $model, $args, $context, $resolveInfo);
+            $denied = $binding->denied($this->bound, $this->app, $args[$binding->argName] ?? null, $args, $context, $resolveInfo);
 
             if ($denied !== null) {
                 return $denied;
@@ -432,7 +452,7 @@ trait AsActionField
                     continue;
                 }
 
-                $denied = $field->binding?->deniedBy($this->app, $args[$field->name] ?? null, $args, $context, $resolveInfo);
+                $denied = $field->binding?->denied($this->bound, $this->app, $args[$field->name] ?? null, $args, $context, $resolveInfo);
 
                 if ($denied !== null) {
                     return $denied;

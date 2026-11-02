@@ -7,6 +7,7 @@ namespace Tests\Feature\RebingGraphQL;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Countable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rules\Exists;
 use LogicException;
@@ -14,6 +15,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Arg;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\HydratorRegistry;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\InputHydrator;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Authorize;
+use NielsJanssen\Laravel\Discovery\RebingGraphQL\BoundRecords;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Denied;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredInputType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\DiscoveredType;
@@ -54,6 +56,16 @@ function createBookInput(int $publisher, array $overrides = []): array
         'publisher' => $publisher,
         ...$overrides,
     ];
+}
+
+/**
+ * The user lookups in the query log, so a test can count what one request costs.
+ *
+ * @return list<string>
+ */
+function userLookups(): array
+{
+    return array_values(array_filter(array_column(DB::getQueryLog(), 'query'), fn(string $query) => str_contains($query, '"users"')));
 }
 
 /**
@@ -330,7 +342,7 @@ describe('hydration', function () {
     });
 
     it('builds enums from case names or cases, and refuses an unknown name', function () {
-        $hydrator = new InputHydrator(app());
+        $hydrator = app(InputHydrator::class);
 
         expect($hydrator->hydrates(Inputs\Chapter::class))->toBeTrue()
             ->and($hydrator->hydrates(Inputs\Clock::class))->toBeFalse()
@@ -343,7 +355,7 @@ describe('hydration', function () {
     });
 
     it('hydrates a class again from the plan it made the first time, for nested inputs in an of: list too', function () {
-        $hydrator = new InputHydrator(app());
+        $hydrator = app(InputHydrator::class);
 
         $first = $hydrator->hydrate(Inputs\ReviewBatch::class, ['reviews' => [['body' => 'one', 'stars' => 1], null, ['body' => 'two', 'stars' => 5, 'reviewer' => null]]]);
         $second = $hydrator->hydrate(Inputs\ReviewBatch::class, ['reviews' => [['body' => 'three', 'stars' => 2, 'unknown' => true]]]);
@@ -546,6 +558,86 @@ describe('#[Authorize] on a model-bound input property', function () {
             ->assertExactJson(['data' => ['review' => 'anonymous']]);
 
         expect(app()->resolved(InputAuthorization::class))->toBeTrue();
+    });
+});
+
+describe('reusing the record of a bound input property', function () {
+    beforeEach(function () {
+        $this->loadLaravelMigrations();
+    });
+
+    it('looks a bound and authorized property up once over the endpoint', function () {
+        $publisher = User::factory()->create();
+        Gate::define('attach', fn(?User $actor) => true);
+        schemaSdl(...CREATE_BOOK_SOURCES);
+        DB::enableQueryLog();
+
+        $this->postJson('/graphql', createBookRequest(createBookInput($publisher->id)))
+            ->assertOk()
+            ->assertJsonMissingPath('errors');
+
+        expect(userLookups())->toHaveCount(1)
+            ->and(Inputs\BookMutations::$received?->publisher->is($publisher))->toBeTrue();
+    });
+
+    it('gives every item of a list its own record', function () {
+        $ada = User::factory()->create(['name' => 'Ada']);
+        $grace = User::factory()->create(['name' => 'Grace']);
+        Gate::define('review', fn(?User $actor) => true);
+        schemaSdl(Inputs\ReviewMutation::class, Inputs\Review::class, Inputs\ReviewBatch::class);
+        DB::enableQueryLog();
+
+        $this->postJson('/graphql', ['query' => "mutation { reviewAll(batch: { reviews: [{ body: \"ok\", stars: 1, reviewer: {$ada->id} }, { body: \"ok\", stars: 1, reviewer: {$grace->id} }] }) }"])
+            ->assertOk()
+            ->assertExactJson(['data' => ['reviewAll' => 2]]);
+
+        expect(userLookups())->toHaveCount(2);
+    });
+
+    it('shares one record between properties that name the same one', function () {
+        $user = User::factory()->create();
+        Gate::define('review', fn(?User $actor) => true);
+        schemaSdl(Inputs\ReviewMutation::class, Inputs\Review::class, Inputs\ReviewBatch::class);
+        DB::enableQueryLog();
+
+        $this->postJson('/graphql', ['query' => "mutation { reviewAll(batch: { reviews: [{ body: \"ok\", stars: 1, reviewer: {$user->id} }, { body: \"ok\", stars: 1, reviewer: {$user->id} }] }) }"])
+            ->assertOk()
+            ->assertExactJson(['data' => ['reviewAll' => 2]]);
+
+        expect(userLookups())->toHaveCount(1);
+    });
+
+    it('keeps no record once the call is over, whether it passed, was denied or failed validation', function () {
+        $publisher = User::factory()->create();
+        $records = app(BoundRecords::class);
+        Gate::define('attach', fn(?User $actor) => true);
+        schemaSdl(...CREATE_BOOK_SOURCES);
+
+        $this->postJson('/graphql', createBookRequest(createBookInput($publisher->id)))->assertOk();
+        expect($records->get(User::class, $publisher->id))->toBeNull();
+
+        $this->postJson('/graphql', createBookRequest(createBookInput($publisher->id, ['title' => 'D'])))
+            ->assertJsonPath('errors.0.extensions.category', 'validation');
+        expect($records->get(User::class, $publisher->id))->toBeNull();
+
+        Gate::define('attach', fn(?User $actor) => false);
+
+        $this->postJson('/graphql', createBookRequest(createBookInput($publisher->id)))
+            ->assertJsonPath('errors.0.message', 'Forbidden');
+        expect($records->get(User::class, $publisher->id))->toBeNull();
+    });
+
+    it('keeps the exists rule for a field Rebing resolves without our authorize()', function () {
+        Gate::define('attach', fn(?User $actor) => true);
+        schemaSdl(...[...CREATE_BOOK_SOURCES, Inputs\RebingCreateBook::class]);
+
+        $response = $this->postJson('/graphql', [
+            'query' => 'mutation ($input: CreateBookInput!) { rebingCreateBook(input: $input) }',
+            'variables' => ['input' => createBookInput(999999)],
+        ])->assertOk();
+
+        expect($response->json('errors.0.extensions.validation'))
+            ->toBe(['input.publisher' => ['The selected input.publisher is invalid.']]);
     });
 });
 

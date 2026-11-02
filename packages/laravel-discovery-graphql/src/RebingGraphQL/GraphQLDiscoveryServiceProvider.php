@@ -61,6 +61,7 @@ final class GraphQLDiscoveryServiceProvider extends ServiceProvider
         }
 
         $this->app->singleton(TypeRegistry::class);
+        $this->app->singleton(BoundRecords::class);
         $this->app->extend(GraphQL::class, fn(GraphQL $graphQL): GraphQL => $this->scoped($graphQL));
         $this->app->afterResolving(GraphQL::class, fn(GraphQL $graphQL) => $this->app->make(ProvidedTypes::class)->register($graphQL));
         $this->app->singleton(Naming::class);

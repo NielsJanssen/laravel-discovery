@@ -13,6 +13,7 @@ final readonly class InputAuthorization
     public function __construct(
         private Application $app,
         private InputObjects $inputs,
+        private BoundRecords $records,
     ) {}
 
     /**
@@ -47,7 +48,7 @@ final readonly class InputAuthorization
                     continue;
                 }
 
-                $denied = $field->binding?->deniedBy($this->app, $values[$field->name] ?? null, $args, $context, $info);
+                $denied = $field->binding?->denied($this->records, $this->app, $values[$field->name] ?? null, $args, $context, $info);
 
                 if ($denied !== null) {
                     return $denied;

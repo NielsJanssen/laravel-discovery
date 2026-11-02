@@ -76,8 +76,10 @@ The check runs before validation, so it looks the record up itself, and the reso
 authorized binding carries no automatic `exists` rule either: a record the check cannot find is already a refusal, so
 the rule would never fail. That makes one query per call rather than three.
 
-A model-bound property of an `#[Input]` object does not share this yet — it is still looked up for the check, for its
-`exists` rule and again when the input is hydrated.
+This holds wherever the attribute sits — a parameter, a property of an `#[Input]` object at any depth, an item of a
+list of inputs, a flattened `#[AsArgs]` property. Within one call a record is looked up once per id, so two properties
+naming the same record share it. A binding without `#[Authorize]` is unchanged: it keeps its `exists` rule and its own
+lookup, unless the same record was already loaded for an authorized one.
 
 The validation rule `#[Can]` from `nielsjanssen/laravel-validation` cannot do this job: validation only ever sees the
 raw `ID` argument, so the Gate receives an id string where the policy expects a record. Discovery rejects that

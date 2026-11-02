@@ -64,24 +64,23 @@ readonly class DiscoveredModelBinding
     /**
      * The first #[Authorize] the bound record fails; a nullable binding without a record has nothing to check.
      *
+     * The record is kept in $records for the rest of the call, so validation and the resolver take it from
+     * there instead of looking it up again.
+     *
      * @param  array<string, mixed>  $args
      */
-    public function deniedBy(Application $app, mixed $value, array $args, mixed $context, ?ResolveInfo $info): ?Authorize
+    public function denied(BoundRecords $records, Application $app, mixed $value, array $args, mixed $context, ?ResolveInfo $info): ?Authorize
     {
         if ($this->authorizations === []) {
             return null;
         }
 
-        return $this->deniedForRecord($app, $this->find($value), $args, $context, $info);
-    }
+        $model = $records->get($this->modelClass, $value) ?? $this->find($value);
 
-    /**
-     * The first #[Authorize] a record that is already looked up fails, so the caller can keep the record.
-     *
-     * @param  array<string, mixed>  $args
-     */
-    public function deniedForRecord(Application $app, ?Model $model, array $args, mixed $context, ?ResolveInfo $info): ?Authorize
-    {
+        if ($model !== null) {
+            $records->remember($this->modelClass, $value, $model);
+        }
+
         if ($model === null && $this->nullable) {
             return null;
         }
