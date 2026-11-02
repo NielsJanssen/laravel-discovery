@@ -16,6 +16,11 @@ jobs:
     name: Split packages
     runs-on: ubuntu-latest
 
+    # Runs that push to the same split repository take turns.
+    concurrency:
+      group: split-${{ matrix.package.split_repository }}
+      cancel-in-progress: false
+
     strategy:
       fail-fast: false
       matrix:
