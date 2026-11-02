@@ -312,8 +312,10 @@ public function get(#[Arg('id')] #[Authorize('view')] Aantekening $note): ?Aante
 
 The check runs inside `Field::authorize()`, i.e. **before** validation, preserving Rebing's authorize-first ordering so
 an unauthorized caller cannot probe validation rules to map the API. `authorize()` keeps the record it found on the field
-(`$boundModels`, reset at the start of every `authorize()` and cleared in `resolve()`), so `getRules()` drops the auto
-`exists` rule for it and `resolve()` injects it without a second lookup.
+(`$boundModels`, reset at the start of every `authorize()` and cleared again as soon as the call is denied or
+`resolve()` has mapped its args), so `resolve()` injects it without a second lookup. A binding under an `#[Authorize]`
+also gets no auto `exists` rule, since authorize() already denied a record it could not find, so a bound and authorized
+parameter costs one query.
 
 Nullability decides what a **missing record** means:
 
