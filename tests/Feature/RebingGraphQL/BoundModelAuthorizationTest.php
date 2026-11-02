@@ -163,15 +163,34 @@ describe('reusing the bound record', function () {
         expect($field->resolve(null, ['id' => $user->id], null, null))->toBe('Grace Hopper');
     });
 
-    it('drops the exists rule once authorize() found the record', function () {
+    it('keeps the record of a nullable binding that authorize() found', function () {
+        $user = User::factory()->create(['name' => 'Ada Lovelace']);
+        $field = discoveredActions(AuthorizedBindingQuery::class)['authorizedOptionalUser']->createType(app());
+
+        $field->authorize(null, ['user' => $user->id], null, null);
+        DB::enableQueryLog();
+
+        expect($field->resolve(null, ['user' => $user->id], null, null))->toBe('Ada Lovelace')
+            ->and(DB::getQueryLog())->toBe([]);
+    });
+
+    it('forgets the record when the call is denied', function () {
+        $user = User::factory()->create(['name' => 'Ada Lovelace']);
+        Gate::define('view', fn() => false);
+        $field = discoveredActions(AuthorizedBindingQuery::class)['authorizedUser']->createType(app());
+
+        $field->authorize(null, ['id' => $user->id], null, null);
+        $user->update(['name' => 'Grace Hopper']);
+
+        expect($field->resolve(null, ['id' => $user->id], null, null))->toBe('Grace Hopper');
+    });
+
+    it('gives an authorized binding no exists rule to validate', function () {
         $user = User::factory()->create();
         $field = discoveredActions(AuthorizedBindingQuery::class)['authorizedUser']->createType(app());
 
-        $before = array_map(strval(...), $field->getRules(['id' => $user->id])['id']);
-        $field->authorize(null, ['id' => $user->id], null, null);
-
-        expect($before)->toBe(['exists:users,id'])
-            ->and($field->getRules(['id' => $user->id])['id'])->toBe([]);
+        expect($field->getRules(['id' => $user->id]))->not->toHaveKey('id')
+            ->and($field->args()['id'])->not->toHaveKey('rules');
     });
 
     it('looks the bound record up once over the GraphQL endpoint', function () {
@@ -186,5 +205,19 @@ describe('reusing the bound record', function () {
         $lookups = array_filter(array_column(DB::getQueryLog(), 'query'), fn(string $query) => str_contains($query, '"users"'));
 
         expect($lookups)->toHaveCount(1);
+    });
+
+    it('gives every occurrence of the field its own record', function () {
+        $ada = User::factory()->create(['name' => 'Ada Lovelace']);
+        $grace = User::factory()->create(['name' => 'Grace Hopper']);
+        $this->actingAs(User::factory()->create());
+        DB::enableQueryLog();
+
+        $response = $this->postJson('/graphql', ['query' => "{ a: authorizedUser(id: {$ada->id}) b: authorizedUser(id: {$grace->id}) }"]);
+
+        $lookups = array_filter(array_column(DB::getQueryLog(), 'query'), fn(string $query) => str_contains($query, '"users"'));
+
+        expect($response->json('data'))->toBe(['a' => 'Ada Lovelace', 'b' => 'Grace Hopper'])
+            ->and($lookups)->toHaveCount(2);
     });
 });

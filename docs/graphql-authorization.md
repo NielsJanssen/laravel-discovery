@@ -72,8 +72,12 @@ Nullability decides what a missing record means.
 
 A record that is found is always held to its ability, nullable or not.
 
-The check runs before validation, so it looks the record up itself. The resolver receives that same record, and the
-automatic `exists` rule is skipped once the record is found, so the record is looked up once per call.
+The check runs before validation, so it looks the record up itself, and the resolver receives that same record. An
+authorized binding carries no automatic `exists` rule either: a record the check cannot find is already a refusal, so
+the rule would never fail. That makes one query per call rather than three.
+
+A model-bound property of an `#[Input]` object does not share this yet — it is still looked up for the check, for its
+`exists` rule and again when the input is hydrated.
 
 The validation rule `#[Can]` from `nielsjanssen/laravel-validation` cannot do this job: validation only ever sees the
 raw `ID` argument, so the Gate receives an id string where the policy expects a record. Discovery rejects that
