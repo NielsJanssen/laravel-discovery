@@ -16,7 +16,6 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Argument\RuleProviderRegistry;
 use Rebing\GraphQL\Support\Field as RebingField;
 use ReflectionMethod;
 use RuntimeException;
-use Throwable;
 
 /**
  * @phpstan-require-extends RebingField
@@ -337,21 +336,20 @@ trait AsActionField
     }
 
     /**
-     * Rebing validates between authorize() and resolve(), so a failure there ends the call: the records
-     * authorize() found go with it, rather than waiting for the next call to reset them.
-     *
-     * @param  array<string, mixed>  $arguments
-     * @param  array<string, mixed>  $rules
+     * Wraps Rebing's whole authorize-validate-resolve pipeline, so the records a call found leave with it
+     * however it ends — denied, failing any of the validation passes, or resolved.
      */
-    protected function validateArguments(array $arguments, array $rules): void
+    protected function getResolver(): ?Closure
     {
-        try {
-            parent::validateArguments($arguments, $rules);
-        } catch (Throwable $failure) {
-            $this->bound->forget();
+        $resolver = parent::getResolver();
 
-            throw $failure;
-        }
+        return $resolver === null ? null : function (mixed ...$arguments) use ($resolver): mixed {
+            try {
+                return $resolver(...$arguments);
+            } finally {
+                $this->bound->forget();
+            }
+        };
     }
 
     /**
