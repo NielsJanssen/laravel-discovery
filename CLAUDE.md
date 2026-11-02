@@ -516,7 +516,8 @@ another file references needs its own PSR-4 file.
   filters
 - `.github/scripts/bump-version.test.sh` and `changelog-tags.test.sh` run in the CI lint job
 - **`.github/workflows/split.yml`**: a push to `main` mirrors all three packages to their split repos; a
-  `<package>@vX.Y.Z` tag only splits that one package, and the split repo receives the bare `vX.Y.Z` tag
+  `<package>@vX.Y.Z` tag only splits that one package, and the split repo receives the bare `vX.Y.Z` tag. Jobs share a
+  concurrency group per split repo, so the `main` and tag runs a release starts push one after the other
 - Cross-package constraints are **not** bumped automatically — `laravel-discovery-graphql` requires
   `nielsjanssen/laravel-discovery` by constraint, so a major of the core package needs that `require` edited by hand
   before releasing the dependent
