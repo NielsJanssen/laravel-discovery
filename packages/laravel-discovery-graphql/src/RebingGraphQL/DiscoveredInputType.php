@@ -97,7 +97,7 @@ final class DiscoveredInputType extends RebingInputType
     private function rules(DiscoveredTypeField $field, array $values, array $request): array
     {
         return $field->omittedRules($values) ?? [
-            ...self::ownRules($this->discoveredType->class, $field, $this->discoveredType->toProperties($values), $request),
+            ...self::ownRules($this->discoveredType->class, $field, $this->discoveredType->toProperties($values), $request, $this->app->make(BoundRecords::class)),
             ...$this->providedRules($values)[$field->phpName] ?? [],
         ];
     }
@@ -111,23 +111,28 @@ final class DiscoveredInputType extends RebingInputType
      * @param  array<string, mixed>  $request  the field's args as the client sent them, keyed by GraphQL arg name
      * @return list<mixed>
      */
-    public static function fieldRules(string $class, DiscoveredTypeField $field, array $args, array $values, array $request): array
+    public static function fieldRules(string $class, DiscoveredTypeField $field, array $args, array $values, array $request, BoundRecords $records): array
     {
-        return $field->omittedRules($args) ?? self::ownRules($class, $field, $values, $request);
+        return $field->omittedRules($args) ?? self::ownRules($class, $field, $values, $request, $records);
     }
 
     /**
+     * The `exists` rule is left out once the record is in $records: the #[Authorize] of this call already found
+     * it, so the rule could only pass. A field Rebing resolves without our authorize() finds an empty store and
+     * keeps the rule, which is all that guards it there.
+     *
      * @param  class-string  $class
      * @param  array<string, mixed>  $values
      * @param  array<string, mixed>  $request
      * @return list<mixed>
      */
-    private static function ownRules(string $class, DiscoveredTypeField $field, array $values, array $request): array
+    private static function ownRules(string $class, DiscoveredTypeField $field, array $values, array $request, BoundRecords $records): array
     {
         $rules = [];
+        $binding = $field->binding;
 
-        if ($field->binding !== null && ! $field->binding->nullable) {
-            $rules[] = $field->binding->existsRule();
+        if ($binding !== null && ! $binding->nullable && ! $records->has($binding->modelClass, $values[$field->phpName] ?? null)) {
+            $rules[] = $binding->existsRule();
         }
 
         if ($field->hasRules) {

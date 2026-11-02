@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\RebingGraphQL;
 
 use GraphQL\Type\Definition\ResolveInfo;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use LogicException;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Arg;
@@ -417,6 +418,24 @@ describe('#[Authorize] on a flattened model property', function () {
         ])))
             ->assertOk()
             ->assertExactJson(['data' => ['placeOrder' => 'Dune']]);
+    });
+
+    it('looks an authorized property up once and an unauthorized one twice', function () {
+        $supplier = User::factory()->create();
+        $buyer = User::factory()->create();
+        Gate::define('stock', fn(?User $actor) => true);
+        schemaSdl(...PLACE_ORDER_SOURCES);
+        DB::enableQueryLog();
+
+        $this->postJson('/graphql', placeOrderRequest(placeOrderVariables($supplier, $buyer)))
+            ->assertOk()
+            ->assertExactJson(['data' => ['placeOrder' => 'Dune']]);
+
+        $lookups = array_filter(array_column(DB::getQueryLog(), 'query'), fn(string $query) => str_contains($query, '"users"'));
+
+        // One for the authorized $supplier; the plain $buyer still costs its exists rule and its own lookup.
+        expect($lookups)->toHaveCount(3)
+            ->and(AsArgs\OrderMutations::$received?->supplier->is($supplier))->toBeTrue();
     });
 });
 

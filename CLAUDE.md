@@ -311,11 +311,17 @@ public function get(#[Arg('id')] #[Authorize('view')] Aantekening $note): ?Aante
 ```
 
 The check runs inside `Field::authorize()`, i.e. **before** validation, preserving Rebing's authorize-first ordering so
-an unauthorized caller cannot probe validation rules to map the API. `authorize()` keeps the record it found on the field
-(`$boundModels`, reset at the start of every `authorize()` and cleared again as soon as the call is denied or
-`resolve()` has mapped its args), so `resolve()` injects it without a second lookup. A binding under an `#[Authorize]`
-also gets no auto `exists` rule, since authorize() already denied a record it could not find, so a bound and authorized
-parameter costs one query.
+an unauthorized caller cannot probe validation rules to map the API. Every record a check looks up goes into
+`BoundRecords`, a container singleton keyed by model class and route-key value that lives for one field call:
+`AsActionField::authorize()` empties it when the call begins and again when the call is denied, fails validation or has
+finished mapping its args. `resolve()` and `InputHydrator` take the record from there instead of querying again, and the
+auto `exists` rule is left out for an id the store already holds — `authorize()` denied a record it could not find, so
+the rule could only pass. A field Rebing resolves without our `authorize()` finds an empty store and keeps its `exists`
+rule, which is all that guards it there.
+
+This covers a bound parameter, a property of an `#[Input]` object at any depth, an item of a list of inputs and a
+flattened `#[AsArgs]` property alike, so each costs one query per call instead of three. Two properties naming the same
+record share one instance.
 
 Nullability decides what a **missing record** means:
 
@@ -483,6 +489,7 @@ another file references needs its own PSR-4 file.
 | `packages/laravel-discovery-graphql/src/RebingGraphQL/Discovery/SchemaValidator.php` | Cross-class checks in `apply()`: name clashes, duplicate operations, unknown classes |
 | `packages/laravel-discovery-graphql/src/RebingGraphQL/AsActionField.php`    | Trait that adapts a `DiscoveredAction` into a Rebing `Field`                   |
 | `packages/laravel-discovery-graphql/src/RebingGraphQL/Authorization.php`    | Injectable helper for authorizing from inside a resolver                       |
+| `packages/laravel-discovery-graphql/src/RebingGraphQL/BoundRecords.php`     | The records one field call's #[Authorize] checks found, reused until it ends    |
 | `packages/laravel-discovery/config/discovery.php`                           | Package configuration                                                          |
 | `tests/TestCase.php`                                                        | Base test class; registers package + GraphQL + Workbench providers             |
 
