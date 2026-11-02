@@ -71,7 +71,8 @@ final readonly class TypeRef
 
     /**
      * Whether a string names a class, interface or enum by its own name. An alias, such as Laravel's `Date` facade
-     * alias, is read as a GraphQL type name instead, since aliases share their short names with GraphQL types.
+     * alias, and a class built into PHP, such as `DateTime`, are read as GraphQL type names instead, since they share
+     * their short names with GraphQL types and cannot be discovered as one.
      *
      * @phpstan-assert-if-true class-string $name
      */
@@ -81,7 +82,9 @@ final readonly class TypeRef
             return false;
         }
 
-        return strcasecmp(ltrim($name, '\\'), new ReflectionClass($name)->getName()) === 0;
+        $class = new ReflectionClass($name);
+
+        return ! $class->isInternal() && strcasecmp(ltrim($name, '\\'), $class->getName()) === 0;
     }
 
     /** A copy that is nullable when either this reference or the given flag is; nullability only widens. */

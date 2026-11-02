@@ -36,6 +36,10 @@ describe('TypeRef', function () {
         expect(TypeRef::from('ShelfAlias')->name)->toBe('ShelfAlias');
     });
 
+    it('reads a class built into PHP as a type name, as DateTime shares its name with a scalar', function () {
+        expect(TypeRef::from('DateTime')->name)->toBe('DateTime');
+    });
+
     it('rejects an unknown scalar', function () {
         expect(fn() => TypeRef::scalar('Date'))->toThrow(\InvalidArgumentException::class, 'got [Date]');
     });
