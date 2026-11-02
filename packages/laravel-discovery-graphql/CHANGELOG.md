@@ -1,6 +1,21 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [1.0.0-rc.5] - 2026-11-02
+
+### Bug Fixes
+
+- Empty the record store however a call ends
+
+### Performance
+
+- Look a bound model up once per call
+- Look a bound input record up once per call
+
+### Refactoring
+
+- Drop the exists rule of an authorized binding
+
 ## [1.0.0-rc.4] - 2026-10-28
 
 ### Bug Fixes
