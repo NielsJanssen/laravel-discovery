@@ -130,6 +130,11 @@ return [
 - **`Command`** class wraps discovered methods, resolves typed parameters as args/options, runs middleware
 - **`CommandArgumentsDefinition`** parses parameters into Symfony input definitions; honors `#[ConsoleArgument]` and
   `#[ConsoleOption]`
+- Parameters typed as a backed enum or a date (`DateTimeInterface`, `DateTime(Immutable)`, Carbon) **and** marked with
+  `#[ConsoleArgument]`/`#[ConsoleOption]` are console input (without the attribute they stay container-injected, as
+  before), converted through `Illuminate\Console\CommandInput::enum()`/`date()` (optional `format:` on either attribute); an
+  invalid value is a Symfony `InvalidArgumentException`/`InvalidOptionException`. Any other class is container-injected.
+  Resolved values are keyed by the PHP parameter name, not the kebab-cased input name
 - **Middleware**: `Benchmark`, `Transaction`, `Caution`; implement `CommandMiddleware`; middleware that adds CLI options
   implements `ProvidesInputOptions`
 - Plain Laravel commands (extending `Illuminate\Console\Command`) are also auto-registered

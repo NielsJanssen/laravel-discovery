@@ -13,5 +13,6 @@ class ConsoleOption
         public ?string $name = null,
         public ?string $shortcut = null,
         public ?string $description = null,
+        public ?string $format = null,
     ) {}
 }

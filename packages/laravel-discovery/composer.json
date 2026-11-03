@@ -23,6 +23,7 @@
   ],
   "require": {
     "php": "^8.5",
+    "laravel/framework": "^13.18.1",
     "tempest/discovery": "^3.10"
   },
   "autoload": {

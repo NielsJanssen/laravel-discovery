@@ -14,6 +14,7 @@ use Tests\Fixtures\Command\AbstractCommand;
 use Tests\Fixtures\Command\CapturingCommand;
 use Tests\Fixtures\Command\LaravelStyleCommand;
 use Tests\Fixtures\Command\MethodCommand;
+use Tests\Fixtures\Command\RenamedInputCommand;
 
 /**
  * Reset the discovery items queue AND the accumulated $commands array so that
@@ -99,4 +100,16 @@ it('registers discovered commands even when not running in console', function ()
     } finally {
         $setConsoleFlag(null);
     }
+});
+
+it('passes renamed and kebab-cased input to the parameter it was read for', function () {
+    discoverCommands(RenamedInputCommand::class);
+
+    Artisan::call('fixture:renamed-input', ['target' => 'acme', '--dry-run' => true, '--batch' => '50']);
+
+    expect(RenamedInputCommand::$captured)->toBe([
+        'originalName' => 'acme',
+        'dryRun' => true,
+        'batchSize' => '50',
+    ]);
 });
