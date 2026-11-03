@@ -15,6 +15,7 @@ final class Head implements Routable
     /**
      * @param list<class-string|string> $middleware Middleware specific to this route.
      * @param list<class-string|string> $withoutMiddleware Middleware to remove from this route.
+     * @param array<array-key, mixed> $metadata Metadata to attach to this route.
      */
     public function __construct(
         public string                 $uri,
@@ -22,5 +23,6 @@ final class Head implements Routable
         public array                  $withoutMiddleware = [],
         public string|BackedEnum|null $domain = null,
         public string|BackedEnum|null $name = null,
+        public array                  $metadata = [],
     ) {}
 }

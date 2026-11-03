@@ -20,4 +20,7 @@ interface Routable
 
     /** @var list<class-string|string>  */
     public array $withoutMiddleware { get; set; }
+
+    /** @var array<array-key, mixed> */
+    public array $metadata { get; set; }
 }
