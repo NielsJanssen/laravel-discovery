@@ -15,21 +15,21 @@ use Tempest\Reflection\ParameterReflector;
 readonly class CommandArgumentsDefinition
 {
     public function __construct(
-        /** @var list<InputArgument|InputOption> */
-        private array $arguments = [],
+        /** @var list<InputParameter> */
+        private array $parameters = [],
     ) {}
 
     public static function from(MethodReflector $method): self
     {
         return new self(
-            arguments: array_values(array_filter(array_map(
+            parameters: array_values(array_filter(array_map(
                 static::parseParameter(...),
                 iterator_to_array($method->getParameters()),
             ))),
         );
     }
 
-    private static function parseParameter(ParameterReflector $parameter): InputArgument|InputOption|null
+    private static function parseParameter(ParameterReflector $parameter): ?InputParameter
     {
         $attribute = $parameter->getAttribute(ConsoleArgument::class)
             ?? $parameter->getAttribute(ConsoleOption::class);
@@ -43,7 +43,7 @@ readonly class CommandArgumentsDefinition
         $default = $parameter->isDefaultValueAvailable() ? $parameter->getDefaultValue() : null;
 
         if ($attribute instanceof ConsoleOption) {
-            return new InputOption(
+            return new InputParameter($parameter->getName(), new InputOption(
                 name: Str::kebab($attribute->name ?? $parameter->getName()),
                 shortcut: $attribute->shortcut ?? [],
                 mode: match (true) {
@@ -53,16 +53,16 @@ readonly class CommandArgumentsDefinition
                 },
                 description: $attribute->description ?? '',
                 default: $type->getName() !== 'bool' ? $default : null,
-            );
+            ));
         }
 
-        return new InputArgument(
+        return new InputParameter($parameter->getName(), new InputArgument(
             name: Str::kebab($attribute->name ?? $parameter->getName()),
             mode: ($type->getName() === 'array' ? InputArgument::IS_ARRAY : 0)
                 | ($parameter->isDefaultValueAvailable() ? InputArgument::OPTIONAL : InputArgument::REQUIRED),
             description: $attribute->description ?? '',
             default: $default,
-        );
+        ));
     }
 
     /**
@@ -79,10 +79,8 @@ readonly class CommandArgumentsDefinition
 
         $map = [];
 
-        foreach ($this->arguments as $argument) {
-            $name = $argument->getName();
-
-            $map[$name] = $inputValues[$name] ?? null;
+        foreach ($this->parameters as $parameter) {
+            $map[$parameter->parameterName] = $inputValues[$parameter->inputName()] ?? null;
         }
 
         return $map;
@@ -90,11 +88,11 @@ readonly class CommandArgumentsDefinition
 
     public function define(InputDefinition $definition): void
     {
-        foreach ($this->arguments as $argument) {
-            if ($argument instanceof InputOption) {
-                $definition->addOption($argument);
+        foreach ($this->parameters as $parameter) {
+            if ($parameter->input instanceof InputOption) {
+                $definition->addOption($parameter->input);
             } else {
-                $definition->addArgument($argument);
+                $definition->addArgument($parameter->input);
             }
         }
     }
