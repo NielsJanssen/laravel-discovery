@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace NielsJanssen\Laravel\Discovery\Command;
 
 use Illuminate\Console\Application as Artisan;
+use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command as LaravelCommand;
+use Illuminate\Console\Parser;
 use Illuminate\Container\Attributes\Singleton;
 use Illuminate\Foundation\Application;
+use Illuminate\Foundation\DevCommands;
 use NielsJanssen\Laravel\Discovery\Command\Exception\InvalidCommandRegistrationException;
+use Symfony\Component\Console\Attribute\AsCommand;
 use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
@@ -36,24 +40,63 @@ final class CommandDiscovery implements Discovery
         }
 
         if ($class->is(LaravelCommand::class)) {
+            $dev = $class->getAttribute(DevCommand::class);
+
             $this->discoveryItems->add($location, new DiscoveredCommand(
                 reflector: $class,
+                dev: $dev === null ? null : DiscoveredDevCommand::fromAttribute(
+                    attribute: $dev,
+                    artisanCommand: self::laravelCommandName($class),
+                    file: $class->getFileName(),
+                    line: (int) $class->getReflection()->getStartLine(),
+                    class: $class->getName(),
+                    function: $class->getReflection()->hasMethod('handle') ? 'handle' : '__invoke',
+                ),
             ));
             return;
         }
 
+        if ($class->hasAttribute(DevCommand::class)) {
+            throw InvalidCommandRegistrationException::forCommand(
+                $class->getName(),
+                '#[DevCommand] on a class needs a class extending ' . LaravelCommand::class . '; put it on a #[ConsoleCommand] method instead.',
+            );
+        }
+
         foreach ($class->getPublicMethods() as $method) {
-            if ($definition = $method->getAttribute(ConsoleCommand::class)) {
-                $this->discoveryItems->add($location, new DiscoveredCommand(
-                    reflector: $method,
-                    definition: $definition,
-                ));
+            $definition = $method->getAttribute(ConsoleCommand::class);
+            $dev = $method->getAttribute(DevCommand::class);
+
+            if ($definition === null) {
+                if ($dev !== null) {
+                    throw InvalidCommandRegistrationException::forCommand(
+                        "{$class->getName()}::{$method->getName()}",
+                        '#[DevCommand] needs #[ConsoleCommand] on the same method.',
+                    );
+                }
+
+                continue;
             }
+
+            $this->discoveryItems->add($location, new DiscoveredCommand(
+                reflector: $method,
+                definition: $definition,
+                dev: $dev === null ? null : DiscoveredDevCommand::fromAttribute(
+                    attribute: $dev,
+                    artisanCommand: $definition->name,
+                    file: (string) $method->getReflection()->getFileName(),
+                    line: (int) $method->getReflection()->getStartLine(),
+                    class: $class->getName(),
+                    function: $method->getName(),
+                ),
+            ));
         }
     }
 
     public function apply(): void
     {
+        $this->registerDevCommands();
+
         Artisan::starting(function (Artisan $artisan) {
             /** @var DiscoveredCommand<Reflector> $command */
             foreach ($this->discoveryItems as $command) {
@@ -76,5 +119,53 @@ final class CommandDiscovery implements Discovery
                 $artisan->resolve($resolvedCommand);
             }
         });
+    }
+
+    private function registerDevCommands(): void
+    {
+        if (! $this->app->runningInConsole() || ! class_exists(DevCommands::class)) {
+            return;
+        }
+
+        $vendorPath = $this->app->basePath('vendor');
+
+        /** @var DiscoveredCommand<Reflector> $command */
+        foreach ($this->discoveryItems as $command) {
+            if ($command->dev !== null) {
+                DiscoveredDevCommands::add($command->dev->toLaravel($vendorPath));
+            }
+        }
+    }
+
+    /**
+     * Resolve a Laravel command's name the way its constructor does, without instantiating it.
+     *
+     * @param ClassReflector<object> $class
+     *
+     * @throws InvalidCommandRegistrationException
+     */
+    private static function laravelCommandName(ClassReflector $class): string
+    {
+        $reflection = $class->getReflection();
+        $defaults = $reflection->getDefaultProperties();
+
+        $signature = ($reflection->getAttributes(Signature::class)[0] ?? null)?->newInstance()->signature
+            ?? $defaults['signature']
+            ?? null;
+
+        $name = is_string($signature)
+            ? Parser::parse($signature)[0]
+            : $defaults['name'] ?? ($reflection->getAttributes(AsCommand::class)[0] ?? null)?->newInstance()->name;
+
+        foreach (is_string($name) ? explode('|', $name) : [] as $segment) {
+            if ($segment !== '') {
+                return $segment;
+            }
+        }
+
+        throw InvalidCommandRegistrationException::forCommand(
+            $class->getName(),
+            '#[DevCommand] needs the command to declare a name or signature.',
+        );
     }
 }
