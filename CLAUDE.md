@@ -158,8 +158,9 @@ class MyCommands
 
 `packages/laravel-discovery/src/Router/`
 
-- HTTP-method attributes: `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options` (all extend `Route`/implement
-  `Routable`)
+- HTTP-method attributes: `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`, `Query` (all extend `Route`/
+  implement `Routable`). `Router\Query` (HTTP `QUERY`, CSRF-verified) shares its short name with `RebingGraphQL\Query`,
+  so alias one when a file imports both
 - Decorators implementing `RouteDecorator`: `Prefix`, `Middleware`, `Domain` — applied class-level then method-level
 - Method attributes are repeatable, so one method can serve multiple URIs
 

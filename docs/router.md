@@ -29,6 +29,7 @@ One attribute per HTTP verb, all in the `NielsJanssen\Laravel\Discovery\Router` 
 | `#[Delete('/path')]`  | `DELETE`    |
 | `#[Head('/path')]`    | `HEAD`      |
 | `#[Options('/path')]` | `OPTIONS`   |
+| `#[Query('/path')]`   | `QUERY`     |
 
 All of them are **repeatable** and can be placed on a method or directly on a class. Placing the attribute on a class registers the class itself as a single-action (invokable) controller; see [Single-action controllers](#single-action-controllers) below. Placing it on a method is the standard form for multi-action controllers, and a single method can answer multiple URIs:
 
@@ -103,6 +104,29 @@ leading positional arguments:
 | `name`              | `string\|\BackedEnum\|null`  | `null`     |
 
 Like the verb-specific attributes, `#[Route]` is repeatable.
+
+## QUERY routes
+
+`#[Query]` routes the HTTP `QUERY` method, the counterpart of Laravel's `Route::query()`: a safe, read-only request
+that carries its search criteria in the body instead of the query string. The GraphQL package has a `#[Query]`
+attribute of its own, so alias one of them when both are imported in a file:
+
+```php
+use Illuminate\Http\Request;
+use NielsJanssen\Laravel\Discovery\Router\Query as QueryRoute;
+
+class ProductSearchController
+{
+    #[QueryRoute('/products/search')]
+    public function search(Request $request): array
+    {
+        return Product::search($request->json('term'))->get()->all();
+    }
+}
+```
+
+`QUERY` is not one of the methods that skip CSRF verification, so a `QUERY` route in the `web` group needs a CSRF token
+just like a `POST` route.
 
 ## Class-level decorators
 
