@@ -181,6 +181,30 @@ class UserController
 }
 ```
 
+### Decorators from traits
+
+Class-level decorators are also read from the traits a class uses, so a trait can carry a shared prefix, domain or
+middleware:
+
+```php
+#[Prefix('/api')]
+#[Middleware(['auth:api'])]
+trait ServesApi {}
+
+class UserController
+{
+    use ServesApi;
+
+    #[Get('/users')]              // /api/users, ['auth:api']
+    public function index(): array { /* ... */ }
+}
+```
+
+The class's own decorators rank above its traits, and an earlier `use` above a later one, so a class-level `#[Domain]`
+beats a trait's and the trait's prefix and middleware sit inside the class's. Only the traits a class uses directly
+count, as in Laravel's own trait attributes: a trait used by a trait or by a parent class is not read. A route attribute
+such as `#[Get]` on a trait is never read, since every class using the trait would register the same route.
+
 ## Named routes
 
 ```php

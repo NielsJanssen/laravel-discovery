@@ -20,7 +20,8 @@ class Orders
 
 The attribute is repeatable and targets classes, methods, parameters, and the fields of a `#[Type]` (see
 [Authorizing a field](#authorizing-a-field)). Attributes are collected class-first, then method, then parameter, and
-all of them must pass.
+all of them must pass. A class-level `#[Authorize]` is also read from the traits the class uses directly, after the
+class's own (see [Attributes from traits](graphql.md#attributes-from-traits)).
 
 | Parameter  | Type      | Purpose                                                                                               |
 |------------|-----------|-------------------------------------------------------------------------------------------------------|
