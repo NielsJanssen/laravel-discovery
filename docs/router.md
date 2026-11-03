@@ -48,6 +48,7 @@ Each method attribute takes the same options:
     withoutMiddleware: ['throttle'],
     domain: 'admin.example.com',
     name: 'admin.users.index',
+    metadata: ['head' => ['title' => 'Users']],
 )]
 ```
 
@@ -58,6 +59,7 @@ Each method attribute takes the same options:
 | `withoutMiddleware` | `list<string\|class-string>` | `[]`       |
 | `domain`            | `string\|\BackedEnum\|null`  | `null`     |
 | `name`              | `string\|\BackedEnum\|null`  | `null`     |
+| `metadata`          | `array`                      | `[]`       |
 
 When you set `name`, the route is registered with that name and works with the `route()` helper, `route:list`, model
 binding, and everything else that takes a route name. Leave it `null` (the default) and the route stays anonymous.
@@ -102,6 +104,7 @@ leading positional arguments:
 | `withoutMiddleware` | `list<string\|class-string>` | `[]`       |
 | `domain`            | `string\|\BackedEnum\|null`  | `null`     |
 | `name`              | `string\|\BackedEnum\|null`  | `null`     |
+| `metadata`          | `array`                      | `[]`       |
 
 Like the verb-specific attributes, `#[Route]` is repeatable.
 
@@ -130,7 +133,7 @@ just like a `POST` route.
 
 ## Class-level decorators
 
-Three attributes can be placed on a controller class to apply to every action in it. They can also be placed on
+Four attributes can be placed on a controller class to apply to every action in it. They can also be placed on
 individual methods. For how class-level and method-level decorators combine,
 see [Decorator composition](#decorator-composition) below.
 
@@ -185,10 +188,35 @@ class ApiController
 Like the `domain` parameter on the HTTP method attributes, `#[Domain]` accepts a string-backed enum as well as a plain
 string.
 
+### `#[Metadata]`
+
+Attaches route metadata (Laravel 13.17+), which you read back from the matched route with `getMetadata()`:
+
+```php
+use NielsJanssen\Laravel\Discovery\Router\Metadata;
+
+#[Metadata(['head' => ['title' => 'Acme', 'robots' => 'index']])]
+class UserController
+{
+    #[Get('/users', metadata: ['head' => ['title' => 'Users']])]
+    public function index(Request $request): array
+    {
+        return $request->route()->getMetadata('head');  // ['title' => 'Users', 'robots' => 'index']
+    }
+}
+```
+
+`#[Metadata]` is repeatable; several on one class or method merge in the order they are written. The values must be
+serializable (no closures), since they are stored in the discovery cache and in `route:cache`.
+
 ## Decorator composition
 
 Class-level decorators are applied first, then method-level. For middleware, both lists are merged. For prefix, they
 concatenate. For domain, the method-level decorator overrides the class-level one.
+
+Metadata layers the way a Laravel route group does: class-level `#[Metadata]` is the outer layer, method-level next and
+the route attribute's own `metadata:` innermost. Associative arrays merge recursively; lists and scalars replace the
+inherited value.
 
 ```php
 #[Prefix('/api')]

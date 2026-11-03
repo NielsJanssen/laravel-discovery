@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Routing\CompiledRouteCollection;
 use Illuminate\Routing\Router;
+use NielsJanssen\Laravel\Discovery\Router\DiscoveredRoute;
 use NielsJanssen\Laravel\Discovery\Router\Method;
 use NielsJanssen\Laravel\Discovery\Router\RouteDiscovery;
 use Tempest\Discovery\DiscoveryItems;
@@ -16,6 +18,8 @@ use Tests\Fixtures\Router\DomainController;
 use Tests\Fixtures\Router\EnumDomainController;
 use Tests\Fixtures\Router\EnumNamedRouteController;
 use Tests\Fixtures\Router\InvokableRouteController;
+use Tests\Fixtures\Router\MetadataController;
+use Tests\Fixtures\Router\MetadataVerbsController;
 use Tests\Fixtures\Router\MethodPrefixController;
 use Tests\Fixtures\Router\MiddlewareController;
 use Tests\Fixtures\Router\MiddlewareTrackingController;
@@ -361,3 +365,105 @@ describe('registration', function () {
         expect($route->excludedMiddleware())->toContain('auth');
     });
 });
+
+describe('metadata', function () {
+    it('leaves the metadata empty when no layer sets any', function () {
+        $routes = [...discoverRoutes(SimpleGetController::class)->getItems()];
+
+        expect($routes[0]->metadata)->toBe([]);
+        expect(app(Router::class)->getRoutes()->getByAction(SimpleGetController::class . '@index')->getAction())
+            ->not->toHaveKey('metadata');
+    });
+
+    it('accepts metadata on every HTTP method attribute', function () {
+        $routes = [...discoverRoutes(MetadataVerbsController::class)->getItems()];
+
+        expect(array_map(static fn(DiscoveredRoute $route) => $route->metadata, $routes))->toBe([
+            ['verb' => 'get'],
+            ['verb' => 'post'],
+            ['verb' => 'put'],
+            ['verb' => 'patch'],
+            ['verb' => 'delete'],
+            ['verb' => 'head'],
+            ['verb' => 'options'],
+            ['verb' => 'query'],
+            ['verb' => 'route'],
+        ]);
+    });
+
+    it('layers class, method and route metadata with Laravel merge semantics', function () {
+        discoverRoutes(MetadataController::class);
+
+        expect(metadataOf(MetadataController::class . '@index'))->toBe([
+            'head' => ['title' => 'Users', 'robots' => 'index', 'description' => 'All users'],
+            'nav' => ['section' => 'acme'],
+            'tags' => ['method'],
+            'layer' => 'route',
+        ]);
+    });
+
+    it('applies class metadata to a route that sets none of its own', function () {
+        discoverRoutes(MetadataController::class);
+
+        expect(metadataOf(MetadataController::class . '@inherited'))->toBe([
+            'head' => ['title' => 'Acme', 'robots' => 'index'],
+            'nav' => ['section' => 'acme'],
+            'tags' => ['class'],
+            'layer' => 'class',
+        ]);
+    });
+
+    it('merges repeated metadata attributes in declaration order', function () {
+        discoverRoutes(MetadataController::class);
+
+        expect(metadataOf(MetadataController::class . '@repeated'))
+            ->nav->toBe(['section' => 'second', 'active' => true])
+            ->tags->toBe(['second']);
+    });
+
+    it('exposes the metadata on the matched route of a request', function () {
+        discoverRoutes(MetadataController::class);
+
+        $this->get('/acme/users')->assertOk()->assertContent('Users');
+    });
+
+    it('keeps the metadata through the discovery cache', function () {
+        $items = unserialize(serialize(discoverRoutes(MetadataController::class)->getItems()));
+        $router = new Router(app('events'), app());
+
+        $discovery = new RouteDiscovery(app(), $router);
+        $discovery->setItems($items);
+        $discovery->apply();
+
+        expect($router->getRoutes()->getByAction(MetadataController::class . '@index')?->getMetadata('head'))
+            ->toBe(['title' => 'Users', 'robots' => 'index', 'description' => 'All users']);
+    });
+
+    it('keeps the metadata through route:cache', function () {
+        $router = new Router(app('events'), app());
+
+        $discovery = new RouteDiscovery(app(), $router);
+        $discovery->setItems(discoverRoutes(MetadataController::class)->getItems());
+        $discovery->apply();
+
+        foreach ($router->getRoutes() as $route) {
+            $route->prepareForSerialization();
+        }
+
+        // route:cache writes the compiled routes with var_export() and loads them back as PHP.
+        $compiled = eval('return ' . var_export($router->getRoutes()->compile(), true) . ';');
+
+        $routes = new CompiledRouteCollection($compiled['compiled'], $compiled['attributes'])
+            ->setRouter($router)
+            ->setContainer(app());
+
+        expect($routes->getByAction(MetadataController::class . '@index')?->getMetadata('head'))
+            ->toBe(['title' => 'Users', 'robots' => 'index', 'description' => 'All users']);
+    });
+});
+
+/** @return array<array-key, mixed> */
+function metadataOf(string $action): array
+{
+    return app(Router::class)->getRoutes()->getByAction($action)?->getMetadata() ?? [];
+}
