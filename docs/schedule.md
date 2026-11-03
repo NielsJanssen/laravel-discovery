@@ -249,6 +249,11 @@ The same decorators are also valid on individual methods when there is no class-
 public function processOrders(): void { /* ... */ }
 ```
 
+Class-level decorators are also read from the traits a class uses, so `#[Timezone('Europe/Amsterdam')] trait
+RunsInAmsterdam {}` sets the timezone of every schedule in a class that uses it. The class's own decorators win over its
+traits, and an earlier `use` over a later one. Only the traits a class uses directly count, as in Laravel's own trait
+attributes. A `#[Scheduled]` on a trait is never read, since every class using the trait would register the same task.
+
 ### `#[WithoutOverlapping]`
 
 `#[WithoutOverlapping]` maps to Laravel's `Event::withoutOverlapping()`. It exposes both parameters:

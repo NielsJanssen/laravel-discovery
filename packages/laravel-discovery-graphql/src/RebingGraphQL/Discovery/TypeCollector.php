@@ -34,6 +34,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeExtension;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeFactory;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
+use NielsJanssen\Laravel\Discovery\Reflection\ClassAttributes;
 use PropertyHookType;
 use Rebing\GraphQL\Support\Field as RebingField;
 use Rebing\GraphQL\Support\Type as RebingType;
@@ -75,7 +76,7 @@ final readonly class TypeCollector
             ));
         }
 
-        $decorator = $class->getAttribute(FieldDecorator::class);
+        $decorator = ClassAttributes::of($class, FieldDecorator::class)[0] ?? null;
 
         if ($decorator !== null && ! $this->hasActions($class)) {
             throw new LogicException(sprintf(
@@ -181,7 +182,7 @@ final readonly class TypeCollector
             }
         }
 
-        $decorator = $class->getAttribute(FieldDecorator::class);
+        $decorator = ClassAttributes::of($class, FieldDecorator::class)[0] ?? null;
 
         if ($decorator !== null && ! $this->hasActions($class)) {
             throw new LogicException(sprintf(

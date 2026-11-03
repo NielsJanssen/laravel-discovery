@@ -1536,6 +1536,35 @@ Both attributes validate their own arguments, so an unknown sort field is reject
 `ActionArgProvider` implementations, which is the same hook your own attributes can use to contribute arguments and
 value objects.
 
+## Attributes from traits
+
+The class-level attributes that adjust an action are also read from the traits its class uses: `#[Schema]`,
+`#[Middleware]`, `#[Authorize]`, and every `ActionDecorator`, `ActionArgProvider` and `ActionTypeBuilder` such as
+`#[Paginated]` and `#[Sortable]`.
+
+```php
+#[Schema('admin')]
+#[Authorize(gate: StaffOnly::class)]
+trait ForStaff {}
+
+class Maintenance
+{
+    use ForStaff;
+
+    #[Query(type: 'Job', list: true)]
+    public function failedJobs(): array
+    {
+        // lands in the admin schema, behind StaffOnly
+    }
+}
+```
+
+The class's own attributes come first, then each trait in `use` order: a class-level `#[Schema]` beats a trait's, class
+middleware wraps trait middleware, and every `#[Authorize]` must still pass. A type builder may appear once across the
+class and its traits. Only the traits a class uses directly count, as in Laravel's own trait attributes. `#[Query]`,
+`#[Mutation]`, `#[Type]`, `#[Input]`, `#[Enum]` and `#[TypeExtension]` are never read from a trait, since each class
+using it would declare the same type or field.
+
 ## Deprecation
 
 Mark a field with PHP's native `#[\Deprecated]` and an argument with `#[Arg(deprecationReason:)]`. Both surface as

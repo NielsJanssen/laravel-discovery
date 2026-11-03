@@ -7,6 +7,7 @@ namespace NielsJanssen\Laravel\Discovery\Router;
 use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Foundation\Application;
 use Illuminate\Routing\Router;
+use NielsJanssen\Laravel\Discovery\Reflection\ClassAttributes;
 use Tempest\Discovery\Discovery;
 use Tempest\Discovery\DiscoveryLocation;
 use Tempest\Discovery\IsDiscovery;
@@ -31,7 +32,7 @@ class RouteDiscovery implements Discovery
             return;
         }
 
-        $classDecorators = array_values($class->getAttributes(RouteDecorator::class));
+        $classDecorators = ClassAttributes::inApplyOrder($class, RouteDecorator::class);
 
         if ($route = $class->getAttribute(Routable::class)) {
             $this->discoveryItems->add($location, DiscoveredRoute::from($route, $classDecorators, $class));

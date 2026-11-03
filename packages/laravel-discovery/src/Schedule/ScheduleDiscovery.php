@@ -9,6 +9,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Container\Attributes\Singleton;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Application;
+use NielsJanssen\Laravel\Discovery\Reflection\ClassAttributes;
 use ReflectionClass;
 use ReflectionMethod;
 use Tempest\Discovery\Discovery;
@@ -35,7 +36,7 @@ final class ScheduleDiscovery implements Discovery
             return;
         }
 
-        $classDecorators = $class->getAttributes(ScheduleDecorator::class);
+        $classDecorators = ClassAttributes::inApplyOrder($class, ScheduleDecorator::class);
 
         /** @var list<Scheduled> $classAttrs */
         $classAttrs = $class->getAttributes(Scheduled::class);

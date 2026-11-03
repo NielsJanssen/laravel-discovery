@@ -19,6 +19,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeCollector;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeReference;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Discovery\TypeUsage;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Naming\Naming;
+use NielsJanssen\Laravel\Discovery\Reflection\ClassAttributes;
 use Rebing\GraphQL\GraphQL;
 use Rebing\GraphQL\Support\Middleware as RebingMiddleware;
 use Rebing\GraphQL\Support\Mutation as RebingMutation;
@@ -162,7 +163,7 @@ final class GraphQLDiscovery implements Discovery
     {
         $return = $this->returns->resolve($action, $class, $method);
 
-        foreach ([...$method->getAttributes(ActionDecorator::class), ...$class->getAttributes(ActionDecorator::class)] as $decorator) {
+        foreach ([...$method->getAttributes(ActionDecorator::class), ...ClassAttributes::of($class, ActionDecorator::class)] as $decorator) {
             $decorator->decorate($action);
         }
 
@@ -173,7 +174,7 @@ final class GraphQLDiscovery implements Discovery
 
         $argProviders = array_values([
             ...$method->getAttributes(ActionArgProvider::class),
-            ...$class->getAttributes(ActionArgProvider::class),
+            ...ClassAttributes::of($class, ActionArgProvider::class),
         ]);
 
         $parameters = $this->parameters->classify($class, $method, $argProviders);
@@ -184,7 +185,7 @@ final class GraphQLDiscovery implements Discovery
         ];
 
         $authorizations = array_values([
-            ...$class->getAttributes(Authorize::class),
+            ...ClassAttributes::of($class, Authorize::class),
             ...$method->getAttributes(Authorize::class),
         ]);
 
@@ -215,7 +216,9 @@ final class GraphQLDiscovery implements Discovery
     {
         return array_merge(...array_map(
             static fn(Middleware $attribute): array => $attribute->middleware,
-            $reflector->getAttributes(Middleware::class),
+            $reflector instanceof ClassReflector
+                ? ClassAttributes::of($reflector, Middleware::class)
+                : $reflector->getAttributes(Middleware::class),
         ));
     }
 

@@ -79,6 +79,15 @@ All discoverers implement Tempest's `Discovery` interface, use the `IsDiscovery`
 2. `apply()` — called once after all discovery is complete; registers items with Laravel (`Artisan::starting()`,
    `Event::listen()`, `Route::*`, `Schedule::call()`, `graphql.schemas` config)
 
+**Attributes from traits.** Class-level *decorator* attributes (`RouteDecorator`, `ScheduleDecorator`, and in GraphQL
+`ActionDecorator`, `ActionArgProvider`, `ActionTypeBuilder`, `Authorize`, `Middleware`, plus the class-level
+`FieldDecorator` guard on `#[Type]`/`#[TypeExtension]`) are read through `Reflection\ClassAttributes`, which adds the
+traits a class uses directly, as Laravel's `resolveClassAttribute` does (no traits of traits, no parent walk).
+`of()` returns own then traits in `use` order (first-wins, AND, middleware); `inApplyOrder()` returns traits reversed then
+own, for route/schedule decorators where the last applied wins. *Identity* attributes (`Routable`, `#[Scheduled]`,
+`#[ConsoleCommand]`, `#[Query]`/`#[Mutation]`, `#[Type]`/`#[Input]`/`#[Enum]`/`#[TypeExtension]`) are never read from
+traits: each class using the trait would register a duplicate.
+
 ### Discovery Flow
 
 1. `DiscoveryServiceProvider::register()` binds `DiscoveryConfig` (using `discovery.autoload` from config) and
