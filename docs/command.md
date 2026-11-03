@@ -255,6 +255,42 @@ class GreetCommand extends Command
 }
 ```
 
+## Running with `php artisan dev`
+
+Add `#[DevCommand]` to a `#[ConsoleCommand]` method, or to a classic command class, to run it as one of the processes
+`php artisan dev` starts. It is the same as calling `DevCommands::artisan()` yourself, and `php artisan dev:list` shows
+it with your class and method as the source.
+
+```php
+use Illuminate\Foundation\DevCommandColor;
+use NielsJanssen\Laravel\Discovery\Command\ConsoleCommand;
+use NielsJanssen\Laravel\Discovery\Command\DevCommand;
+
+class Watchers
+{
+    #[ConsoleCommand('acme:watch')]
+    #[DevCommand]
+    public function watch(): void {}
+
+    #[ConsoleCommand('acme:sync')]
+    #[DevCommand(name: 'sync', arguments: '--tries=1', color: DevCommandColor::GREEN)]
+    public function sync(): void {}
+}
+```
+
+| Parameter   | Type               | Purpose                                                                                       |
+|-------------|--------------------|-----------------------------------------------------------------------------------------------|
+| `name`      | `?string`          | The dev process name. Defaults to the Artisan command name, as `DevCommands::artisan()` does. |
+| `arguments` | `string`           | Appended to the Artisan command, e.g. `--tries=1`.                                            |
+| `color`     | `?DevCommandColor` | The color of the process output. Picked automatically when left out.                          |
+
+A command defined in your application gets the same priority as a `DevCommands::artisan()` call in your own code, so it
+survives `DevCommands::withoutVendorCommands()`. A command discovered in a package under `vendor/` stays a vendor
+command and is left out by it, as if that package had registered it itself. Registering a process of the same name in
+your `AppServiceProvider::boot()` replaces the discovered one.
+
+Laravel has its own `Illuminate\Foundation\DevCommand` class; alias one of the imports where a file needs both.
+
 ## Troubleshooting
 
 **Command not showing up in `php artisan list`?**

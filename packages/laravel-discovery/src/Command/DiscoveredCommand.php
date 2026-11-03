@@ -15,5 +15,6 @@ class DiscoveredCommand
         /** @var Reflector */
         public Reflector $reflector,
         public ?ConsoleCommand $definition = null,
+        public ?DiscoveredDevCommand $dev = null,
     ) {}
 }

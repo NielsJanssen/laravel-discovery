@@ -133,6 +133,14 @@ return [
 - **Middleware**: `Benchmark`, `Transaction`, `Caution`; implement `CommandMiddleware`; middleware that adds CLI options
   implements `ProvidesInputOptions`
 - Plain Laravel commands (extending `Illuminate\Console\Command`) are also auto-registered
+- **`#[DevCommand(name:, arguments:, color:)]`** on a `#[ConsoleCommand]` method or a Laravel command class adds it to
+  `php artisan dev` (Laravel's own class is `Illuminate\Foundation\DevCommand`; alias it where both appear).
+  `discover()` stores the artisan command and the source (file, line, class, function) on `DiscoveredDevCommand`;
+  `apply()` registers it synchronously, console only, through `DiscoveredDevCommands`, a `DevCommands` subclass that
+  writes the protected static `$commands` because `register()` derives source and priority from the call stack, which
+  is always vendor for us. Priority is vendor when the class file contains `base_path('vendor')`, userland otherwise,
+  and an existing entry is only replaced at `>=` priority, so a later `DevCommands::artisan()` in the app's `boot()`
+  wins. A test pins `$commands` and the `DevCommand` constructor; tests call `DiscoveredDevCommands::reset()`
 
 ```php
 class MyCommands
