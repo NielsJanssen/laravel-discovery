@@ -12,6 +12,7 @@ use NielsJanssen\Laravel\Discovery\RebingGraphQL\Mapping\MemberKind;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\OmittableType;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\Position;
 use NielsJanssen\Laravel\Discovery\RebingGraphQL\TypeRef;
+use NielsJanssen\Laravel\Discovery\Reflection\ClassAttributes;
 use ReflectionNamedType;
 use RuntimeException;
 use Tempest\Reflection\ClassReflector;
@@ -78,11 +79,11 @@ final readonly class ReturnTypeResolver
             return $methodBuilders[0];
         }
 
-        $classBuilders = $class->getAttributes(ActionTypeBuilder::class);
+        $classBuilders = ClassAttributes::of($class, ActionTypeBuilder::class);
 
         if (count($classBuilders) > 1) {
             throw new RuntimeException(sprintf(
-                'Class %s has multiple ActionTypeBuilder attributes (%s). At most one is allowed per class.',
+                'Class %s has multiple ActionTypeBuilder attributes (%s), counting the traits it uses. At most one is allowed per class.',
                 $class->getName(),
                 implode(', ', array_map(static fn(ActionTypeBuilder $builder): string => $builder::class, $classBuilders)),
             ));
