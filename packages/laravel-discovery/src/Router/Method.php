@@ -13,4 +13,5 @@ enum Method: string
     case Patch = 'PATCH';
     case Post = 'POST';
     case Put = 'PUT';
+    case Query = 'QUERY';
 }

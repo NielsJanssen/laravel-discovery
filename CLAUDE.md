@@ -158,9 +158,14 @@ class MyCommands
 
 `packages/laravel-discovery/src/Router/`
 
-- HTTP-method attributes: `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options` (all extend `Route`/implement
-  `Routable`)
-- Decorators implementing `RouteDecorator`: `Prefix`, `Middleware`, `Domain` — applied class-level then method-level
+- HTTP-method attributes: `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`, `Query` (all extend `Route`/
+  implement `Routable`). `Router\Query` (HTTP `QUERY`, CSRF-verified) shares its short name with `RebingGraphQL\Query`,
+  so alias one when a file imports both
+- Decorators implementing `RouteDecorator`: `Prefix`, `Middleware`, `Domain`, `Metadata` — applied class-level then
+  method-level
+- Route metadata (`metadata:` on the route attribute, repeatable `#[Metadata]`) merges with Laravel's
+  `RouteGroup::mergeMetadata()`: class outermost, method next, the route attribute's own `metadata:` innermost.
+  `DiscoveredRoute::from()` sets the attribute's own metadata aside and merges it after the decorators
 - Method attributes are repeatable, so one method can serve multiple URIs
 
 ### Schedule Discovery

@@ -79,6 +79,10 @@ class RouteDiscovery implements Discovery
                 $route->name($discoveredRoute->name);
                 $named = true;
             }
+
+            if ($discoveredRoute->metadata !== []) {
+                $route->metadata($discoveredRoute->metadata);
+            }
         }
 
         // Laravel populates the name lookup table only when a route is added

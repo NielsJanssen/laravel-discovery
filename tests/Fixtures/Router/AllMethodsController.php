@@ -11,6 +11,7 @@ use NielsJanssen\Laravel\Discovery\Router\Options;
 use NielsJanssen\Laravel\Discovery\Router\Patch;
 use NielsJanssen\Laravel\Discovery\Router\Post;
 use NielsJanssen\Laravel\Discovery\Router\Put;
+use NielsJanssen\Laravel\Discovery\Router\Query;
 
 class AllMethodsController
 {
@@ -34,4 +35,7 @@ class AllMethodsController
 
     #[Options('/users')]
     public function optionsUsers(): void {}
+
+    #[Query('/users')]
+    public function queryUsers(): void {}
 }
