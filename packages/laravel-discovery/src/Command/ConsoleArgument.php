@@ -12,5 +12,6 @@ class ConsoleArgument
     public function __construct(
         public ?string $name = null,
         public ?string $description = null,
+        public ?string $format = null,
     ) {}
 }
