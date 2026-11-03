@@ -117,7 +117,7 @@ describe('enums', function () {
     it('rejects an enum without backing values', function () {
         $shape = new class {
             #[ConsoleCommand('fixture:unit-enum')]
-            public function run(Suit $suit): void {}
+            public function run(#[ConsoleArgument] Suit $suit): void {}
         };
 
         expect(fn() => CommandArgumentsDefinition::from(new ClassReflector($shape)->getMethod('run')))
@@ -201,6 +201,22 @@ describe('dates', function () {
             public function run(#[ConsoleOption(format: 'Y-m-d')] ?Status $status = null): void {}
         }],
     ]);
+});
+
+it('injects an enum or date without a console attribute from the container', function () {
+    $captured = runTypedCommand('fixture:typed-unattributed', []);
+
+    expect($captured['now'])->toBeInstanceOf(CarbonImmutable::class)
+        ->and($captured['suit'])->toBe(Suit::Spades)
+        ->and($captured['status'])->toBe(Status::Published)
+        ->and(typedDefinition('unattributed')->getArguments())->toBe([]);
+});
+
+it('makes a nullable date argument without a default optional', function () {
+    expect(typedDefinition('nullableDate')->getArgument('from')->isRequired())->toBeFalse()
+        ->and(runTypedCommand('fixture:typed-nullable-date', [])['from'])->toBeNull()
+        ->and(runTypedCommand('fixture:typed-nullable-date', ['from' => '2026-03-07'])['from']->toDateString())
+        ->toBe('2026-03-07');
 });
 
 it('still injects a class that is not a value type from the container', function () {

@@ -76,19 +76,22 @@ Rules of thumb:
 - A `bool` option is a flag (`VALUE_NONE`); present means `true`.
 - A parameter with a default value becomes optional; without one, it's required.
 - Names are automatically converted to kebab-case (`$dryRun` becomes `--dry-run`).
-- Parameter types must be **scalar** (`string`, `int`, `float`, `bool`), `array`, a backed enum or a date (see
-  [Enums and dates](#enums-and-dates)). Other types are resolved from the container and won't appear as input.
+- Parameter types must be **scalar** (`string`, `int`, `float`, `bool`), `array`, or a backed enum or a date marked
+  with `#[ConsoleArgument]`/`#[ConsoleOption]` (see [Enums and dates](#enums-and-dates)). Other types are resolved
+  from the container and won't appear as input.
 
 ### Enums and dates
 
-A parameter typed as a backed enum or a date is read from the console and converted, the way Laravel's
-`$this->input()->enum()` and `$this->input()->date()` do it:
+A parameter typed as a backed enum or a date and marked with `#[ConsoleArgument]` or `#[ConsoleOption]` is read from
+the console and converted, the way Laravel's `$this->input()->enum()` and `$this->input()->date()` do it. Without one
+of those attributes it is resolved from the container, as any other class is, so `CarbonImmutable $now` still receives
+the current time:
 
 ```php
 #[ConsoleCommand('orders:export', 'Export orders')]
 public function export(
     // php artisan orders:export shipped
-    OrderStatus $status,
+    #[ConsoleArgument] OrderStatus $status,
     // --since="last monday"
     #[ConsoleOption] ?Carbon $since = null,
     // --until=31-12-2026
@@ -100,10 +103,12 @@ public function export(
 
 - **Enums**: the value is matched against the backing values, and shell completion suggests them. A value that is not
   a case stops the command with an error listing the cases, nullable or not. A missing value gives the parameter's
-  default, or `null` when it is nullable. Pure enums without backing values are rejected.
+  default, or `null` when it is nullable. A pure enum without backing values marked as console input is rejected.
 - **Dates**: `DateTimeInterface`, `DateTime`, `DateTimeImmutable`, `CarbonInterface` and any Carbon class. The value is
-  parsed with Laravel's `Date` factory, or read in the `format:` given on `#[ConsoleArgument]`/`#[ConsoleOption]`, and
-  handed over as the class the parameter asks for. A value that is not a date stops the command with an error.
+  parsed with Laravel's `Date` factory, or read in the `format:` given on `#[ConsoleArgument]`/`#[ConsoleOption]` (a
+  `format:` on any other parameter is rejected), and handed over as the class the parameter asks for. A value that is
+  not a date stops the command with an error.
+- A nullable enum or date argument is optional, even without a default.
 - A non-nullable option without a default reports that it requires a value when it is left out.
 
 ### `#[ConsoleArgument]`

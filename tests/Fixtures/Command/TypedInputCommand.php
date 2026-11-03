@@ -22,7 +22,9 @@ class TypedInputCommand
 
     #[ConsoleCommand(name: 'fixture:typed-enums')]
     public function enums(
+        #[ConsoleArgument]
         Status $status,
+        #[ConsoleArgument]
         ?Priority $priority = null,
         #[ConsoleOption]
         Status $state = Status::Draft,
@@ -42,6 +44,7 @@ class TypedInputCommand
 
     #[ConsoleCommand(name: 'fixture:typed-dates')]
     public function dates(
+        #[ConsoleArgument]
         DateTimeInterface $at,
         #[ConsoleOption]
         ?Carbon $carbon = null,
@@ -69,8 +72,25 @@ class TypedInputCommand
         self::$captured = compact('on');
     }
 
+    #[ConsoleCommand(name: 'fixture:typed-unattributed')]
+    public function unattributed(
+        CarbonImmutable $now,
+        Suit $suit = Suit::Spades,
+        Status $status = Status::Published,
+    ): void {
+        self::$captured = compact('now', 'suit', 'status');
+    }
+
+    #[ConsoleCommand(name: 'fixture:typed-nullable-date')]
+    public function nullableDate(
+        #[ConsoleArgument]
+        ?CarbonImmutable $from,
+    ): void {
+        self::$captured = compact('from');
+    }
+
     #[ConsoleCommand(name: 'fixture:typed-injected')]
-    public function injected(Status $status, Collection $collection): void
+    public function injected(#[ConsoleArgument] Status $status, Collection $collection): void
     {
         self::$captured = compact('status', 'collection');
     }

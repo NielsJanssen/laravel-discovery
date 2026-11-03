@@ -50,7 +50,7 @@ readonly class CommandArgumentsDefinition
             ?? $parameter->getAttribute(ConsoleOption::class);
 
         $type = $parameter->getType();
-        $class = self::valueClass($parameter);
+        $class = $attribute !== null ? self::valueClass($parameter) : null;
 
         if ($class === null && !$type->isScalar() && $type->getName() !== 'array') {
             return null;
@@ -70,6 +70,7 @@ readonly class CommandArgumentsDefinition
 
         $hasDefault = $parameter->isDefaultValueAvailable();
         $default = $hasDefault ? $parameter->getDefaultValue() : null;
+        $optional = $hasDefault || ($class !== null && $parameter->getReflection()->allowsNull());
 
         $inputDefault = match (true) {
             $default instanceof BackedEnum => $default->value,
@@ -98,7 +99,7 @@ readonly class CommandArgumentsDefinition
             $input = new InputArgument(
                 name: Str::kebab($attribute->name ?? $parameter->getName()),
                 mode: ($type->getName() === 'array' ? InputArgument::IS_ARRAY : 0)
-                    | ($hasDefault ? InputArgument::OPTIONAL : InputArgument::REQUIRED),
+                    | ($optional ? InputArgument::OPTIONAL : InputArgument::REQUIRED),
                 description: $attribute->description ?? '',
                 default: $inputDefault,
                 suggestedValues: $suggestedValues,
